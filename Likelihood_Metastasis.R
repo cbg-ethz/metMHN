@@ -4,6 +4,9 @@
 # Function: This is a file that mimic Likelihood.R But in Meta_MHN
 source("UtilityFunctions.R")
 source("ModelConstruction.R")
+require(doFuture)
+require(foreach)
+
 
 # ------------------------ Q.Sync ----------------------------------------------
 Q.sync.vec <- function(Theta, x, diag=F, transp=F){
@@ -397,17 +400,25 @@ Grad <- function(Theta, pD){
   pTh <- Jacobi(Theta, p0)
   pD_pTh <- pD/pTh
   pD_pTh[is.na(pD_pTh)] = 0
-  # q   <- Jacobi(Theta, pD/pTh, transp=T)
   q   <- Jacobi(Theta, pD_pTh, transp=T)
   
-  G <- matrix(0,nrow=n,ncol=n)
-  
-  # Maybe think about a new algorithm 
-  for(i in 1:n){ #should be parallelized with something other than MPI lol
-    for(j in 1:n) {
-      G[i, j] <- t(q) %*% dQ.vec(Theta, pTh,i , j)
-    }
-  }
+  # G <- matrix(0,nrow=n,ncol=n)
+  # 
+  # # Maybe think about a new algorithm
+  # for(i in 1:n){
+  #   for(j in 1:n) {
+  #     G[i, j] <- t(q) %*% dQ.vec(Theta, pTh,i , j)
+  #   }
+  # }
+
+  # Replace the double for loop with foreach
+  # Special thanks to this post
+  # https://cran.r-project.org/web/packages/foreach/vignettes/nested.html
+  G <-
+    foreach(i = 1:n, .combine="rbind", .options.future = list(chunk.size = 20)) %:%
+      foreach(j = 1:n, .combine = "c") %dopar% {
+        t(q) %*% dQ.vec(Theta, pTh,i , j)
+      }
   
   return(G)
 }

@@ -1,5 +1,3 @@
-require(stringi)
-
 #Convert a state from a bit-vector to a natural number.
 State.to.Int <- function(x){
   x <- as.logical(rev(x))
