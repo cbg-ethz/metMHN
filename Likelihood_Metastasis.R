@@ -4,8 +4,6 @@
 # Function: This is a file that mimic Likelihood.R But in Meta_MHN
 source("UtilityFunctions.R")
 source("ModelConstruction.R")
-require(doParallel)
-
 
 # ------------------------ Q.Sync ----------------------------------------------
 Q.sync.vec <- function(Theta, x, diag=F, transp=F){
@@ -399,54 +397,18 @@ Grad <- function(Theta, pD){
   pTh <- Jacobi(Theta, p0)
   pD_pTh <- pD/pTh
   pD_pTh[is.na(pD_pTh)] = 0
+  # q   <- Jacobi(Theta, pD/pTh, transp=T)
   q   <- Jacobi(Theta, pD_pTh, transp=T)
   
-  # start.time <- Sys.time()
-  # G <- matrix(0,nrow=n,ncol=n)
-  # 
-  # # Single thread G calculation
-  # # Maybe think about a new algorithm
-  # for(i in 1:n){
-  #   for(j in 1:n) {
-  #     G[i, j] <- t(q) %*% dQ.vec(Theta, pTh,i , j)
-  #   }
-  # }
-  # end.time<-Sys.time()
-  # time.taken <- round(difftime(end.time, start.time, units = "secs"), digits = 2)
-
+  G <- matrix(0,nrow=n,ncol=n)
   
-  # Nested foreach loop
-  # Replace the double for loop with foreach
-  # Special thanks to this post
-  # https://cran.r-project.org/web/packages/foreach/vignettes/nested.html
-  # start.time <- Sys.time()
-  # G <-
-  #   foreach(i = 1:n, .combine="rbind",.export = c("dQ.vec", "dQ.sync.vec", "dQ.async.primary.vec","dQ.async.metastasis.vec", "Kronicker.Delta")) %:%
-  #     foreach(j = 1:n, .combine = "c", .export = c("dQ.vec", "dQ.sync.vec", "dQ.async.primary.vec","dQ.async.metastasis.vec", "Kronicker.Delta")) %dopar% {
-  #       t(q) %*% dQ.vec(Theta, pTh,i , j)
-  #     }
-  # end.time <- Sys.time()
-  # time.taken2 <- round(difftime(end.time, start.time, units = "secs"), digits = 2)
-
-  is <-rep(0, n^2); js <- rep(0, n^2)
-  for(i_prime in 1:n^2) {
-    if (i_prime %% n == 0) {
-      i = i_prime %/% n
-    } else {
-      i = i_prime %/% n + 1
+  # Maybe think about a new algorithm 
+  for(i in 1:n){ #should be parallelized with something other than MPI lol
+    for(j in 1:n) {
+      G[i, j] <- t(q) %*% dQ.vec(Theta, pTh,i , j)
     }
-    j = i_prime - (i-1) * n
-    is[i_prime] <- i
-    js[i_prime] <- j
   }
-
-  # flatted foreach loop
-  G <- foreach(i_prime = 1:n^2, .combine = "c") %dopar% {
-    i <- is[i_prime]
-    j <- js[i_prime]
-    t(q) %*% dQ.vec(Theta, pTh, i, j)
-  }
-  G <- matrix(G, byrow = T, ncol = n, nrow = n)
+  
   return(G)
 }
 

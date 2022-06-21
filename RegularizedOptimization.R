@@ -1,3 +1,4 @@
+
 #Smooth approximation of the L1 penalty on Theta.
 #(to be replaced with OWL-QN)
 L1 <- function(Theta, eps=1e-05){
@@ -41,7 +42,7 @@ Learn.MHN <- function(pD, init=NULL, lambda=0 ,maxit=5000, trace=0, reltol=1e-07
     init <- Learn.Indep(pD)
   } 
   
-  opt <- optim(as.vector(init), fn=Score.Reg, gr=Grad.Reg, pD, lambda, method="BFGS",
+  opt <- optim(init, fn=Score.Reg, gr=Grad.Reg, pD, lambda, method="BFGS", 
                control=list(fnscale=-1,trace=trace,maxit=maxit,reltol=reltol))
   
   Theta <- matrix(opt$par,nrow=n,ncol=n)
