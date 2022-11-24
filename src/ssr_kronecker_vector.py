@@ -9,7 +9,7 @@ def Q_i_sync_x(log_theta: np.array, i: int, x: np.array, state: np.array):
 
     for j in range(n):
 
-        mut = state[2 * j: 2 * j + 1]
+        mut = state[2 * j: 2 * j + 2]
         if mut.sum() == 0:
             if i == j:
                 y *= -np.exp(log_theta[i, i])
@@ -43,7 +43,7 @@ def Q_i_async_prim_x(log_theta: np.array, i: int, x: np.array, state: np.array) 
 
     for j in range(n):
 
-        mut = state[2 * j: 2 * j + 1]
+        mut = state[2 * j: 2 * j + 2]
         if mut.sum() == 0:
             if i == j:
                 y *= -np.exp(log_theta[i, i])
@@ -88,7 +88,7 @@ def Q_i_async_met_x(log_theta: np.array, i: int, x: np.array, state: np.array) -
 
     for j in range(n):
 
-        mut = state[2 * j: 2 * j + 1]
+        mut = state[2 * j: 2 * j + 2]
         if mut.sum() == 0:
             if i == j:
                 y *= -np.exp(log_theta[i, i])
@@ -132,7 +132,7 @@ def Q_met_x(log_theta: np.array, x: np.array, state: np.array) -> np.array:
 
     for j in range(n):
 
-        mut = state[2 * j: 2 * j + 1]
+        mut = state[2 * j: 2 * j + 2]
         if mut.sum() == 2:
             y = y.reshape((-1, 4), order="C")
             y[:, 1:2] = 0
