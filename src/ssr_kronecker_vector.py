@@ -1,11 +1,9 @@
 import numpy as np
 
 
-def Q_i_sync_x(log_theta: np.array, i: int, x: np.array, state: np.array):
+def kronvec_sync(log_theta: np.array, p: np.array, i: int, n: int, state: np.array):
 
-    n = log_theta.shape[0]
-
-    y = x.copy()
+    y = p.copy()
 
     for j in range(n):
 
@@ -35,11 +33,9 @@ def Q_i_sync_x(log_theta: np.array, i: int, x: np.array, state: np.array):
     return y
 
 
-def Q_i_async_prim_x(log_theta: np.array, i: int, x: np.array, state: np.array) -> np.array:
+def kronvec_prim(log_theta: np.array, p: np.array, i: int, n: int, state: np.array) -> np.array:
 
-    n = log_theta.shape[0]
-
-    y = x.copy()
+    y = p.copy()
 
     for j in range(n):
 
@@ -51,10 +47,10 @@ def Q_i_async_prim_x(log_theta: np.array, i: int, x: np.array, state: np.array) 
             y = y.reshape((-1, 4), order="C")
             if i == j:
                 theta = np.exp(log_theta[i, i])
-                y[:, 0:1] = theta * y[:, 0]
+                y[:, [0, 1]] = theta * y[:, 0]
                 y[:, 0] *= -1
-                y[:, 2:3] = theta * y[:, 2]
-                y[:, 0] *= -1
+                y[:, [2, 3]] = theta * y[:, 2]
+                y[:, 2] *= -1
             else:
                 theta = np.exp(log_theta[i, j])
                 y[:, 1] *= theta
@@ -80,11 +76,9 @@ def Q_i_async_prim_x(log_theta: np.array, i: int, x: np.array, state: np.array) 
     return y
 
 
-def Q_i_async_met_x(log_theta: np.array, i: int, x: np.array, state: np.array) -> np.array:
+def kronvec_met(log_theta: np.array, p: np.array, i: int, n: int, state: np.array) -> np.array:
 
-    n = log_theta.shape[0]
-
-    y = x.copy()
+    y = p.copy()
 
     for j in range(n):
 
@@ -98,10 +92,10 @@ def Q_i_async_met_x(log_theta: np.array, i: int, x: np.array, state: np.array) -
                 theta = np.exp(log_theta[i, i])
                 y[:, 0] *= -theta
                 y[:, 1] *= -theta
-                y[:,2:3] = -1 * y[:,0:1] 
+                y[:, [2, 3]] = -1 * y[:, [0, 1]]
             else:
                 theta = np.exp(log_theta[i, j])
-                y[:, 2:3] *= theta
+                y[:, [2, 3]] *= theta
             y = y.flatten(order="F")
         else:
             y = y.reshape((-1, 2), order="C")
@@ -124,18 +118,16 @@ def Q_i_async_met_x(log_theta: np.array, i: int, x: np.array, state: np.array) -
     return y
 
 
-def Q_met_x(log_theta: np.array, x: np.array, state: np.array) -> np.array:
+def kronvec_seed(log_theta: np.array, p: np.array, n: int, state: np.array) -> np.array:
 
-    n = log_theta.shape[0]
-
-    y = x.copy()
+    y = p.copy()
 
     for j in range(n):
 
         mut = state[2 * j: 2 * j + 2]
         if mut.sum() == 2:
             y = y.reshape((-1, 4), order="C")
-            y[:, 1:2] = 0
+            y[:, [1, 2]] = 0
             y[:, 3] *= -np.exp(log_theta[-1, j])
             y = y.flatten(order="F")
         elif mut.sum() == 1:
@@ -144,9 +136,7 @@ def Q_met_x(log_theta: np.array, x: np.array, state: np.array) -> np.array:
             y = y.flatten(order="F")
     y = y.reshape(-1, 2)
     y[:, 0] *= -np.exp(log_theta[-1, -1])
-    y[:, 1] = -1 * y[:, 0]
+    y[:, 1] = -y[:, 0]
     y = y.flatten(order="F")
 
     return y
-
-    
