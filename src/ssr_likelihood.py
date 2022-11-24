@@ -3,8 +3,21 @@ import numpy as np
 from ssr_kronecker_vector import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed
 
 
-def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array):
+def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array) -> np.array:
+    """This function computes x \partial Q y with \partial Q the Jacobian of Q w.r.t. all thetas
+    efficiently using the shuffle trick (sic!).
 
+    Args:
+        log_theta (np.array): Logarithmic theta values of the MHN 
+        x (np.array): x vector to multiply with from the left. Length must equal the number of
+        nonzero entries in the state vector.
+        y (np.array): y vector to multiply with from the right. Length must equal the number of
+        nonzero entries in the state vector.
+        state (np.array): Binary state vector.
+
+    Returns:
+        np.array: _description_
+    """
     n = log_theta.shape[0]
 
     z = np.zeros(shape=(2*n + 1, 2*n + 1))
