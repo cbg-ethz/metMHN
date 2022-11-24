@@ -82,7 +82,7 @@ def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.a
         if sum(current) == 2:
             z_seed = z_seed.reshape((-1, 4), order="C")
 
-            z[i, j] = sum(z_seed[:, 3])
+            z[-1, j] = sum(z_seed[:, 3])
 
             z_seed = z_seed.flatten(order="F")
 
