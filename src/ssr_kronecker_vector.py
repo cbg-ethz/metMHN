@@ -9,11 +9,12 @@ def kronvec_sync(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
         log_theta (np.array): Log values of the theta matrix
         p (np.array): Vector to multiply with from the right. Length must equal the number of
         nonzero entries in the state vector.
+        i (int): Index of the summand.
         n (int): Total number of events in the MHN.
         state (np.array): Binary state vector, representing the current sample's events.
 
     Returns:
-        np.array: _description_
+        np.array: Q_i p
     """
     y = p.copy()
 
@@ -46,7 +47,20 @@ def kronvec_sync(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
 
 
 def kronvec_prim(log_theta: np.array, p: np.array, i: int, n: int, state: np.array) -> np.array:
+    """This computes the restricted version of the product of the asynchronous primary tumour
+    part of the ith Q summand Q_i with a vector Q_i p.
 
+    Args:
+        log_theta (np.array): Log values of the theta matrix
+        p (np.array): Vector to multiply with from the right. Length must equal the number of
+        nonzero entries in the state vector.
+        i (int): Index of the summand.
+        n (int): Total number of events in the MHN.
+        state (np.array): Binary state vector, representing the current sample's events.
+
+    Returns:
+        np.array: Q_i p
+    """
     y = p.copy()
 
     for j in range(n):
@@ -89,7 +103,20 @@ def kronvec_prim(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
 
 
 def kronvec_met(log_theta: np.array, p: np.array, i: int, n: int, state: np.array) -> np.array:
+    """This computes the restricted version of the product of the asynchronous metastasis
+    part of the ith Q summand Q_i with a vector Q_i p.
 
+    Args:
+        log_theta (np.array): Log values of the theta matrix
+        p (np.array): Vector to multiply with from the right. Length must equal the number of
+        nonzero entries in the state vector.
+        i (int): Index of the summand.
+        n (int): Total number of events in the MHN.
+        state (np.array): Binary state vector, representing the current sample's events.
+
+    Returns:
+        np.array: Q_i p
+    """
     y = p.copy()
 
     for j in range(n):
@@ -131,7 +158,19 @@ def kronvec_met(log_theta: np.array, p: np.array, i: int, n: int, state: np.arra
 
 
 def kronvec_seed(log_theta: np.array, p: np.array, n: int, state: np.array) -> np.array:
+    """This computes the restricted version of the product of the seeding part of the ith
+    Q summand Q_i with a vector Q_i p.
 
+    Args:
+        log_theta (np.array): Log values of the theta matrix
+        p (np.array): Vector to multiply with from the right. Length must equal the number of
+        nonzero entries in the state vector.
+        n (int): Total number of events in the MHN.
+        state (np.array): Binary state vector, representing the current sample's events.
+
+    Returns:
+        np.array: Q_i p
+    """
     y = p.copy()
 
     for j in range(n):
