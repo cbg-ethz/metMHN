@@ -101,3 +101,5 @@ def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.a
 
         elif sum(current) == 1:
             z_seed = z_seed.reshape((-1, 2), order="C").flatten(order="F")
+
+    return z
