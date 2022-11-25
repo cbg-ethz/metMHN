@@ -13,10 +13,10 @@ def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.a
         nonzero entries in the state vector.
         y (np.array): y vector to multiply with from the right. Length must equal the number of
         nonzero entries in the state vector.
-        state (np.array): Binary state vector.
+        state (np.array): Binary state vector, representing the current sample's events.
 
     Returns:
-        np.array: _description_
+        np.array: x \partial_(\Theta_{ij}) Q y for i, j = 1, ..., n+1
     """
     n = log_theta.shape[0]
 

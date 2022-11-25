@@ -1,8 +1,20 @@
 import numpy as np
 
 
-def kronvec_sync(log_theta: np.array, p: np.array, i: int, n: int, state: np.array):
+def kronvec_sync(log_theta: np.array, p: np.array, i: int, n: int, state: np.array) -> np.array:
+    """This computes the restricted version of the product of the synchronized part of the ith Q summand
+    Q_i with a vector Q_i p.
 
+    Args:
+        log_theta (np.array): Log values of the theta matrix
+        p (np.array): Vector to multiply with from the right. Length must equal the number of
+        nonzero entries in the state vector.
+        n (int): Total number of events in the MHN.
+        state (np.array): Binary state vector, representing the current sample's events.
+
+    Returns:
+        np.array: _description_
+    """
     y = p.copy()
 
     for j in range(n):
