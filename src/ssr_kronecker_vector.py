@@ -21,16 +21,16 @@ def kronvec_sync(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
     for j in range(n):
 
         mut = state[2 * j: 2 * j + 2]
-        if mut.sum() == 0:
+        if mut.sum() == 0: # neither prim nor met
             if i == j:
                 y *= -np.exp(log_theta[i, i])
-        elif mut.sum() == 1:
+        elif mut.sum() == 1: # prim xor met
             y = y.reshape((-1, 2), order="C")
             y[:, 1] = 0
             if i == j:
                 y[:, 0] *= -np.exp(log_theta[i, i])
             y = y.flatten(order="F")
-        else:
+        else: # both prim and met
             y = y.reshape((-1, 4), order="C")
             y[:, [1, 2]] = 0
             if i == j:
@@ -73,10 +73,10 @@ def kronvec_prim(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
             y = y.reshape((-1, 4), order="C")
             if i == j:
                 theta = np.exp(log_theta[i, i])
-                y[:, [0, 1]] = theta * y[:, 0]
-                y[:, 0] *= -1
-                y[:, [2, 3]] = theta * y[:, 2]
-                y[:, 2] *= -1
+                y[:, 0] *= -theta
+                y[:, 1] = - y[:, 0]
+                y[:, 2] *= -theta
+                y[:, 3] = -y[:, 2]
             else:
                 theta = np.exp(log_theta[i, j])
                 y[:, 1] *= theta
@@ -93,7 +93,7 @@ def kronvec_prim(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
                     y[:, 1] *= -theta
             else:
                 if mut[0] == 1:
-                    y[:, 1] *= np.exp(log_theta[i, j])
+                    y[:, 1] *= np.exp(log_theta[i, i])
             y = y.flatten(order="F")
     y = y.reshape(-1, 2)
     y[:, 0] = 0
@@ -191,3 +191,33 @@ def kronvec_seed(log_theta: np.array, p: np.array, n: int, state: np.array) -> n
     y = y.flatten(order="F")
 
     return y
+
+
+def kronvec(log_theta: np.array, p: np.array, n: int, state: np.array) -> np.array:
+    y = np.zeros(shape=2**sum(state))
+    for i in range(n):
+        y += kronvec_sync(log_theta=log_theta, p=p, i=i, n=n, state=state)
+        y += kronvec_prim(log_theta=log_theta, p=p, i=i, n=n, state=state)
+        y += kronvec_met(log_theta=log_theta, p=p, i=i, n=n, state=state)
+    y += kronvec_seed(log_theta=log_theta, p=p, n=n, state=state)
+
+    return y
+
+
+if __name__ == "__main__":
+    n=3
+    npone = n + 1
+    sparsity = 0.5
+    theta = np.zeros((npone, npone))
+    theta += np.diag(np.random.normal(size=npone))
+    index = np.argwhere(theta == 0)[
+        np.random.choice(npone**2-npone, size=int((npone**2-npone)*(1-sparsity)), replace=True)
+    ]
+    theta[index[:,0], index[:,1]] = np.random.normal(size=int((npone**2-npone)*(1-sparsity)))
+
+    state = np.array([0, 0, 1, 1, 0, 0, 1])
+
+    i=0
+    p=np.zeros(2**sum(state))
+    p[1] = 1
+    kronvec_sync(log_theta=theta, p=p, n=n, i=i, state=state)
