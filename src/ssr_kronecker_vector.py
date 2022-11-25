@@ -32,7 +32,7 @@ def kronvec_sync(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
             y = y.flatten(order="F")
         else:
             y = y.reshape((-1, 4), order="C")
-            y[:, 2:3] = 0
+            y[:, [1, 2]] = 0
             if i == j:
                 y[:, 0] *= -np.exp(log_theta[i, i])
                 y[:, 3] = -1 * y[:, 0]
