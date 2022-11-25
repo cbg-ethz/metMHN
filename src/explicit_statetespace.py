@@ -180,7 +180,7 @@ def seeding_ssr_q(dpoint, theta, n):
     for j in range(n):
         if mut[j] == 3:
             Q = np.kron(np.diag([1, 0, 0, theta[n, j]]), Q)
-        elif mut[j] < 3:
+        elif mut[j] > 0:
             Q = np.kron(diag10, Q)
     if dpoint[2 * n] == 1:
         Q = np.kron(dia2(theta[n, n]), Q)
