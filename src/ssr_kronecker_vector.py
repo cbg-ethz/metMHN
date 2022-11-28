@@ -254,9 +254,9 @@ def kronvec(log_theta: np.array, p: np.array, n: int, state: np.array, diag: boo
     """
     y = np.zeros(shape=2**sum(state))
     for i in range(n):
-        y += kronvec_sync(log_theta=log_theta, p=p, i=i, n=n, state=state)
-        y += kronvec_prim(log_theta=log_theta, p=p, i=i, n=n, state=state)
-        y += kronvec_met(log_theta=log_theta, p=p, i=i, n=n, state=state)
-    y += kronvec_seed(log_theta=log_theta, p=p, n=n, state=state)
+        y += kronvec_sync(log_theta=log_theta, p=p, i=i, n=n, state=state, diag=diag)
+        y += kronvec_prim(log_theta=log_theta, p=p, i=i, n=n, state=state, diag=diag)
+        y += kronvec_met(log_theta=log_theta, p=p, i=i, n=n, state=state, diag=diag)
+    y += kronvec_seed(log_theta=log_theta, p=p, n=n, state=state, diag=diag)
 
     return y
