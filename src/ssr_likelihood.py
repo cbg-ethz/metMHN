@@ -33,7 +33,7 @@ def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.a
         z[i, -1] = sum(z_met)
 
         for j in range(n):
-            current = state[j: j + 2]
+            current = state[2*j: 2*j + 2]
 
             if sum(current) == 0:
                 if i == j:
@@ -43,7 +43,7 @@ def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.a
                         sum(z_met)
                     )
 
-            elif sum(current) == 3:
+            elif sum(current) == 2:
                 z_sync = z_sync.reshape((-1, 4), order="C")
                 z_prim = z_prim.reshape((-1, 4), order="C")
                 z_met = z_met.reshape((-1, 4), order="C")
@@ -71,9 +71,9 @@ def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.a
                 z_met = z_met.reshape((-1, 2), order="C")
 
                 if i != j:
-                    if current[1] == 1:
+                    if current[1] == 1:  # met mutated
                         z[i, j] = sum(z_met[:, 1])
-                    else:
+                    else:  # prim mutated
                         z[i, j] = sum(z_prim[:, 1])
                 else:
                     z[i, j] = sum(
@@ -90,7 +90,7 @@ def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.a
     z[-1, -1] = sum(z_seed)
 
     for j in range(n):
-        current = state[j: j + 2]
+        current = state[2*j: 2*j + 2]
 
         if sum(current) == 2:
             z_seed = z_seed.reshape((-1, 4), order="C")
