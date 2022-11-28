@@ -93,7 +93,7 @@ def kronvec_prim(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
                     y[:, 1] *= -theta
             else:
                 if mut[0] == 1:
-                    y[:, 1] *= np.exp(log_theta[i, i])
+                    y[:, 1] *= np.exp(log_theta[i, j])
             y = y.flatten(order="F")
     y = y.reshape(-1, 2)
     y[:, 0] = 0
