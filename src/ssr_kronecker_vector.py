@@ -39,9 +39,10 @@ def kronvec_sync(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
             else:
                 y[:, 3] *= np.exp(log_theta[i, j])
             y = y.flatten(order="F")
-    y = y.reshape((-1, 2), order="C")
-    y[:, 1] = 0
-    y = y.flatten(order="F")
+    if state[-1] == 1:
+        y = y.reshape((-1, 2), order="C")
+        y[:, 1] = 0
+        y = y.flatten(order="F")
 
     return y
 
@@ -61,6 +62,8 @@ def kronvec_prim(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
     Returns:
         np.array: Q_i p
     """
+    if state[-1] == 0:
+        return np.zeros(p.size)
     y = p.copy()
 
     for j in range(n):
@@ -117,6 +120,9 @@ def kronvec_met(log_theta: np.array, p: np.array, i: int, n: int, state: np.arra
     Returns:
         np.array: Q_i p
     """
+    if state[-1] == 0:
+        return np.zeros(p.size)
+
     y = p.copy()
 
     for j in range(n):
@@ -185,10 +191,13 @@ def kronvec_seed(log_theta: np.array, p: np.array, n: int, state: np.array) -> n
             y = y.reshape((-1, 2), order="C")
             y[:, 1] = 0
             y = y.flatten(order="F")
-    y = y.reshape((-1, 2), order="C")
-    y[:, 0] *= -np.exp(log_theta[-1, -1])
-    y[:, 1] = -y[:, 0]
-    y = y.flatten(order="F")
+    if state[-1] == 1:
+        y = y.reshape((-1, 2), order="C")
+        y[:, 0] *= -np.exp(log_theta[-1, -1])
+        y[:, 1] = -y[:, 0]
+        y = y.flatten(order="F")
+    else:
+        y *= -np.exp(log_theta[-1, -1])
 
     return y
 

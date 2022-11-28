@@ -108,13 +108,16 @@ def sync_ssr_q(mut, theta, i, n):
             Q = np.kron(np.diag([1, 0, 0, theta[i, j]]), Q)
         elif mut[j] == 1 or mut[j] == 2:
             Q = np.kron(diag10, Q)
-    Q = np.kron(diag10, Q)
+    if mut[-1] == 1:
+        Q = np.kron(diag10, Q)
     return Q
 
 # Builds Q_i for the metastatic part of Q after seeding
 
 
 def met_ssr_q(mut, theta, i, n):
+    if mut[-1] == 0:
+        return np.zeros((2 ** (np.count_nonzero(mut > 0))) * (2 ** np.count_nonzero(mut == 3)))
     metL = np.diag([-1, -1, 0, 0])
     metL[2, 0] = 1
     metL[3, 1] = 1
@@ -155,6 +158,8 @@ def met_ssr_q(mut, theta, i, n):
 
 
 def prim_ssr_q(mut, theta, i, n):
+    if mut[-1] == 0:
+        return np.zeros((2 ** (np.count_nonzero(mut > 0))) * (2 ** np.count_nonzero(mut == 3)))
     primL = np.diag([-1, 0, -1, 0])
     primL[1, 0] = 1
     primL[3, 2] = 1
@@ -191,8 +196,7 @@ def prim_ssr_q(mut, theta, i, n):
 # Adds the entries of the seeding event
 
 
-def seeding_ssr_q(dpoint, theta, n):
-    mut = [dpoint[j] + 2 * dpoint[j + 1] for j in range(0, 2 * n, 2)]
+def seeding_ssr_q(mut, theta, n):
     diag10 = np.diag([1, 0])
     Q = np.diag([1])
     for j in range(n):
@@ -200,7 +204,7 @@ def seeding_ssr_q(dpoint, theta, n):
             Q = np.kron(np.diag([1, 0, 0, theta[n, j]]), Q)
         elif mut[j] > 0:
             Q = np.kron(diag10, Q)
-    if dpoint[2 * n] == 1:
+    if mut[-1] == 1:
         Q = np.kron(dia2(theta[n, n]), Q)
     else:
         Q = Q * (-theta[n, n])
@@ -210,8 +214,10 @@ def seeding_ssr_q(dpoint, theta, n):
 def ssr_build_q(dpoint, theta):
     n = theta.shape[0] - 1
     mut = [dpoint[j] + 2 * dpoint[j + 1] for j in range(0, 2 * n, 2)]
+    mut.append(dpoint[-1])
+    mut = np.array(mut)
     Q = np.zeros(2 ** (sum(dpoint)))
     for i in range(n):
         Q = Q + sync_ssr_q(mut, theta, i, n) + met_ssr_q(mut,
                                                          theta, i, n) + prim_ssr_q(mut, theta, i, n)
-    return Q + seeding_ssr_q(dpoint, theta, n)
+    return Q + seeding_ssr_q(mut, theta, n)
