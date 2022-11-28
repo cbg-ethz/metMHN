@@ -21,16 +21,16 @@ def kronvec_sync(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
     for j in range(n):
 
         mut = state[2 * j: 2 * j + 2]
-        if mut.sum() == 0: # neither prim nor met
+        if mut.sum() == 0:  # neither prim nor met
             if i == j:
                 y *= -np.exp(log_theta[i, i])
-        elif mut.sum() == 1: # prim xor met
+        elif mut.sum() == 1:  # prim xor met
             y = y.reshape((-1, 2), order="C")
             y[:, 1] = 0
             if i == j:
                 y[:, 0] *= -np.exp(log_theta[i, i])
             y = y.flatten(order="F")
-        else: # both prim and met
+        else:  # both prim and met
             y = y.reshape((-1, 4), order="C")
             y[:, [1, 2]] = 0
             if i == j:
@@ -202,22 +202,3 @@ def kronvec(log_theta: np.array, p: np.array, n: int, state: np.array) -> np.arr
     y += kronvec_seed(log_theta=log_theta, p=p, n=n, state=state)
 
     return y
-
-
-if __name__ == "__main__":
-    n=3
-    npone = n + 1
-    sparsity = 0.5
-    theta = np.zeros((npone, npone))
-    theta += np.diag(np.random.normal(size=npone))
-    index = np.argwhere(theta == 0)[
-        np.random.choice(npone**2-npone, size=int((npone**2-npone)*(1-sparsity)), replace=True)
-    ]
-    theta[index[:,0], index[:,1]] = np.random.normal(size=int((npone**2-npone)*(1-sparsity)))
-
-    state = np.array([0, 0, 1, 1, 0, 0, 1])
-
-    i=0
-    p=np.zeros(2**sum(state))
-    p[1] = 1
-    kronvec_sync(log_theta=theta, p=p, n=n, i=i, state=state)
