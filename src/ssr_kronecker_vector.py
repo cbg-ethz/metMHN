@@ -179,13 +179,13 @@ def kronvec_seed(log_theta: np.array, p: np.array, n: int, state: np.array) -> n
         if mut.sum() == 2:
             y = y.reshape((-1, 4), order="C")
             y[:, [1, 2]] = 0
-            y[:, 3] *= -np.exp(log_theta[-1, j])
+            y[:, 3] *= np.exp(log_theta[-1, j])
             y = y.flatten(order="F")
         elif mut.sum() == 1:
             y = y.reshape((-1, 2), order="C")
             y[:, 1] = 0
             y = y.flatten(order="F")
-    y = y.reshape(-1, 2)
+    y = y.reshape((-1, 2), order="C")
     y[:, 0] *= -np.exp(log_theta[-1, -1])
     y[:, 1] = -y[:, 0]
     y = y.flatten(order="F")
