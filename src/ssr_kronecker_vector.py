@@ -442,7 +442,6 @@ def kron_seed_diag(log_theta: np.array, n: int, state: np.array) -> np.array:
 
     Args:
         log_theta (np.array): Log values of the theta matrix
-        nonzero entries in the state vector.
         n (int): Total number of events in the MHN.
         state (np.array): Binary state vector, representing the current sample's events.
 
