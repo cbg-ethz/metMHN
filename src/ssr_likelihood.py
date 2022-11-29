@@ -1,6 +1,6 @@
 import numpy as np
 
-from ssr_kronecker_vector import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed
+from ssr_kronecker_vector import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed, kronvec, kron_diag
 
 
 def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array) -> np.array:
@@ -103,3 +103,30 @@ def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.a
             z_seed = z_seed.reshape((-1, 2), order="C").flatten(order="F")
 
     return z
+
+
+def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array) -> np.array:
+    """This computes R_i^{-1} x = (\lambda_i I - Q)^{-1} x
+
+    Args:
+        log_theta (np.array): Log values of the theta matrix
+        x (np.array): Vector to multiply with from the right. Length must equal the number of
+        nonzero entries in the state vector.
+        lam (float): Value of \lambda_i
+        state (np.array): Binary state vector, representing the current sample's events.
+
+    Returns:
+        np.array: R_i^{-1} x
+    """
+    n_ss = sum(state)
+    n = log_theta.shape[0]
+
+    y = x.copy()
+    lidg = 1 / (kron_diag(log_theta=log_theta, n=n, state=state) - lam)
+
+    for _ in range(n_ss):
+        y = lidg * kronvec(log_theta=log_theta, p=y, n=n, state=state, diag=False) + x
+    
+    return lidg * y
+
+    
