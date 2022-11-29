@@ -1,62 +1,85 @@
 import numpy as np
-import pandas as pd
-from itertools import compress
+
 
 # Some helper functions
-
-
-def dia2(tij):
+def dia2(tij: float) -> np.array:
+    """
+    Args:
+        tij (float): ij-th entry of theta
+    Returns:
+         np.array: non diagonal kronecker factor
+    """
     ret = np.diag([-tij, 0])
     ret[1, 0] = tij
     return ret
 
-# List all possible states in lexicographic order
 
-
-def state_space(n):
-    return [f'{i:05b}'[::-1] for i in range(2 ** n)]
-
-# List all possible states, that datapoint could have visited
-
-
-def trunk_states(dpoint):
-    n = len(dpoint)
-    inds = np.ones(1)
-    for i in range(n):
-        if dpoint[i] == 1:
-            inds = np.kron(np.array([1, 1]), inds)
-        else:
-            inds = np.kron(np.array([1, 0]), inds)
-
-    return [state for state in compress(state_space(n), inds)]
-
-
-# Methods for Building the full Q explicitly
-
-def multi_kron_prods(diag_fac, off_diag_fac, last, theta, i, n):
+def multi_kron_prods(diag_fac, off_diag_fac: np.array,
+                     last: np.array, exp_theta: np.array, i: int, n: int) -> np.array:
+    """
+    Calculates a series of Kronecker products
+    Args:
+        diag_fac: function, that builds diagonal Kroneckerfactors
+        off_diag_fac (np.array): Non diagonal Kroneckerfactor
+        last (np.array): Last kronecker factor to be multiplied
+        exp_theta (np.array): Exponential theta matrix
+        i (int): index of the current summand
+        n (int): Total number of mutations
+    Returns:
+         np.array: Q explicit matrix
+    """
     Q = np.eye(1)
     for j in range(i):
-        Q = np.kron(diag_fac(theta[i, j]), Q)
+        Q = np.kron(diag_fac(exp_theta[i, j]), Q)
     Q = np.kron(off_diag_fac, Q)
     for j in range(i+1, n):
-        Q = np.kron(diag_fac(theta[i, j]), Q)
+        Q = np.kron(diag_fac(exp_theta[i, j]), Q)
     return np.kron(last, Q)
 
 
-def diag_sync(tij):
+def diag_sync(tij: float) -> np.array:
+    """
+    Explicitely builds diagonal Kronecker factors for Q_sync
+    Args:
+        tij (float): ij-th entry of theta
+    Returns:
+        np.array, 4x4 dimensional diagonal Kroneckerfactor
+    """
     return np.diag([1, 0, 0, tij])
 
 
-def diag_met(tij):
+def diag_met(tij: float) -> np.array:
+    """
+    Explicitely builds diagonal Kronecker factors for Q_met
+    Args:
+        tij (float): ij-th entry of theta
+    Returns:
+        np.array, 4x4 dimensional diagonal Kroneckerfactor
+    """
     return np.diag([1, 1, tij, tij])
 
 
-def diag_prim(tij):
+def diag_prim(tij: float) -> np.array:
+    """
+    Explicitly builds diagonal Kronecker factors for Q_prim
+    Args:
+        tij (float): ij-th entry of theta
+    Returns:
+        np.array, 4x4 dimensional diagonal Kroneckerfactor
+    """
     return np.diag([1, tij, 1, tij])
 
 
-def build_q(theta):
-    n = theta.shape[0]-1
+def build_q(log_theta: np.array) -> np.array:
+    """
+    Explicitly builds Q matrix
+    Args:
+        log_theta (np.array): logarithmic theta matrix
+    Returns:
+        np.array: Q, explicit Q_matrix
+    """
+    n = log_theta.shape[0]-1
+    theta = np.exp(log_theta)
     Q = np.zeros([2**(2*n+1), 2**(2*n+1)])
     for i in range(n):
         sync_off = np.diag([-theta[i, i], 0., 0., 0.])
@@ -79,12 +102,20 @@ def build_q(theta):
     Q = Q + multi_kron_prods(diag_sync, off_seed, 1.0*np.eye(1), theta, n, n)
     return Q
 
+
 # Methods for explicit calculation of the SSR version of Q
-
-# Builds Q_i for the synchronized part of Q
-
-
-def sync_ssr_q(mut, theta, i, n):
+def sync_ssr_q(mut: list, theta: np.array, i: int, n: int) -> np.array:
+    """
+    Builds explicit truncated Q_matrix for synchroneous transitions
+    Args:
+        mut (list): list  of length n, entry at index k: 0 (no mutation k), 1 (k only present in primary t.),
+                    2 (k only present in met), 3 (k present in both)
+        theta (np.array): Logarithmic theta matrix
+        i (int): Index of current summand
+        n (int): Total number of mutations
+    Returns:
+         np.array: Q_sync_ssr
+    """
     syncL = np.diag([-1, 0, 0, 0])
     syncL[3, 0] = 1
     diag10 = np.diag([1, 0])
@@ -112,10 +143,19 @@ def sync_ssr_q(mut, theta, i, n):
         Q = np.kron(diag10, Q)
     return Q
 
-# Builds Q_i for the metastatic part of Q after seeding
 
-
-def met_ssr_q(mut, theta, i, n):
+def met_ssr_q(mut: list, theta: np.array, i: int, n: int) -> np.array:
+    """
+    Builds explicit truncated Q_matrix for asynchroneous metastasis transitions
+    Args:
+        mut (list): list  of length n, entry at index k: 0 (no mutation k), 1 (k only present in primary t.),
+                    2 (k only present in met), 3 (k present in both)
+        theta (np.array): Logarithmic theta matrix
+        i (int): Index of current summand
+        n (int): Total number of mutations
+    Returns:
+         np.array: Q_met_ssr
+    """
     if mut[-1] == 0:
         return np.zeros((2 ** (np.count_nonzero(mut > 0))) * (2 ** np.count_nonzero(mut == 3)))
     metL = np.diag([-1, -1, 0, 0])
@@ -157,7 +197,18 @@ def met_ssr_q(mut, theta, i, n):
 # Builds Q_i for the primary part of Q after seeding
 
 
-def prim_ssr_q(mut, theta, i, n):
+def prim_ssr_q(mut: list, theta: np.array, i: int, n: int) -> np.array:
+    """
+    Builds explicit truncated Q_matrix for asynchroneous primary transitions
+    Args:
+        mut (list): list  of length n, entry at index k: 0 (no mutation k), 1 (k only present in primary t.),
+                    2 (k only present in met), 3 (k present in both)
+        theta (np.array): Logarithmic theta matrix
+        i (int): Index of current summand
+        n (int): Total number of mutations
+    Returns:
+         np.array: Q_prim_ssr
+    """
     if mut[-1] == 0:
         return np.zeros((2 ** (np.count_nonzero(mut > 0))) * (2 ** np.count_nonzero(mut == 3)))
     primL = np.diag([-1, 0, -1, 0])
@@ -196,7 +247,17 @@ def prim_ssr_q(mut, theta, i, n):
 # Adds the entries of the seeding event
 
 
-def seeding_ssr_q(mut, theta, n):
+def seeding_ssr_q(mut: list, theta: np.array, n: int) -> np.array:
+    """
+    Builds explicit truncated Q_matrix for synchroneous transitions
+    Args:
+        mut (list): list  of length n, entry at index k: 0 (no mutation k), 1 (k only present in primary t.),
+                    2 (k only present in met), 3 (k present in both)
+        theta (np.array): Logarithmic theta matrix
+        n (int): Total number of mutations
+    Returns:
+         np.array: Q_sync_ssr
+    """
     diag10 = np.diag([1, 0])
     Q = np.diag([1])
     for j in range(n):
@@ -211,13 +272,22 @@ def seeding_ssr_q(mut, theta, n):
     return Q
 
 
-def ssr_build_q(dpoint, theta):
-    n = theta.shape[0] - 1
+def ssr_build_q(dpoint: list, log_theta: np.array) -> np.array:
+    """
+    Builds explicit truncated Q_matrix for synchroneous transitions
+    Args:
+        dpoint (list): Bitstring, genotype(s) of tumors(s) of a single patient
+        log_theta (np.array): Logarithmic theta matrix
+    Returns:
+         np.array: Q_sync_ssr
+    """
+    n = log_theta.shape[0] - 1
+    theta = np.exp(log_theta)
     mut = [dpoint[j] + 2 * dpoint[j + 1] for j in range(0, 2 * n, 2)]
     mut.append(dpoint[-1])
-    mut = np.array(mut)
+    #mut = np.array(mut)
     Q = np.zeros(2 ** (sum(dpoint)))
     for i in range(n):
-        Q = Q + sync_ssr_q(mut, theta, i, n) + met_ssr_q(mut,
-                                                         theta, i, n) + prim_ssr_q(mut, theta, i, n)
+        Q = Q + sync_ssr_q(mut, theta, i, n) + met_ssr_q(mut, theta, i, n) \
+            + prim_ssr_q(mut, theta, i, n)
     return Q + seeding_ssr_q(mut, theta, n)
