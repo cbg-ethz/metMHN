@@ -345,7 +345,7 @@ Jacobi <- function(Theta, b, transp=F, x=NULL){
   if(is.null(x)) x <- rep(1,2^(2 * n - 1))/(2^(2 * n - 1))
   
   dg <- -Q.Diag.Metastasis(Theta) + 1
-  
+  print(dg)
   criterion <- 2 * n
   for(i in 1:(criterion)){
     x <- b + Q.vec(Theta, x, diag=F, transp)
@@ -356,13 +356,13 @@ Jacobi <- function(Theta, b, transp=F, x=NULL){
 }
 
 # test the new Jacobi function
-# n <- 3
-# Theta <- log(matrix(1:n^2, byrow = T, ncol = n))
-# p0 <- c(1, rep(0, 2^(2*n - 1) - 1))
-# x <- Jacobi(Theta, p0, F)
-# Q <- Build.Q_Metastasis(Theta)
-# I <- diag(2^{2 * n - 1})
-# p02 <- (-Q + I) %*% x
+n <- 3
+Theta <- log(matrix(1:n^2, byrow = T, ncol = n))
+p0 <- c(1, rep(0, 2^(2*n - 1) - 1))
+x <- Jacobi(Theta, p0, F)
+Q <- Build.Q_Metastasis(Theta)
+I <- diag(2^{2 * n - 1})
+p02 <- (-Q + I) %*% x
 
 
 #Generate the probability distribution from a model Theta.
