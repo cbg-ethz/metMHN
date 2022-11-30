@@ -129,4 +129,8 @@ def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array) 
     
     return y
 
+
+def gradient(log_theta: np.array, lam1: float, lam2: float, state: np.array) -> np.array:
     
+    
+    return 0 
