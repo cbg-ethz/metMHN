@@ -1,6 +1,6 @@
 import numpy as np
 
-from ssr_kronecker_vector import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed
+from ssr_kronecker_vector import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed, kronvec, kron_diag
 
 
 def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array) -> np.array:
@@ -33,7 +33,7 @@ def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.a
         z[i, -1] = sum(z_met)
 
         for j in range(n):
-            current = state[j: j + 2]
+            current = state[2*j: 2*j + 2]
 
             if sum(current) == 0:
                 if i == j:
@@ -43,7 +43,7 @@ def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.a
                         sum(z_met)
                     )
 
-            elif sum(current) == 3:
+            elif sum(current) == 2:
                 z_sync = z_sync.reshape((-1, 4), order="C")
                 z_prim = z_prim.reshape((-1, 4), order="C")
                 z_met = z_met.reshape((-1, 4), order="C")
@@ -71,9 +71,9 @@ def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.a
                 z_met = z_met.reshape((-1, 2), order="C")
 
                 if i != j:
-                    if current[1] == 1:
+                    if current[1] == 1:  # met mutated
                         z[i, j] = sum(z_met[:, 1])
-                    else:
+                    else:  # prim mutated
                         z[i, j] = sum(z_prim[:, 1])
                 else:
                     z[i, j] = sum(
@@ -90,7 +90,7 @@ def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.a
     z[-1, -1] = sum(z_seed)
 
     for j in range(n):
-        current = state[j: j + 2]
+        current = state[2*j: 2*j + 2]
 
         if sum(current) == 2:
             z_seed = z_seed.reshape((-1, 4), order="C")
@@ -103,3 +103,30 @@ def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.a
             z_seed = z_seed.reshape((-1, 2), order="C").flatten(order="F")
 
     return z
+
+
+def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array) -> np.array:
+    """This computes R_i^{-1} x = (\lambda_i I - Q)^{-1} x
+
+    Args:
+        log_theta (np.array): Log values of the theta matrix
+        x (np.array): Vector to multiply with from the right. Length must equal the number of
+        nonzero entries in the state vector.
+        lam (float): Value of \lambda_i
+        state (np.array): Binary state vector, representing the current sample's events.
+
+    Returns:
+        np.array: R_i^{-1} x
+    """
+    n_ss = sum(state)
+    n = log_theta.shape[0] - 1 
+
+    lidg = 1 / (kron_diag(log_theta=log_theta, n=n, state=state) - lam)
+    y = -lidg * x
+
+    for _ in range(n_ss + 1):
+        y = lidg * -kronvec(log_theta=log_theta, p=y, n=n, state=state, diag=False) -lidg * x
+    
+    return y
+
+    

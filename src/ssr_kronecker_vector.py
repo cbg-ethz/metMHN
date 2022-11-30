@@ -253,13 +253,247 @@ def kronvec(log_theta: np.array, p: np.array, n: int, state: np.array, diag: boo
         diag (bool, optional): Whether to use the diagonal of Q (and not set it to 0). Defaults to True.
 
     Returns:
-        np.array: _description_
+        np.array: Q p
     """
     y = np.zeros(shape=2**sum(state))
     for i in range(n):
-        y += kronvec_sync(log_theta=log_theta, p=p, i=i, n=n, state=state, diag=diag)
-        y += kronvec_prim(log_theta=log_theta, p=p, i=i, n=n, state=state, diag=diag)
-        y += kronvec_met(log_theta=log_theta, p=p, i=i, n=n, state=state, diag=diag)
+        y += kronvec_sync(log_theta=log_theta, p=p, i=i,
+                          n=n, state=state, diag=diag)
+        y += kronvec_prim(log_theta=log_theta, p=p, i=i,
+                          n=n, state=state, diag=diag)
+        y += kronvec_met(log_theta=log_theta, p=p, i=i,
+                         n=n, state=state, diag=diag)
     y += kronvec_seed(log_theta=log_theta, p=p, n=n, state=state, diag=diag)
+
+    return y
+
+
+def kron_sync_diag(log_theta: np.array, i: int, n: int, state: np.array) -> np.array:
+    """This computes the diagonal of the synchronized part of the ith Q summand Q_i.
+
+    Args:
+        log_theta (np.array): Log values of the theta matrix
+        nonzero entries in the state vector.
+        i (int): Index of the summand.
+        n (int): Total number of events in the MHN.
+        state (np.array): Binary state vector, representing the current sample's events.
+
+    Returns:
+        np.array: diag(Q_i_sync)
+    """
+    diag = np.ones(2 ** sum(state))
+
+    for j in range(n):
+
+        mut = state[2 * j: 2 * j + 2]
+
+        if i == j:
+            if sum(mut) == 0:
+                diag *= -np.exp(log_theta[i, i])
+            elif sum(mut) == 1:
+                diag = diag.reshape((-1, 2), order="C")
+                diag[:, 0] *= -np.exp(log_theta[i, i])
+                diag[:, 1] = 0
+                diag = diag.flatten(order="F")
+            else:
+                diag = diag.reshape((-1, 4), order="C")
+                diag[:, 0] *= -np.exp(log_theta[i, i])
+                diag[:, [1, 2, 3]] = 0
+                diag = diag.flatten(order="F")
+        else:
+            if sum(mut) == 1:
+                diag = diag.reshape((-1, 2), order="C")
+                diag[:, 1] = 0
+                diag = diag.flatten(order="F")
+            elif sum(mut) == 2:
+                diag = diag.reshape((-1, 4), order="C")
+                diag[:, [1, 2]] = 0
+                diag[:, 3] *= np.exp(log_theta[i, j])
+                diag = diag.flatten(order="F")
+    if state[-1] == 1:
+        diag = diag.reshape((-1, 2), order="C")
+        diag[:, 1] = 0
+        diag = diag.flatten(order="F")
+
+    return diag
+
+
+def kron_prim_diag(log_theta: np.array, i: int, n: int, state: np.array) -> np.array:
+    """This computes the diagonal of the asynchronous primary tumour part of the ith
+    Q summand Q_i.
+
+    Args:
+        log_theta (np.array): Log values of the theta matrix
+        nonzero entries in the state vector.
+        i (int): Index of the summand.
+        n (int): Total number of events in the MHN.
+        state (np.array): Binary state vector, representing the current sample's events.
+
+    Returns:
+        np.array: diag(Q_i_prim)
+    """
+
+    if state[-1] == 0:
+        return np.zeros(2 ** sum(state))
+
+    diag = np.ones(2 ** sum(state))
+
+    for j in range(n):
+
+        mut = state[2 * j: 2 * j + 2]
+
+        if i == j:
+            if sum(mut) == 0:
+                diag *= -np.exp(log_theta[i, i])
+            elif sum(mut) == 2:
+                diag = diag.reshape((-1, 4), order="C")
+                diag[:, [0, 2]] *= -np.exp(log_theta[i, i])
+                diag[:, [1, 3]] = 0
+                diag = diag.flatten(order="F")
+            elif mut[0] == 1:  # prim mutated
+                diag = diag.reshape((-1, 2), order="C")
+                diag[:, 0] *= -np.exp(log_theta[i, i])
+                diag[:, 1] = 0
+                diag = diag.flatten(order="F")
+            else:  # met mutated
+                diag = diag.reshape((-1, 2), order="C")
+                diag *= -np.exp(log_theta[i, i])
+                diag = diag.flatten(order="F")
+        else:
+            if sum(mut) == 1:
+                if mut[0] == 1:  # prim mutated
+                    diag = diag.reshape((-1, 2), order="C")
+                    diag[:, 1] *= np.exp(log_theta[i, j])
+                    diag = diag.flatten(order="F")
+                else:  # met mutated
+                    diag = diag.reshape((-1, 2), order="C").flatten(order="F")
+            elif sum(mut) == 2:
+                diag = diag.reshape((-1, 4), order="C")
+                diag[:, [1, 3]] *= np.exp(log_theta[i, j])
+                diag = diag.flatten(order="F")
+    diag = diag.reshape((-1, 2), order="C")
+    diag[:, 0] = 0
+    diag = diag.flatten(order="F")
+
+    return diag
+
+
+def kron_met_diag(log_theta: np.array, i: int, n: int, state: np.array) -> np.array:
+    """This computes the diagonal of the asynchronous metastasis part of the ith
+    Q summand Q_i.
+
+    Args:
+        log_theta (np.array): Log values of the theta matrix
+        nonzero entries in the state vector.
+        i (int): Index of the summand.
+        n (int): Total number of events in the MHN.
+        state (np.array): Binary state vector, representing the current sample's events.
+
+    Returns:
+        np.array: diag(Q_i_met)
+    """
+
+    if state[-1] == 0:
+        return np.zeros(2 ** sum(state))
+
+    diag = np.ones(2 ** sum(state))
+
+    for j in range(n):
+
+        mut = state[2 * j: 2 * j + 2]
+
+        if i == j:
+            if sum(mut) == 0:
+                diag *= -np.exp(log_theta[i, i])
+            elif sum(mut) == 2:
+                diag = diag.reshape((-1, 4), order="C")
+                diag[:, [0, 1]] *= -np.exp(log_theta[i, i])
+                diag[:, [2, 3]] = 0
+                diag = diag.flatten(order="F")
+            elif mut[0] == 1:  # prim mutated
+                diag = diag.reshape((-1, 2), order="C")
+                diag *= -np.exp(log_theta[i, i])
+                diag = diag.flatten(order="F")
+            else:  # met mutated
+                diag = diag.reshape((-1, 2), order="C")
+                diag[:, 0] *= -np.exp(log_theta[i, i])
+                diag[:, 1] = 0
+                diag = diag.flatten(order="F")
+        else:
+            if sum(mut) == 1:
+                diag = diag.reshape((-1, 2), order="C")
+                if mut[1] == 1:  # met mutated
+                    diag[:, 1] *= np.exp(log_theta[i, j])
+                diag = diag.flatten(order="F")
+            elif sum(mut) == 2:
+                diag = diag.reshape((-1, 4), order="C")
+                diag[:, [2, 3]] *= np.exp(log_theta[i, j])
+                diag = diag.flatten(order="F")
+    diag = diag.reshape((-1, 2), order="C")
+    diag[:, 0] = 0
+    diag[:, 1] *= np.exp(log_theta[i, -1])
+    diag = diag.flatten(order="F")
+
+    return diag
+
+
+def kron_seed_diag(log_theta: np.array, n: int, state: np.array) -> np.array:
+    """This computes the diagonal of the seeding summand of Q.
+
+    Args:
+        log_theta (np.array): Log values of the theta matrix
+        n (int): Total number of events in the MHN.
+        state (np.array): Binary state vector, representing the current sample's events.
+
+    Returns:
+        np.array: diag(Q_seed)
+    """
+
+    diag = np.ones(2 ** sum(state))
+
+    for j in range(n):
+
+        mut = state[2 * j: 2 * j + 2]
+
+        if sum(mut) == 1:
+            diag = diag.reshape((-1, 2), order="C")
+            diag[:, 1] = 0
+            diag = diag.flatten(order="F")
+        elif sum(mut) == 2:
+            diag = diag.reshape((-1, 4), order="C")
+            diag[:, [1, 2]] = 0
+            diag[:, 3] *= np.exp(log_theta[-1, j])
+            diag = diag.flatten(order="F")
+    if state[-1] == 1:
+        diag = diag.reshape((-1, 2), order="C")
+        diag[:, 0] *= -np.exp(log_theta[-1, -1])
+        diag[:, 1] = 0
+        diag = diag.flatten(order="F")
+    else:
+        diag *= -np.exp(log_theta[-1, -1])
+
+    return diag
+
+
+def kron_diag(log_theta: np.array, n: int, state: np.array) -> np.array:
+    """This computes diagonal of the rate matrix Q.
+
+    Args:
+        log_theta (np.array): Log values of the theta matrix
+        n (int): Total number of events in the MHN.
+        state (np.array): Binary state vector, representing the current sample's events.
+
+    Returns:
+        np.array: diag(Q)
+    """
+    y = np.zeros(shape=2**sum(state))
+    for i in range(n):
+        y += kron_sync_diag(log_theta=log_theta, i=i,
+                            n=n, state=state)
+        y += kron_prim_diag(log_theta=log_theta, i=i,
+                            n=n, state=state)
+        y += kron_met_diag(log_theta=log_theta, i=i,
+                           n=n, state=state)
+    y += kron_seed_diag(log_theta=log_theta, n=n, state=state)
 
     return y
