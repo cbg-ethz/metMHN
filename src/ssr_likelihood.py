@@ -129,23 +129,4 @@ def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array) 
     
     return y
 
-if __name__ == "__main__":
-    n = 3
-    npone = n + 1
-    sparsity = 0.5
-    log_theta = np.zeros((npone, npone))
-    log_theta += np.diag(np.random.normal(size=npone))
-    index = np.argwhere(log_theta == 0)[
-        np.random.choice(npone**2-npone, size=int((npone**2-npone)
-                        * (1-sparsity)), replace=True)
-    ]
-    log_theta[index[:, 0], index[:, 1]] = np.random.normal(
-        size=int((npone**2-npone)*(1-sparsity)))
-
-    state = np.array([1, 0, 1, 1, 1, 0, 1])
-    length = 2**sum(state)
-    p = np.zeros(length)
-    p[0] = 1
-    R_i_inv_vec(log_theta=log_theta, x=p, lam=1, state=state)
-
     
