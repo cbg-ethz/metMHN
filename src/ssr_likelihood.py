@@ -105,7 +105,7 @@ def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.a
     return z
 
 
-def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array) -> np.array:
+def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, transpose: bool = False) -> np.array:
     """This computes R_i^{-1} x = (\lambda_i I - Q)^{-1} x
 
     Args:
@@ -115,22 +115,36 @@ def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array) 
         lam (float): Value of \lambda_i
         state (np.array): Binary state vector, representing the current sample's events.
 
+
     Returns:
         np.array: R_i^{-1} x
     """
     n_ss = sum(state)
-    n = log_theta.shape[0] - 1 
+    n = log_theta.shape[0] - 1
 
     lidg = 1 / (kron_diag(log_theta=log_theta, n=n, state=state) - lam)
     y = -lidg * x
 
     for _ in range(n_ss + 1):
-        y = lidg * -kronvec(log_theta=log_theta, p=y, n=n, state=state, diag=False) -lidg * x
-    
+        y = lidg * -kronvec(log_theta=log_theta, p=y, n=n,
+                            state=state, diag=False) - lidg * x
+
     return y
 
 
-def gradient(log_theta: np.array, lam1: float, lam2: float, state: np.array) -> np.array:
-    
-    
-    return 0 
+def log_gradient(log_theta: np.array, lam1: float, lam2: float, state: np.array) -> np.array:
+
+    n_ss = sum(state)
+    p_0 = np.zeros(n_ss)
+    p_theta = R_i_inv_vec(
+        log_theta=log_theta,
+        x=R_i_inv_vec(
+            log_theta=log_theta,
+            x=p_0,
+            lam=lam2,
+            state=state
+        ),
+        lam=lam1,
+        state=state)
+    summand1 = 1 / p_theta
+    return 0
