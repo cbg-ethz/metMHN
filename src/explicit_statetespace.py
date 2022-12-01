@@ -31,7 +31,9 @@ def multi_kron_prods(diag_fac, off_diag_fac: np.array,
     Q = np.eye(1)
     for j in range(i):
         Q = np.kron(diag_fac(exp_theta[i, j]), Q)
+
     Q = np.kron(off_diag_fac, Q)
+    print(Q)
     for j in range(i+1, n):
         Q = np.kron(diag_fac(exp_theta[i, j]), Q)
     return np.kron(last, Q)
