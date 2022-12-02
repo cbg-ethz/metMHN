@@ -127,7 +127,7 @@ def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, 
 
     for _ in range(n_ss + 1):
         y = lidg * -kronvec(log_theta=log_theta, p=y, n=n,
-                            state=state, diag=False) - lidg * x
+                            state=state, diag=False, transpose=transpose) - lidg * x
 
     return y
 
