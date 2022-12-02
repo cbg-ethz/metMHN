@@ -285,7 +285,7 @@ def ssr_build_q(dpoint: list, log_theta: np.array) -> np.array:
     theta = np.exp(log_theta)
     mut = [dpoint[j] + 2 * dpoint[j + 1] for j in range(0, 2 * n, 2)]
     mut.append(dpoint[-1])
-    #mut = np.array(mut)
+    mut = np.array(mut)
     Q = np.zeros(2 ** (sum(dpoint)))
     for i in range(n):
         Q = Q + sync_ssr_q(mut, theta, i, n) + met_ssr_q(mut, theta, i, n) \
