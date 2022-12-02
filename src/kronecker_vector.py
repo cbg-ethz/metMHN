@@ -114,7 +114,7 @@ def kronvec_met(theta: np.array, p: np.array, i: int, n: int, diag: bool = True,
     return p
 
 
-def kronvec_prim(theta: np.array, p: np.array, i: int, n: int, diag: bool = True, transp: bool = True) -> np.array:
+def kronvec_prim(theta: np.array, p: np.array, i: int, n: int, diag: bool = True, transp: bool = False) -> np.array:
     """
     This function computes asynchroneous part of primary transitions of Q*p implicitly
     Args:
@@ -131,7 +131,7 @@ def kronvec_prim(theta: np.array, p: np.array, i: int, n: int, diag: bool = True
     # Diagonal 4x4 Kronecker factors j<i
     for j in range(i):
         p = p.reshape((2**(2*n-1), 4), order="C")
-        p[:, 1] = theta_i[j] * p[:, 1]
+        p[:, 1] = theta_i[j]*p[:, 1]
         p[:, 3] = theta_i[j]*p[:, 3]
         p = p.flatten(order="F")
 
@@ -154,15 +154,14 @@ def kronvec_prim(theta: np.array, p: np.array, i: int, n: int, diag: bool = True
             p[:, 0] = p[:, 1]*theta_i[i]
             p[:, 2] = p[:, 3]*theta_i[i]
             p[:, (1, 3)] = 0
-
     p = p.flatten(order="F")
 
     # Diagonal 4x4 Kronecker factors j>i
     for j in range(i+1, n):
         p = p.reshape((2**(2*n-1), 4), order="C")
-        p[:, 1] = theta_i[j] * p[:, 1]
+        p[:, 1] = theta_i[j]*p[:, 1]
         p[:, 3] = theta_i[j]*p[:, 3]
-        p = p.flatten("F")
+        p = p.flatten(order="F")
 
     # Diagonal 2x2 Kronecker factor for j=n
     p = p.reshape((2 ** (2 * n), 2), order="C")
@@ -441,20 +440,23 @@ def q_partialQ_pth(theta: np.array, q: np.array, pTh: np.array, n: int) -> np.ar
         z_met = q * kronvec_met(theta, pTh.copy(), i, n)
         for j in range(n):
             z_sync = z_sync.reshape((2**(2*n-1), 4), order="C")
-            z_prim = z_prim.reshape((2 ** (2 * n - 1), 4), order="C")
+            z_prim = z_prim.reshape((2**(2*n-1), 4), order="C")
             z_met = z_met.reshape((2**(2*n-1), 4), order="C")
 
-            g[i, j] += np.sum(z_sync[:, 3]) + np.sum(z_prim[:, (2, 3)]) + np.sum(z_met[:, (1, 3)])
+            g[i, j] = np.sum(z_sync[:, 3]) +\
+                      np.sum(z_prim[:, (1, 3)]) +\
+                      np.sum(z_met[:, (2, 3)])
             if i == j:
-                g[i, j] += np.sum(z_sync[:, 0]) + np.sum(z_prim[:, (0, 1)]) + np.sum(z_met[:, (0, 2)])
+                g[i, j] = np.sum(z_sync) + np.sum(z_prim) + np.sum(z_met)#np.sum(z_sync[:, 0]) + np.sum(z_prim[:, (0, 2)]) + np.sum(z_met[:, (0, 1)])
 
             z_sync = z_sync.flatten(order="F")
             z_prim = z_prim.flatten(order="F")
             z_met = z_met.flatten(order="F")
+        g[i, n] = np.sum(z_met)
 
     z_seed = q * kronvec_seed(theta, pTh, n)
     for j in range(n):
-        z_seed = z_seed.reshape((2 ** (2 * n - 1), 4), order="C")
+        z_seed = z_seed.reshape((2**(2*n-1), 4), order="C")
         g[n, j] = np.sum(z_seed[:, 3])
         z_seed = z_seed.flatten(order="F")
 
