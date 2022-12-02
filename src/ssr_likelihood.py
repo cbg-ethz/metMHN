@@ -119,15 +119,14 @@ def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, 
     Returns:
         np.array: R_i^{-1} x
     """
-    n_ss = sum(state)
     n = log_theta.shape[0] - 1
 
     lidg = 1 / (kron_diag(log_theta=log_theta, n=n, state=state) - lam)
-    y = -lidg * x
+    y = lidg * x
 
-    for _ in range(n_ss + 1):
-        y = lidg * -kronvec(log_theta=log_theta, p=y, n=n,
-                            state=state, diag=False, transpose=transpose) - lidg * x
+    for _ in range(sum(state) + 1):
+        y = lidg * (kronvec(log_theta=log_theta, p=y, n=n,
+                            state=state, diag=False, transpose=transpose) + x)
 
     return y
 
