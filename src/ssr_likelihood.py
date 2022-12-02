@@ -136,7 +136,8 @@ def log_gradient(log_theta: np.array, lam1: float, lam2: float, state: np.array)
 
     n_ss = sum(state)
     p_0 = np.zeros(n_ss)
-    p_theta = R_i_inv_vec(
+    lam = (lam1 * lam2 / (lam1 - lam2))
+    p_theta = lam * R_i_inv_vec(
         log_theta=log_theta,
         x=R_i_inv_vec(
             log_theta=log_theta,
@@ -146,5 +147,15 @@ def log_gradient(log_theta: np.array, lam1: float, lam2: float, state: np.array)
         ),
         lam=lam1,
         state=state)
-    summand1 = 1 / p_theta
-    return 0
+    minuent = 1 / p_theta * lam
+    subtrahent = minuent.copy()
+    minuent = R_i_inv_vec(log_theta=log_theta, x=minuent,
+                          lam=lam1, state=state, transpose=True)
+    subtrahent = R_i_inv_vec(log_theta=log_theta, x=minuent,
+                             lam=lam2, state=state, transpose=True)
+    minuent = x_partial_Q_y(log_theta=log_theta, x=minuent, y=R_i_inv_vec(
+        log_theta=log_theta, x=p_0, lam=lam1, state=state, transpose=True))
+    subtrahent = x_partial_Q_y(log_theta=log_theta, x=subtrahent, y=R_i_inv_vec(
+        log_theta=log_theta, x=p_0, lam=lam2, state=state, transpose=True))
+
+    return minuent - subtrahent
