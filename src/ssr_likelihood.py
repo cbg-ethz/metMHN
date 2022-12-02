@@ -3,7 +3,7 @@ import numpy as np
 from ssr_kronecker_vector import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed, kronvec, kron_diag
 
 
-def res_x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array) -> np.array:
+def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array) -> np.array:
     """This function computes x \partial Q y with \partial Q the Jacobian of Q w.r.t. all thetas
     efficiently using the shuffle trick (sic!).
 
