@@ -132,32 +132,58 @@ def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, 
     return y
 
 
-def log_gradient(log_theta: np.array, lam1: float, lam2: float, state: np.array) -> np.array:
+def gradient(log_theta: np.array, p_D: np.array, lam1: float, lam2: float, state: np.array) -> np.array:
+    """This computes the gradient of the score function, which is the log-likelihood of a data vector p_D
+    with respect to the log_theta matrix
+
+    Args:
+        log_theta (np.array): Log values of the theta matrix.
+        p_D (np.array): Data vector.
+        lam1 (float): Rate of the first sampling.
+        lam2 (float): Rate of the second sampling.
+        state (np.array): Binary state vector, representing the current sample's events.
+
+
+    Returns:
+        np.array: \partial_theta (p_D^T log p_theta)
+    """
+
+    restricted = utils.ssr_to_fss(state)
+
+    reachable = utils.reachable_states(log_theta.shape[0] - 1)
+    if np.any(p_D[~reachable[restricted]] != 0):
+        raise ValueError("The data vector contains unreachable states.")
 
     n_ss = sum(state)
     p_0 = np.zeros(2**n_ss)
     p_0[0] = 1
     lam = (lam1 * lam2 / (lam1 - lam2))
-    p_theta = lam * R_i_inv_vec(
+    R_1_inv_p_0 = R_i_inv_vec(
         log_theta=log_theta,
-        x=R_i_inv_vec(
-            log_theta=log_theta,
-            x=p_0,
-            lam=lam2,
-            state=state
-        ),
+        x=p_0,
         lam=lam1,
         state=state)
-    minuend = 1 / p_theta * lam
+
+    R_2_inv_p_0 = R_i_inv_vec(
+        log_theta=log_theta,
+        x=p_0,
+        lam=lam2,
+        state=state
+    )
+
+    p_theta = lam * (R_1_inv_p_0 - R_2_inv_p_0)
+
+    # some states are not reachable and therefore have zero probability density
+    minuend = p_D * np.divide(lam, p_theta, where=reachable[restricted])
     subtrahend = minuend.copy()
     minuend = R_i_inv_vec(log_theta=log_theta, x=minuend,
-                          lam=lam1, state=state, transpose=True)
+                          lam=lam2, state=state, transpose=True)
     subtrahend = R_i_inv_vec(log_theta=log_theta, x=minuend,
-                             lam=lam2, state=state, transpose=True)
-    minuend = x_partial_Q_y(log_theta=log_theta, x=minuend, y=R_i_inv_vec(
-        log_theta=log_theta, x=p_0, lam=lam1, state=state, transpose=True), state=state)
-    subtrahend = x_partial_Q_y(log_theta=log_theta, x=subtrahend, y=R_i_inv_vec(
-        log_theta=log_theta, x=p_0, lam=lam2, state=state, transpose=True), state=state)
+                             lam=lam1, state=state, transpose=True)
+    minuend = x_partial_Q_y(log_theta=log_theta,
+                            x=minuend, y=R_2_inv_p_0, state=state)
+    subtrahend = x_partial_Q_y(
+        log_theta=log_theta, x=subtrahend, y=R_1_inv_p_0, state=state)
 
     return minuend - subtrahend
 
@@ -191,22 +217,15 @@ def log_likelihood(log_theta: np.array, p_D: np.array, lam1: float, lam2: float,
 
 if __name__ == "__main__":
 
-    import Utilityfunctions as utils
-
     n = 2
     sparsity = 0.5
     log_theta = utils.random_theta(n=n, sparsity=sparsity)
 
     state = np.random.randint(2, size=2*n+1)
     length = 2**sum(state)
-
     lam1, lam2 = np.random.random(2)
-    # log_gradient(log_theta=log_theta, lam1=lam1, lam2=lam2, state=state)
 
-    p = np.zeros(2**(2*n + 1))
+    p = np.zeros(2**(2*n+1))
     p[0] = 1
-
-    # log_likelihood(log_theta=log_theta, p_D=p,
-    #                lam1=lam1, lam2=lam2, state=state)
-
-    R_i_inv_vec(log_theta=log_theta, x=p, lam=1, state=np.ones(2*n + 1, dtype=int))
+    gradient(log_theta=log_theta, p_D=p[utils.ssr_to_fss(state)],
+        lam1=lam1,lam2=lam2, state=state)
