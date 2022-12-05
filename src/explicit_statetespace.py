@@ -15,7 +15,8 @@ def dia2(tij: float) -> np.array:
 
 
 def multi_kron_prods(diag_fac, off_diag_fac: np.array,
-                     last: np.array, exp_theta: np.array, i: int, n: int) -> np.array:
+                     last: np.array, exp_theta: np.array, i: int, n: int,
+                     deriv_fac: np.array = None, k: int = None) -> np.array:
     """
     Calculates a series of Kronecker products
     Args:
@@ -25,15 +26,29 @@ def multi_kron_prods(diag_fac, off_diag_fac: np.array,
         exp_theta (np.array): Exponential theta matrix
         i (int): index of the current summand
         n (int): Total number of mutations
+        deriv_fac (function):  if not None: Kroneckerfactor for derivative of Q wrt theta_ik
+        k (int): if not None: column index of derivative wrt theta
     Returns:
          np.array: Q explicit matrix
     """
     Q = np.eye(1)
     for j in range(i):
-        Q = np.kron(diag_fac(exp_theta[i, j]), Q)
+        if k is None:
+            Q = np.kron(diag_fac(exp_theta[i, j]), Q)
+        elif k != j:
+            Q = np.kron(diag_fac(exp_theta[i, j]), Q)
+        else:
+            Q = np.kron(deriv_fac(exp_theta[i, j]), Q)
+
     Q = np.kron(off_diag_fac, Q)
     for j in range(i+1, n):
-        Q = np.kron(diag_fac(exp_theta[i, j]), Q)
+        if k is None:
+            Q = np.kron(diag_fac(exp_theta[i, j]), Q)
+        elif k != j:
+            Q = np.kron(diag_fac(exp_theta[i, j]), Q)
+        else:
+            Q = np.kron(deriv_fac(exp_theta[i, j]), Q)
+
     return np.kron(last, Q)
 
 
@@ -70,13 +85,14 @@ def diag_prim(tij: float) -> np.array:
     return np.diag([1, tij, 1, tij])
 
 
-def build_q(log_theta: np.array) -> np.array:
+def build_q(log_theta: np.array, deriv_inds = None) -> np.array:
     """
-    Explicitly builds Q matrix
+    Explicitly builds Q matrix or \partial Q \partial theta_deriv_inds
     Args:
         log_theta (np.array): logarithmic theta matrix
+        deriv_inds (tuple): Either None if Q should be built or tuple of indices
     Returns:
-        np.array: Q, explicit Q_matrix
+        np.array: Q or \partial Q \partial theta_ij, explicit Q_matrix
     """
     n = log_theta.shape[0]-1
     theta = np.exp(log_theta)
@@ -101,6 +117,98 @@ def build_q(log_theta: np.array) -> np.array:
     off_seed[1, 0] = theta[n, n]
     Q = Q + multi_kron_prods(diag_sync, off_seed, 1.0*np.eye(1), theta, n, n)
     return Q
+
+
+def diag_sync_deriv(tij: float) -> np.array:
+    """
+    Explicitely builds diagonal Kronecker factors for Q_sync
+    Args:
+        tij (float): ij-th entry of theta
+    Returns:
+        np.array, 4x4 dimensional diagonal Kroneckerfactor
+    """
+    return np.diag([0, 0, 0, tij])
+
+
+def diag_met_deriv(tij: float) -> np.array:
+    """
+    Explicitely builds diagonal Kronecker factors for Q_met
+    Args:
+        tij (float): ij-th entry of theta
+    Returns:
+        np.array, 4x4 dimensional diagonal Kroneckerfactor
+    """
+    return np.diag([0, 0, tij, tij])
+
+
+def diag_prim_deriv(tij: float) -> np.array:
+    """
+    Explicitly builds diagonal Kronecker factors for Q_prim
+    Args:
+        tij (float): ij-th entry of theta
+    Returns:
+        np.array, 4x4 dimensional diagonal Kroneckerfactor
+    """
+    return np.diag([0, tij, 0, tij])
+
+
+def build_q_deriv_ik(log_theta: np.array, i: int, k: int ) -> np.array:
+    """
+    Explicitly builds \partial Q \partial log(theta_kl)
+    Args:
+        log_theta (np.array): logarithmic theta matrix
+        k (int): row index of theta to take derivative
+        l (int): column index of theta to take derivative
+    Returns:
+        np.array: \partial Q \partial log(theta_kl)
+    """
+    n = log_theta.shape[0]-1
+    theta = np.exp(log_theta)
+    Q = np.zeros([2**(2*n+1), 2**(2*n+1)])
+
+    sync_off = np.diag([-theta[i, i], 0., 0., 0.])
+    sync_off[3, 0] = theta[i, i]
+    sync = multi_kron_prods(diag_sync, sync_off, np.diag([1., 0.]), theta, i, n, diag_sync_deriv, k)
+
+    prim_off = np.diag([-1., 0., -1., 0.])
+    prim_off[1, 0] = 1.
+    prim_off[3, 2] = 1.
+    prim = multi_kron_prods(diag_prim, prim_off*theta[i, i], np.diag([0, 1]), theta, i, n, diag_prim_deriv, k)
+
+    met_off = np.diag([-1., -1., 0., 0.])
+    met_off[2, 0] = 1.
+    met_off[3, 1] = 1.
+    met = multi_kron_prods(diag_met, met_off*theta[i, i], np.diag([0., theta[i, n]]),
+                           theta, i, n, diag_met_deriv, k)
+
+    if i < n and k < n:
+        Q = sync + prim + met
+    elif i < n and k == n:
+        Q = met
+    else:
+        off_seed = np.diag([-theta[n, n], 0.])
+        off_seed[1, 0] = theta[n, n]
+        Q = multi_kron_prods(diag_sync, off_seed, 1.0*np.eye(1), theta, n, n, diag_sync_deriv, k)
+    return Q
+
+
+def build_q_grad_p(theta: np.array, q: np.array, p: np.array) -> np.array:
+    """
+    Calculates q \partial Q \partial log(theta_ij) p for all i,j explicitly
+    Args:
+        theta (np.array): logarithmic theta matrix
+        q (np.array): vector to multiply from the left to dQ/d theta
+        p (np.array): vector to multiply from the right to dQ/d theta
+
+    returns:
+        np.array: q d Q/d Theta p
+    """
+    n = theta.shape[0] - 1
+    g = np.zeros_like(theta)
+    for i in range(n+1):
+        for k in range(n+1):
+            g[i, k] = q @ build_q_deriv_ik(theta, i, k) @ p
+    return g
 
 
 # Methods for explicit calculation of the SSR version of Q

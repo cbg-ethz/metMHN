@@ -9,7 +9,7 @@ def state_space(n: int) -> list:
     Returns:
          list: complete statespace
     """
-    return [f'{i:0b}'[::-1].zfill(n) for i in range(2**n)]
+    return [f'{i:0b}'.zfill(n)[::-1] for i in range(2**n)]
 
 
 def trunk_states(dpoint: list) -> list:
