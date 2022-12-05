@@ -35,8 +35,11 @@ def likelihood(theta: np.array, pd: np.array, lam1: float, lam2: float) -> float
     Returns:
          float: pd^T pTh
     """
-    n = np.shape[0] - 1
+    n = theta.shape[0] - 1
     p0 = np.zeros(2**(2*n+1))
+    p0[0] = 1
+
     pTh = jacobi(theta, p0, lam2)-jacobi(theta, p0, lam1)
     pTh = lam1*lam2/(lam1-lam2)*pTh
-    return pd.dot(np.log(pTh))
+
+    return pd.dot(np.nan_to_num(np.log(pTh)))
