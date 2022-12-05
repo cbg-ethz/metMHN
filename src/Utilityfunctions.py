@@ -30,6 +30,23 @@ def trunk_states(dpoint: list) -> list:
     return [state for state in compress(state_space(n), inds)]
 
 
+def ssr_to_fss(state: np.array) -> np.array:
+    """This gives the indices of the rate matrix that are appearing in the
+    state space restricted rate matrix.
+
+    Args:
+        state (np.array): Binary state vector, representing the current sample's
+        Fevents.
+
+    Returns:
+        np.array: Indices of the rate matrix.
+    """
+    res = np.ones(1)
+    for s in state:
+        res = np.kron(np.array([1, s]), res)
+    return res.astype(bool)
+
+
 def random_theta(n: int, sparsity: float) -> np.array:
     """
     Generates a logarithmic theta with normal distributed entries
