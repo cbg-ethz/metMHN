@@ -1,4 +1,4 @@
-from likelihood import likelihood, jacobi
+from log_likelihood import log_likelihood, jacobi
 import numpy as np
 import kronecker_vector as kv
 if __name__=="__main__":

@@ -70,7 +70,7 @@ def random_theta(n: int, sparsity: float) -> np.array:
 
 def reachable_states(n: int):
 
-    reachable = np.zeros(2**(2*n +1))
+    reachable = np.zeros(2**(2*n + 1))
 
     for i in chain.from_iterable(combinations(list(range(n)), r) for r in range((n+1))):
         reachable[sum((2**(2*j))*3 for j in i)] = 1
