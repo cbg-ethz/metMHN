@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def kronvec_sync(log_theta: np.array, p: np.array, i: int, n: int, state: np.array, diag: bool = True) -> np.array:
+def kronvec_sync(log_theta: np.array, p: np.array, i: int, n: int, state: np.array, diag: bool = True, transpose: bool = False) -> np.array:
     """This computes the restricted version of the product of the synchronized part of the ith Q summand
     Q_i with a vector Q_i p.
 
@@ -13,6 +13,7 @@ def kronvec_sync(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
         n (int): Total number of events in the MHN.
         state (np.array): Binary state vector, representing the current sample's events.
         diag (bool, optional): Whether to use the diagonal of Q_i (and not set it to 0). Defaults to True.
+        transpose (bool, optional): Whether to transpose Q_i before multiplying. Defaults to False.
 
     Returns:
         np.array: Q_i p
@@ -39,12 +40,20 @@ def kronvec_sync(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
             y = y.reshape((-1, 4), order="C")
             y[:, [1, 2]] = 0
             if i == j:
-                if diag:
-                    y[:, 0] *= -np.exp(log_theta[i, i])
-                    y[:, 3] = -1 * y[:, 0]
-                else:
-                    y[:, 3] = np.exp(log_theta[i, i]) * y[:, 0]
-                    y[:, 0] = 0
+                if not transpose:
+                    if diag:
+                        y[:, 0] *= -np.exp(log_theta[i, i])
+                        y[:, 3] = -1 * y[:, 0]
+                    else:  # no diag
+                        y[:, 3] = np.exp(log_theta[i, i]) * y[:, 0]
+                        y[:, 0] = 0
+                else:  # transpose
+                    if diag:
+                        y[:, 0] = np.exp(log_theta[i, i]) * \
+                            (-y[:, 0] + y[:, 3])
+                    else:  # no diag
+                        y[:, 0] = np.exp(log_theta[i, i]) * y[:, 3]
+                    y[:, 3] = 0
             else:
                 y[:, 3] *= np.exp(log_theta[i, j])
             y = y.flatten(order="F")
@@ -56,7 +65,7 @@ def kronvec_sync(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
     return y
 
 
-def kronvec_prim(log_theta: np.array, p: np.array, i: int, n: int, state: np.array, diag: bool = True) -> np.array:
+def kronvec_prim(log_theta: np.array, p: np.array, i: int, n: int, state: np.array, diag: bool = True, transpose: bool = False) -> np.array:
     """This computes the restricted version of the product of the asynchronous primary tumour
     part of the ith Q summand Q_i with a vector Q_i p.
 
@@ -68,6 +77,7 @@ def kronvec_prim(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
         n (int): Total number of events in the MHN.
         state (np.array): Binary state vector, representing the current sample's events.
         diag (bool, optional): Whether to use the diagonal of Q_i (and not set it to 0). Defaults to True.
+        transpose (bool, optional): Whether to transpose Q_i before multiplying. Defaults to False.
 
     Returns:
         np.array: Q_i p
@@ -92,28 +102,46 @@ def kronvec_prim(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
             y = y.reshape((-1, 4), order="C")
             if i == j:
                 theta = np.exp(log_theta[i, i])
-                if diag:
-                    y[:, [0, 2]] *= -theta
-                    y[:, [1, 3]] = - y[:, [0, 2]]
-                else:
-                    y[:, [1, 3]] = theta * y[:, [0, 2]]
-                    y[:, [0, 2]] = 0
+                if not transpose:
+                    if diag:
+                        y[:, [0, 2]] *= -theta
+                        y[:, [1, 3]] = - y[:, [0, 2]]
+                    else:
+                        y[:, [1, 3]] = theta * y[:, [0, 2]]
+                        y[:, [0, 2]] = 0
+                else:  # transpose
+                    if diag:
+                        y[:, 0] = theta * (-y[:, 0] + y[:, 1])
+                        y[:, 2] = theta * (-y[:, 2] + y[:, 3])
+                    else:
+                        y[:, [0, 2]] = theta * y[:, [1, 3]]
+                    y[:, [1, 3]] = 0
+
             else:
                 theta = np.exp(log_theta[i, j])
                 y[:, 1] *= theta
                 y[:, 3] *= theta
             y = y.flatten(order="F")
-        else:
+        else:  # mut.sum = 1
             y = y.reshape((-1, 2), order="C")
             if i == j:
                 theta = np.exp(log_theta[i, i])
-                y[:, 0] *= -theta
                 if mut[0] == 1:  # prim mutated
-                    y[:, 1] = -y[:, 0]
-                    if not diag:
-                        y[:, 0] = 0
+                    if not transpose:
+                        if diag:
+                            y[:, 0] *= -theta
+                            y[:, 1] = -y[:, 0]
+                        else:  # not diag:
+                            y[:, 1] = theta * y[:, 0]
+                            y[:, 0] = 0
+                    else:  # transpose
+                        if diag:
+                            y[:, 0] = theta * (-y[:, 0] + y[:, 1])
+                        else:
+                            y[:, 0] = theta * y[:, 1]
+                        y[:, 1] = 0
                 else:  # met mutated
-                    y[:, 1] *= -theta
+                    y[:, [0, 1]] *= -theta
             else:
                 if mut[0] == 1:
                     y[:, 1] *= np.exp(log_theta[i, j])
@@ -125,7 +153,7 @@ def kronvec_prim(log_theta: np.array, p: np.array, i: int, n: int, state: np.arr
     return y
 
 
-def kronvec_met(log_theta: np.array, p: np.array, i: int, n: int, state: np.array, diag: bool = True) -> np.array:
+def kronvec_met(log_theta: np.array, p: np.array, i: int, n: int, state: np.array, diag: bool = True, transpose: bool = False) -> np.array:
     """This computes the restricted version of the product of the asynchronous metastasis
     part of the ith Q summand Q_i with a vector Q_i p.
 
@@ -137,6 +165,7 @@ def kronvec_met(log_theta: np.array, p: np.array, i: int, n: int, state: np.arra
         n (int): Total number of events in the MHN.
         state (np.array): Binary state vector, representing the current sample's events.
         diag (bool, optional): Whether to use the diagonal of Q_i (and not set it to 0). Defaults to True.
+        transpose (bool, optional): Whether to transpose Q_i before multiplying. Defaults to False.
 
     Returns:
         np.array: Q_i p
@@ -161,12 +190,20 @@ def kronvec_met(log_theta: np.array, p: np.array, i: int, n: int, state: np.arra
             y = y.reshape((-1, 4), order="C")
             if i == j:
                 theta = np.exp(log_theta[i, i])
-                if diag:
-                    y[:, [0, 1]] *= -theta
-                    y[:, [2, 3]] = -1 * y[:, [0, 1]]
-                else:
-                    y[:, [2, 3]] = theta * y[:, [0, 1]]
-                    y[:, [0, 1]] = 0
+                if not transpose:
+                    if diag:
+                        y[:, [0, 1]] *= -theta
+                        y[:, [2, 3]] = -1 * y[:, [0, 1]]
+                    else:
+                        y[:, [2, 3]] = theta * y[:, [0, 1]]
+                        y[:, [0, 1]] = 0
+                else:  # transpose
+                    if diag:
+                        y[:, 0] = theta * (-y[:, 0] + y[:, 2])
+                        y[:, 1] = theta * (-y[:, 1] + y[:, 3])
+                    else:  # no diag
+                        y[:, [0, 1]] = theta * y[:, [2, 3]]
+                    y[:, [2, 3]] = 0
             else:
                 theta = np.exp(log_theta[i, j])
                 y[:, [2, 3]] *= theta
@@ -175,13 +212,20 @@ def kronvec_met(log_theta: np.array, p: np.array, i: int, n: int, state: np.arra
             y = y.reshape((-1, 2), order="C")
             if i == j:
                 theta = np.exp(log_theta[i, i])
-                y[:, 0] *= -theta
                 if mut[1] == 1:  # met mutated
-                    y[:, 1] = -y[:, 0]
-                    if not diag:
-                        y[:, 0] = 0
+                    if not transpose:
+                        y[:, 0] *= -theta
+                        y[:, 1] = -y[:, 0]
+                        if not diag:
+                            y[:, 0] = 0
+                    else:  # transpose
+                        if diag:
+                            y[:, 0] = theta * (-y[:, 0] + y[:, 1])
+                        else:  # no diag
+                            y[:, 0] = theta * y[:, 1]
+                        y[:, 1] = 0
                 else:  # prim mutated
-                    y[:, 1] *= -theta
+                    y[:, [0, 1]] *= -theta
             else:
                 if mut[1] == 1:
                     y[:, 1] *= np.exp(log_theta[i, j])
@@ -194,7 +238,7 @@ def kronvec_met(log_theta: np.array, p: np.array, i: int, n: int, state: np.arra
     return y
 
 
-def kronvec_seed(log_theta: np.array, p: np.array, n: int, state: np.array, diag: bool = True) -> np.array:
+def kronvec_seed(log_theta: np.array, p: np.array, n: int, state: np.array, diag: bool = True, transpose: bool = False) -> np.array:
     """This computes the restricted version of the product of the seeding summand of Q with a vector Q_M p.
 
     Args:
@@ -204,6 +248,7 @@ def kronvec_seed(log_theta: np.array, p: np.array, n: int, state: np.array, diag
         n (int): Total number of events in the MHN.
         state (np.array): Binary state vector, representing the current sample's events.
         diag (bool, optional): Whether to use the diagonal of Q_M (and not set it to 0). Defaults to True.
+        transpose (bool, optional): Whether to transpose Q_M before multiplying. Defaults to False.
 
     Returns:
         np.array: Q_i p
@@ -229,11 +274,19 @@ def kronvec_seed(log_theta: np.array, p: np.array, n: int, state: np.array, diag
             y = y.flatten(order="F")
     if state[-1] == 1:
         y = y.reshape((-1, 2), order="C")
-        y[:, 1] = np.exp(log_theta[-1, -1]) * y[:, 0]
-        if diag:
-            y[:, 0] = -y[:, 1]
-        else:
-            y[:, 0] = 0
+        theta = np.exp(log_theta[-1, -1])
+        if not transpose:
+            y[:, 1] = theta * y[:, 0]
+            if diag:
+                y[:, 0] = -y[:, 1]
+            else:
+                y[:, 0] = 0
+        else:  # transpose
+            if diag:
+                y[:, 0] = theta * (-y[:, 0] + y[:, 1])
+            else:
+                y[:, 0] = theta * y[:, 1]
+            y[:, 1] = 0
         y = y.flatten(order="F")
     else:
         y *= -np.exp(log_theta[-1, -1])
@@ -241,7 +294,7 @@ def kronvec_seed(log_theta: np.array, p: np.array, n: int, state: np.array, diag
     return y
 
 
-def kronvec(log_theta: np.array, p: np.array, n: int, state: np.array, diag: bool = True) -> np.array:
+def kronvec(log_theta: np.array, p: np.array, n: int, state: np.array, diag: bool = True, transpose: bool = False) -> np.array:
     """This computes the restricted version of the product of the rate matrix Q with a vector Q p.
 
     Args:
@@ -251,6 +304,7 @@ def kronvec(log_theta: np.array, p: np.array, n: int, state: np.array, diag: boo
         n (int): Total number of events in the MHN.
         state (np.array): Binary state vector, representing the current sample's events.
         diag (bool, optional): Whether to use the diagonal of Q (and not set it to 0). Defaults to True.
+        transpose (bool, optional): Whether to transpose Q before multiplying. Defaults to False.
 
     Returns:
         np.array: Q p
@@ -258,12 +312,13 @@ def kronvec(log_theta: np.array, p: np.array, n: int, state: np.array, diag: boo
     y = np.zeros(shape=2**sum(state))
     for i in range(n):
         y += kronvec_sync(log_theta=log_theta, p=p, i=i,
-                          n=n, state=state, diag=diag)
+                          n=n, state=state, diag=diag, transpose=transpose)
         y += kronvec_prim(log_theta=log_theta, p=p, i=i,
-                          n=n, state=state, diag=diag)
+                          n=n, state=state, diag=diag, transpose=transpose)
         y += kronvec_met(log_theta=log_theta, p=p, i=i,
-                         n=n, state=state, diag=diag)
-    y += kronvec_seed(log_theta=log_theta, p=p, n=n, state=state, diag=diag)
+                         n=n, state=state, diag=diag, transpose=transpose)
+    y += kronvec_seed(log_theta=log_theta, p=p, n=n,
+                      state=state, diag=diag, transpose=transpose)
 
     return y
 

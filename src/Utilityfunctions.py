@@ -1,4 +1,4 @@
-from itertools import compress
+from itertools import compress, chain, combinations
 import numpy as np
 
 
@@ -30,6 +30,23 @@ def trunk_states(dpoint: list) -> list:
     return [state for state in compress(state_space(n), inds)]
 
 
+def ssr_to_fss(state: np.array) -> np.array:
+    """This gives the indices of the rate matrix that are appearing in the
+    state space restricted rate matrix.
+
+    Args:
+        state (np.array): Binary state vector, representing the current sample's
+        Fevents.
+
+    Returns:
+        np.array: Indices of the rate matrix.
+    """
+    res = np.ones(1)
+    for s in state:
+        res = np.kron(np.array([1, s]), res)
+    return res.astype(bool)
+
+
 def random_theta(n: int, sparsity: float) -> np.array:
     """
     Generates a logarithmic theta with normal distributed entries
@@ -40,12 +57,23 @@ def random_theta(n: int, sparsity: float) -> np.array:
         np.array: theta
     """
     npone = n + 1
-    theta = np.zeros((npone, npone))
-    theta += np.diag(np.random.normal(size=npone))
-    index = np.argwhere(theta == 0)[
+    log_theta = np.zeros((npone, npone))
+    log_theta += np.diag(np.random.normal(size=npone))
+    index = np.argwhere(log_theta == 0)[
         np.random.choice(npone**2-npone, size=int((npone**2-npone)
                          * (1-sparsity)), replace=True)
     ]
-    theta[index[:, 0], index[:, 1]] = np.random.normal(
+    log_theta[index[:, 0], index[:, 1]] = np.random.normal(
         size=int((npone**2-npone)*(1-sparsity)))
-    return theta
+    return log_theta
+
+
+def reachable_states(n: int):
+
+    reachable = np.zeros(2**(2*n + 1))
+
+    for i in chain.from_iterable(combinations(list(range(n)), r) for r in range((n+1))):
+        reachable[sum((2**(2*j))*3 for j in i)] = 1
+
+    reachable[2**(2*n):] = 1
+    return reachable.astype(bool)

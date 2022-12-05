@@ -209,24 +209,24 @@ def kronvec_seed(theta: np.array, p: np.array, n: int, diag: bool = True, transp
     return p
 
 
-def qvec(theta: np.array, p: np.array, diag: bool, transp: bool = False) -> np.array:
+def qvec(log_theta: np.array, p: np.array, diag: bool) -> np.array:
     """
     This function computes Q*p implicitly
     Args:
-          theta (np.array): Logarithmic theta matrix
+          log_theta (np.array): Logarithmic theta matrix
           p (np.array): state vector
           diag (bool): Flag indicating whether to build the diagonal
           transp (bool):  Flag indicating whether to transpose Q
     Returns:
           np.array: Q p
     """
-    n = theta.shape[0] - 1
+    n = log_theta.shape[0] - 1
     tmp = 1.*np.zeros(p.shape[0])
     for i in range(n):
-        tmp += kronvec_sync(theta, p.copy(), i, n, diag=diag, transp=transp) +\
-              kronvec_prim(theta, p.copy(), i, n, diag=diag, transp=transp) +\
-              kronvec_met(theta, p.copy(), i, n, diag=diag, transp=transp)
-    tmp += kronvec_seed(theta, p, n, diag=diag, transp=transp)
+        tmp = tmp + kronvec_sync(log_theta, p.copy(), i, n, diag=diag) +\
+              kronvec_prim(log_theta, p.copy(), i, n, diag=diag) + \
+              kronvec_met(log_theta, p.copy(), i, n, diag=diag)
+    tmp = tmp + kronvec_seed(log_theta, p, n, diag=diag)
     return tmp
 
 
