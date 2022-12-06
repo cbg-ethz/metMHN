@@ -1,9 +1,8 @@
 import kronecker_vector as fss
 import numpy as np
-import Utilityfunctions as utils
 
 
-def jacobi(log_theta: np.array, b: np.array, lam: float, transp: bool = False, x: np.array = None) -> np.array:
+def jacobi(log_theta: np.array, b: np.array, lam: float, transp: bool = False, x_inp: np.array = None) -> np.array:
     """
     This function computes (I-Q)x=b using jacobi iteration
     Args:
@@ -16,8 +15,10 @@ def jacobi(log_theta: np.array, b: np.array, lam: float, transp: bool = False, x
         np.array: (lam*I-Q)^-1 b
     """
     n = log_theta.shape[0]-1
-    if x is None:
+    if x_inp is None:
         x = np.ones(2**(2*n+1))/(2**(2*n+1))
+    else:
+        x = x_inp.copy()
     dg = fss.diag_q(log_theta) + lam
     
     for _ in range(2*n+2):
@@ -28,7 +29,7 @@ def jacobi(log_theta: np.array, b: np.array, lam: float, transp: bool = False, x
 
 def generate_pths(log_theta: np.array, p0: np.array, lam1: float, lam2: float) -> np.array:
     """
-    calculates the two component sof the pth vector
+    calculates the two components of the pth vector
     Args:
         log_theta (np.array): logarithmic theta matrix
         p0 (np.array): starting distribution
@@ -105,8 +106,8 @@ def gradient(log_theta: np.array, pD: np.array, lam1: float, lam2: float, n: int
     else:
         pTh1 = pTh1_space
         pTh2 = pTh2_space
-    lam_ratio = lam1*lam2/(lam1-lam2)
-    pTh = lam_ratio*(pTh2 - pTh1)
+    lam_ratio = lam1 * lam2 / (lam1 - lam2)
+    pTh = lam_ratio * (pTh2 - pTh1)
 
     # Build the vector to multiply from the left to dQ/d th
     q = np.divide(pD, pTh, out=np.zeros_like(pD), where=pTh != 0)
@@ -115,6 +116,8 @@ def gradient(log_theta: np.array, pD: np.array, lam1: float, lam2: float, n: int
     d_theta = fss.q_partialQ_pth(log_theta, q2, pTh2, n) - fss.q_partialQ_pth(log_theta, q1, pTh1, n)
 
     # Derivatives wrt. lam1 and lam2
-    d_lam1 = np.dot(q, (-(lam1-lam2) / lam2 * pTh + lam_ratio * jacobi(log_theta, pTh1, lam1)))
-    d_lam2 = np.dot(q, lam1 / (lam2*(lam1-lam2)) * pTh - lam_ratio * jacobi(log_theta, pTh2, lam2))
-    return lam_ratio*d_theta
+    d_lam1 = q.dot(-1 * lam2/(lam1*(lam1 - lam2)) * pTh + lam_ratio * jacobi(log_theta, pTh1, lam1))
+    d_lam2 = q.dot(lam1 / (lam2 * (lam1 - lam2)) * pTh - lam_ratio * jacobi(log_theta, pTh2, lam2))
+
+    # Full gradient
+    return np.append(lam_ratio*d_theta.flatten(), [d_lam1, d_lam2])
