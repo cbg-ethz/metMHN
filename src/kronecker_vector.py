@@ -380,23 +380,23 @@ def kronvec_seed_diag(theta: np.array, p: np.array, n: int) -> np.array:
     return p
 
 
-def diag_q(theta: np.array) -> np.array:
+def diag_q(log_theta: np.array) -> np.array:
     """
     This function computes diag(Q) implicitly
     Args:
-          theta (np.array): Logarithmic theta matrix
+          log_theta (np.array): Logarithmic theta matrix
 
     Returns:
           np.array: diag(Q)
     """
-    n = theta.shape[0] - 1
+    n = log_theta.shape[0] - 1
     p = np.ones(2 ** (2 * n + 1))
     tmp = 1.*np.zeros(p.shape[0])
     for i in range(n):
-        tmp = tmp + kronvec_met_diag(theta, p.copy(), i, n) + \
-              kronvec_prim_diag(theta, p.copy(), i, n) +\
-              kronvec_sync_diag(theta, p.copy(), i, n)
-    return tmp + kronvec_seed_diag(theta, p, n)
+        tmp = tmp + kronvec_met_diag(log_theta, p.copy(), i, n) + \
+              kronvec_prim_diag(log_theta, p.copy(), i, n) +\
+              kronvec_sync_diag(log_theta, p.copy(), i, n)
+    return tmp + kronvec_seed_diag(log_theta, p, n)
 
 
 def diag_diagnosis(n: int) -> np.array:
@@ -421,11 +421,11 @@ def diag_diagnosis(n: int) -> np.array:
     return p
 
 
-def q_partialQ_pth(theta: np.array, q: np.array, pTh: np.array, n: int) -> np.array:
+def q_partialQ_pth(log_theta: np.array, q: np.array, pTh: np.array, n: int) -> np.array:
     """
     calculates q \partial Q \partial theta_ij p for all i,j
     Args:
-        theta (np.array): Logarithmic theta matrix
+        log_theta (np.array): Logarithmic theta matrix
         q (np.array): vector multiplied from the left to partial Q partial theta
         pTh (np.array): vector multiplied from the right to partial Q partial theta
         n (int): number of mutations
@@ -433,11 +433,11 @@ def q_partialQ_pth(theta: np.array, q: np.array, pTh: np.array, n: int) -> np.ar
     Returns:
         np.array: g
     """
-    g = np.zeros_like(theta)
+    g = np.zeros_like(log_theta)
     for i in range(n):
-        z_sync = q * kronvec_sync(theta, pTh.copy(), i, n)
-        z_prim = q * kronvec_prim(theta, pTh.copy(), i, n)
-        z_met = q * kronvec_met(theta, pTh.copy(), i, n)
+        z_sync = q * kronvec_sync(log_theta, pTh.copy(), i, n)
+        z_prim = q * kronvec_prim(log_theta, pTh.copy(), i, n)
+        z_met = q * kronvec_met(log_theta, pTh.copy(), i, n)
         for j in range(n):
             z_sync = z_sync.reshape((2**(2*n-1), 4), order="C")
             z_prim = z_prim.reshape((2**(2*n-1), 4), order="C")

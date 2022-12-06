@@ -40,7 +40,8 @@ class KroneckerTestCase(unittest.TestCase):
         self.assertTrue(
             np.allclose(
                 self.Q.T @ self.p0,
-                kv.qvec(self.log_theta, self.p0, True, True)
+                kv.qvec(log_theta=self.log_theta,
+                        p=self.p0, diag=True, transp=True)
             )
         )
 
@@ -201,8 +202,8 @@ class KroneckerTestCase(unittest.TestCase):
         q_fss[restricted] = q
         self.assertTrue(
             np.allclose(
-                kv.q_partialQ_pth(np.zeros_like(
-                    self.log_theta), q_fss, p_fss, self.n),
+                kv.q_partialQ_pth(log_theta=self.log_theta,
+                                  q=p_fss, pTh=q_fss, n=self.n),
                 ssr.x_partial_Q_y(log_theta=self.log_theta,
                                   x=p, y=q, state=self.state)
             )
