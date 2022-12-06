@@ -14,8 +14,8 @@ class KroneckerTestCase(unittest.TestCase):
         self.q_diag = np.diag(np.diag(self.Q))
         self.p0 = np.zeros(2**(2*self.n+1))
         self.p0[0] = 1
-        self.lam1 = np.random.exponential(10, 1)
-        self.lam2 = np.random.exponential(10, 1)
+        self.lam1 = np.random.exponential(1, 1)
+        self.lam2 = np.random.exponential(1, 1)
         self.R = self.lam1*np.eye(2**(2*self.n +1)) - self.Q
         self.pTh1, self.pTh2 = fss.generate_pths(self.theta, self.p0, self.lam1, self.lam2)
         self.pTh = self.lam1 * self.lam2 / (self.lam1 - self.lam2)*(self.pTh2 - self.pTh1)
@@ -111,7 +111,7 @@ class KroneckerTestCase(unittest.TestCase):
         pD = ut.finite_sample(self.pTh, 50)
         h = 1e-10
         original_score = fss.likelihood(self.theta, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
-        # compute the gradient numerically
+        # compute the partial derivatives dS_D/d theta_ij numerically
         numerical_gradient = np.empty((self.n+1, self.n+1), dtype=float)
         for i in range(self.n+1):
             for j in range(self.n+1):
@@ -120,11 +120,19 @@ class KroneckerTestCase(unittest.TestCase):
                 new_score = fss.likelihood(theta_copy, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
                 numerical_gradient[i, j] = (new_score - original_score) / h
 
+        # compute the partial derivatives dS_D/d theta_ij numerically
+        new_score = fss.likelihood(self.theta, pD, self.lam1+h, self.lam2, self.pTh1, self.pTh2)
+        deriv_lam1 = (new_score - original_score) / h
+
+        new_score = fss.likelihood(self.theta, pD, self.lam1, self.lam2+h, self.pTh1, self.pTh2)
+        deriv_lam2 = (new_score - original_score) / h
+        grad = np.append(numerical_gradient.flatten(), [deriv_lam1, deriv_lam2])
+
         analytic_gradient = fss.gradient(self.theta, pD, self.lam1, self.lam2, self.n, self.p0)
         self.assertTrue(
             np.allclose(
-                np.around(numerical_gradient, decimals=3),
-                np.around(analytic_gradient, decimals=3)
+                np.around(grad, decimals=3),
+                    np.around(analytic_gradient, decimals=3)
             )
         )
 

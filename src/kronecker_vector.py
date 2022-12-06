@@ -447,14 +447,14 @@ def q_partialQ_pth(theta: np.array, q: np.array, pTh: np.array, n: int) -> np.ar
                       np.sum(z_prim[:, (1, 3)]) +\
                       np.sum(z_met[:, (2, 3)])
             if i == j:
-                g[i, j] = np.sum(z_sync) + np.sum(z_prim) + np.sum(z_met)#np.sum(z_sync[:, 0]) + np.sum(z_prim[:, (0, 2)]) + np.sum(z_met[:, (0, 1)])
+                g[i, j] = np.sum(z_sync) + np.sum(z_prim) + np.sum(z_met)
 
             z_sync = z_sync.flatten(order="F")
             z_prim = z_prim.flatten(order="F")
             z_met = z_met.flatten(order="F")
         g[i, n] = np.sum(z_met)
 
-    z_seed = q * kronvec_seed(theta, pTh, n)
+    z_seed = q * kronvec_seed(theta, pTh.copy(), n)
     for j in range(n):
         z_seed = z_seed.reshape((2**(2*n-1), 4), order="C")
         g[n, j] = np.sum(z_seed[:, 3])
