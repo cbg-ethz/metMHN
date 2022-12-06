@@ -20,7 +20,7 @@ def jacobi(log_theta: np.array, b: np.array, lam: float, transp: bool = False, x
         x = np.ones(2**(2*n+1))/(2**(2*n+1))
     dg = fss.diag_q(log_theta) + lam
     
-    for i in range(2*n+2):
+    for _ in range(2*n+2):
         x = b + fss.qvec(log_theta, x, diag=False, transp=transp)
         x = x/dg
     return x
