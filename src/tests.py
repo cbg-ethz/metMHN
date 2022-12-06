@@ -22,7 +22,7 @@ class KroneckerTestCase(unittest.TestCase):
         self.R = self.lam1*np.eye(2**(2*self.n + 1)) - self.Q
         self.state = np.random.randint(2, size=2*self.n+1)
         self.n_ss = self.state.sum()
-        self.pTh1, self.pTh2 = fss.generate_pths(self.theta, self.p0, self.lam1, self.lam2)
+        self.pTh1, self.pTh2 = fss.generate_pths(self.log_theta, self.p0, self.lam1, self.lam2)
         self.pTh = self.lam1 * self.lam2 / (self.lam1 - self.lam2)*(self.pTh2 - self.pTh1)
 
 
@@ -162,10 +162,10 @@ class KroneckerTestCase(unittest.TestCase):
                 p = np.zeros(1 << self.n_ss)
                 p[j] = 1
                 assert (np.allclose(
-                    np.linalg.inv(self.lam * np.identity(1 << self.n_ss)
+                    np.linalg.inv(self.lam1 * np.identity(1 << self.n_ss)
                         - essp.ssr_build_q(dpoint=self.state, log_theta=self.log_theta)) @ p,
                     ssr.R_i_inv_vec(log_theta=self.log_theta,
-                                    x=p, lam=self.lam, state=self.state),
+                                    x=p, lam=self.lam1, state=self.state),
                 ))
 
     def test_ssr_Q_T_p(self):
@@ -208,9 +208,9 @@ class KroneckerTestCase(unittest.TestCase):
         """
         restricted = utils.ssr_to_fss(self.state)
         p = ssr.R_i_inv_vec(log_theta=self.log_theta, x=self.p0[restricted],
-                            lam=self.lam, state=self.state)
+                            lam=self.lam1, state=self.state)
         q = ssr.R_i_inv_vec(log_theta=self.log_theta, x=self.p0[restricted],
-                            lam=self.lam, state=self.state, transpose=True)
+                            lam=self.lam1, state=self.state, transpose=True)
         p_fss = np.zeros(1 << (2*self.n + 1))
         q_fss = np.zeros(1 << (2*self.n + 1))
         p_fss[restricted] = p
@@ -232,17 +232,17 @@ class KroneckerTestCase(unittest.TestCase):
         """
         pD = utils.finite_sample(self.pTh, 50)
         h = 1e-10
-        original_score = fss.likelihood(self.theta, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
+        original_score = fss.likelihood(self.log_theta, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
         # compute the gradient numerically
         numerical_gradient = np.empty((self.n+1, self.n+1), dtype=float)
         for i in range(self.n+1):
             for j in range(self.n+1):
-                theta_copy = self.theta.copy()
+                theta_copy = self.log_theta.copy()
                 theta_copy[i, j] += h
                 new_score = fss.likelihood(theta_copy, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
                 numerical_gradient[i, j] = (new_score - original_score) / h
 
-        analytic_gradient = fss.gradient(self.theta, pD, self.lam1, self.lam2, self.n, self.p0)
+        analytic_gradient = fss.gradient(self.log_theta, pD, self.lam1, self.lam2, self.n, self.p0)
         self.assertTrue(
             np.allclose(
                 np.around(numerical_gradient, decimals=3),
