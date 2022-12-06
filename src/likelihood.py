@@ -26,11 +26,11 @@ def jacobi(log_theta: np.array, b: np.array, lam: float, transp: bool = False, x
     return x
 
 
-def generate_pths(theta: np.array, p0: np.array, lam1: float, lam2: float) -> np.array:
+def generate_pths(log_theta: np.array, p0: np.array, lam1: float, lam2: float) -> np.array:
     """
     calculates the two component sof the pth vector
     Args:
-        theta (np.array): logarithmic theta matrix
+        log_theta (np.array): logarithmic theta matrix
         p0 (np.array): starting distribution
         lam1 (float): rate of first diagnosis
         lam2 (float): rate of second diagnosis
@@ -38,7 +38,7 @@ def generate_pths(theta: np.array, p0: np.array, lam1: float, lam2: float) -> np
     Returns:
          np.array: pth1, pth2
     """
-    return jacobi(theta, p0, lam1), jacobi(theta, p0, lam2)
+    return jacobi(log_theta, p0, lam1), jacobi(log_theta, p0, lam2)
 
 
 def diag_forward(log_theta: np.array, p: np.array) -> np.array:
@@ -83,12 +83,12 @@ def likelihood(log_theta: np.array, pd: np.array, lam1: float, lam2: float,
 
 
 
-def gradient(theta: np.array, pD: np.array, lam1: float, lam2: float, n: int, p0: np.array,
+def gradient(log_theta: np.array, pD: np.array, lam1: float, lam2: float, n: int, p0: np.array,
              pTh1_space: np.array = None, pTh2_space: np.array = None) -> np.array:
     """
     Calculates the gradient of the likelihood
     Args:
-        theta (np.array): logarithmic theta matrix
+        log_theta (np.array): logarithmic theta matrix
         pD (np.array): Data vector holding frequencies of genotypes in D
         lam1 (float): Rate of first diagnosis
         lam2 (float): Rate of delta t
@@ -101,7 +101,7 @@ def gradient(theta: np.array, pD: np.array, lam1: float, lam2: float, n: int, p0
     """
     # Build p_theta
     if pTh1_space is None and pTh2_space is None:
-        pTh1, pTh2 = generate_pths(theta, p0, lam1, lam2)
+        pTh1, pTh2 = generate_pths(log_theta, p0, lam1, lam2)
     else:
         pTh1 = pTh1_space
         pTh2 = pTh2_space
@@ -110,11 +110,11 @@ def gradient(theta: np.array, pD: np.array, lam1: float, lam2: float, n: int, p0
 
     # Build the vector to multiply from the left to dQ/d th
     q = np.divide(pD, pTh, out=np.zeros_like(pD), where=pTh != 0)
-    q1 = jacobi(theta, q, lam1, True)
-    q2 = jacobi(theta, q, lam2, True)
-    d_theta = fss.q_partialQ_pth(theta, q2, pTh2, n) - fss.q_partialQ_pth(theta, q1, pTh1, n)
+    q1 = jacobi(log_theta, q, lam1, True)
+    q2 = jacobi(log_theta, q, lam2, True)
+    d_theta = fss.q_partialQ_pth(log_theta, q2, pTh2, n) - fss.q_partialQ_pth(log_theta, q1, pTh1, n)
 
     # Derivatives wrt. lam1 and lam2
-    d_lam1 = np.dot(q, (-(lam1-lam2)/lam2*pTh + lam_ratio*jacobi(theta, pTh1, lam1)))
-    d_lam2 = np.dot(q, lam1/(lam2*(lam1-lam2))*pTh-lam_ratio*jacobi(theta, pTh2, lam2))
+    d_lam1 = np.dot(q, (-(lam1-lam2) / lam2 * pTh + lam_ratio * jacobi(log_theta, pTh1, lam1)))
+    d_lam2 = np.dot(q, lam1 / (lam2*(lam1-lam2)) * pTh - lam_ratio * jacobi(log_theta, pTh2, lam2))
     return lam_ratio*d_theta
