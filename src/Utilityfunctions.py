@@ -77,3 +77,20 @@ def reachable_states(n: int):
 
     reachable[2**(2*n):] = 1
     return reachable.astype(bool)
+
+    return theta
+
+
+def finite_sample(pTh: np.array, k: int) -> np.array:
+    """
+    Generates k random samples drawn from a probability distribution pTh
+    Code taken from https://github.com/spang-lab/LearnMHN/blob/main/mhn/original/UtilityFunctions.py
+    Args:
+        pTh (np.array): Probability distribution to draw samples from
+        k (int): Number of samples to draw
+    Returns:
+         np.array: Subsampled probability distribution
+    """
+    n = pTh.size
+    return np.bincount(np.random.choice(n, k, replace=True, p=pTh), minlength=n) / k
+

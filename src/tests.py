@@ -14,12 +14,16 @@ class KroneckerTestCase(unittest.TestCase):
         self.q_diag = np.diag(np.diag(self.Q))
         self.p0 = np.zeros(2**(2*self.n+1))
         self.p0[0] = 1
-        self.lam = np.random.exponential(10, 1)
-        self.R = self.lam*np.eye(2**(2*self.n +1)) - self.Q
+        self.lam1 = np.random.exponential(10, 1)
+        self.lam2 = np.random.exponential(10, 1)
+        self.R = self.lam1*np.eye(2**(2*self.n +1)) - self.Q
+        self.pTh1, self.pTh2 = fss.generate_pths(self.theta, self.p0, self.lam1, self.lam2)
+        self.pTh = self.lam1 * self.lam2 / (self.lam1 - self.lam2)*(self.pTh2 - self.pTh1)
+
 
     def test_fss_q_p(self):
         """
-        tests Q(theta) p
+        tests whether implicit and explicit version of Q(theta) p return the same results
         """
         self.assertTrue(
             np.allclose(
@@ -28,9 +32,10 @@ class KroneckerTestCase(unittest.TestCase):
             )
         )
 
+
     def test_fss_q_transp_p(self):
         """
-        tests Q(theta)^T p
+        tests whether implicit and explicit version of Q(theta)^T p return the same results
         """
         self.assertTrue(
             np.allclose(
@@ -39,9 +44,10 @@ class KroneckerTestCase(unittest.TestCase):
             )
         )
 
+
     def test_fss_diag_Q_p(self):
         """
-        tests diag(Q(theta)) * p
+        tests whether implicit and explicit version of diag(Q(theta)) * p return the same results
         """
         self.assertTrue(
             np.allclose(
@@ -50,9 +56,10 @@ class KroneckerTestCase(unittest.TestCase):
             )
         )
 
+
     def test_fss_q_no_diag_p(self):
         """
-        tests (Q - diag(Q(theta))) p
+        tests whether implicit and explicit verion of (Q - diag(Q(theta))) p return the same results
         """
         self.assertTrue(
             np.allclose(
@@ -61,23 +68,32 @@ class KroneckerTestCase(unittest.TestCase):
             )
         )
 
+
     def test_fss_resolvent_p(self):
         """
-        tests (lambda * I - Q(theta))^(-1) p
+        tests whether implicit and explicit version of (lambda * I - Q(theta))^(-1) p return the same results
         """
         self.assertTrue(
             np.allclose(
                 np.linalg.solve(self.R.T, self.p0),
-                fss.jacobi(self.theta, self.p0, self.lam, transp=True)
+                fss.jacobi(self.theta, self.p0, self.lam1, transp=True)
             )
         )
 
+
+    def test_gen_pths(self):
+        """
+        tests if pTh is a valid distribution
+        """
+        self.assertTrue(np.around(sum(self.pTh), decimals=5) == 1)
+
+
     def test_fss_q_grad_p(self):
         """
-        tests q (d Q/d theta) p
+        tests whether implicit and explicit versions of q (d Q/d theta) p return the same results
         """
-        p = fss.jacobi(self.theta, self.p0, self.lam)
-        q = fss.jacobi(self.theta, p, self.lam, transp=True)
+        p = fss.jacobi(self.theta, self.p0, self.lam1)
+        q = fss.jacobi(self.theta, p, self.lam1, transp=True)
         theta_test = np.zeros_like(self.theta)
         self.assertTrue(
             np.allclose(
@@ -86,6 +102,31 @@ class KroneckerTestCase(unittest.TestCase):
             )
         )
 
+
+    def test_fss_grad(self):
+        """
+        tests if the numeric and the analytic gradient of S_D d S_D/ d theta_ij for all ij match
+        Adapted from https://github.com/spang-lab/LearnMHN/blob/main/test/test_state_space_restriction.py
+        """
+        pD = ut.finite_sample(self.pTh, 50)
+        h = 1e-10
+        original_score = fss.likelihood(self.theta, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
+        # compute the gradient numerically
+        numerical_gradient = np.empty((self.n+1, self.n+1), dtype=float)
+        for i in range(self.n+1):
+            for j in range(self.n+1):
+                theta_copy = self.theta.copy()
+                theta_copy[i, j] += h
+                new_score = fss.likelihood(theta_copy, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
+                numerical_gradient[i, j] = (new_score - original_score) / h
+
+        analytic_gradient = fss.gradient(self.theta, pD, self.lam1, self.lam2, self.n, self.p0)
+        self.assertTrue(
+            np.allclose(
+                np.around(numerical_gradient, decimals=3),
+                np.around(analytic_gradient, decimals=3)
+            )
+        )
 
 if __name__ == "__main__":
     unittest.main()
