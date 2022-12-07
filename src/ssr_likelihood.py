@@ -217,39 +217,4 @@ def log_likelihood(log_theta: np.array, p_D: np.array, lam1: float, lam2: float,
 
 if __name__ == "__main__":
 
-    n = 5
-    sparsity = 0.5
-    # log_theta = utils.random_theta(n=n, sparsity=sparsity)
-    log_theta= np.array([[-2.87399894, -0.36874766,  0.        ,  0.        ,  0.        ,
-         2.56749069],
-       [ 0.        , -1.10961183,  0.        , -1.27192663,  0.        ,
-        -1.9776157 ],
-       [ 0.        ,  0.        ,  1.77065796, -0.51283797,  0.39215654,
-         0.        ],
-       [ 0.        ,  0.        ,  0.        ,  0.99286743,  0.        ,
-         0.        ],
-       [ 0.        ,  0.        ,  0.        , -1.16209242,  0.74138848,
-         0.        ],
-       [-0.28107995,  2.36341489,  1.82847317, -0.95989665,  0.        ,
-         0.83352605]])
-
-    # state = np.random.randint(2, size=2*n+1)
-    state = np.array([0, 0, 0, 1, 1, 1, 1, 1, 0, 1, 1])
-    length = 2**sum(state)
-    # lam1, lam2 = np.random.random(2)
-
-    # p = np.zeros(2**(2*n+1))
-    # p[0] = 1
-    # gradient(log_theta=log_theta, p_D=p[utils.ssr_to_fss(state)],
-    #     lam1=lam1,lam2=lam2, state=state)
-    p0 = np.zeros(2**(2* n +1))
-    p0[0] = 1
-    restricted = utils.ssr_to_fss(state)
-    lam = np.array([10.01245993])
-    p = R_inv_vec(log_theta=log_theta, x=p0[restricted],
-                        lam=lam, state=state)
-    q = R_inv_vec(log_theta=log_theta, x=p0[restricted],
-                        lam=lam, state=state, transpose=True)
-
-    x_partial_Q_y(log_theta=log_theta,
-                        x=p, y=q, state=state)
+    pass

@@ -23,7 +23,7 @@ class KroneckerTestCase(unittest.TestCase):
         self.state = np.random.randint(2, size=2*self.n+1)
         self.n_ss = self.state.sum()
         self.pTh1, self.pTh2 = fss.generate_pths(self.log_theta, self.p_0, self.lam1, self.lam2)
-        self.pTh = self.lam1 * self.lam2 / (self.lam1 - self.lam2)*(self.pTh2 - self.pTh1)
+        self.p_th = self.lam1 * self.lam2 / (self.lam1 - self.lam2)*(self.pTh2 - self.pTh1)
 
 
     def test_fss_q_p(self):
@@ -81,16 +81,16 @@ class KroneckerTestCase(unittest.TestCase):
         self.assertTrue(
             np.allclose(
                 np.linalg.solve(self.R.T, self.p_0),
-                fss.jacobi(self.log_theta, self.p_0, self.lam1, transp=True)
+                fss.jacobi(self.log_theta, self.p_0, self.lam1, transpose=True)
             )
         )
 
 
     def test_gen_pths(self):
         """
-        tests if pTh is a valid distribution
+        tests if p_th is a valid distribution
         """
-        self.assertTrue(np.around(sum(self.pTh), decimals=5) == 1)
+        self.assertTrue(np.around(sum(self.p_th), decimals=5) == 1)
 
 
     def test_fss_q_grad_p(self):
@@ -98,7 +98,7 @@ class KroneckerTestCase(unittest.TestCase):
         tests whether implicit and explicit versions of q (d Q/d theta) p return the same results
         """
         p = fss.jacobi(self.log_theta, self.p_0, self.lam1)
-        q = fss.jacobi(self.log_theta, p, self.lam1, transp=True)
+        q = fss.jacobi(self.log_theta, p, self.lam1, transpose=True)
         theta_test = np.zeros_like(self.log_theta)
         self.assertTrue(
             np.allclose(
@@ -230,7 +230,7 @@ class KroneckerTestCase(unittest.TestCase):
         tests if the numeric and the analytic gradient of S_D d S_D/ d theta_ij for all ij match
         Adapted from https://github.com/spang-lab/LearnMHN/blob/main/test/test_state_space_restriction.py
         """
-        pD = utils.finite_sample(self.pTh, 50)
+        pD = utils.finite_sample(self.p_th, 50)
         h = 1e-10
         original_score = fss.likelihood(self.log_theta, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
         # compute the gradient numerically

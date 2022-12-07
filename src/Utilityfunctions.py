@@ -82,7 +82,7 @@ def reachable_states(n: int):
 
 def finite_sample(p_th: np.array, k: int) -> np.array:
     """
-    Generates k random samples drawn from a probability distribution pTh
+    Generates k random samples drawn from a probability distribution p_th
     Code taken from https://github.com/spang-lab/LearnMHN/blob/main/mhn/original/UtilityFunctions.py
     Args:
         p_th (np.array): Probability distribution to draw samples from
