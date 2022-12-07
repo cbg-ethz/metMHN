@@ -12,17 +12,17 @@ def state_space(n: int) -> list:
     return [f'{i:0b}'.zfill(n)[::-1] for i in range(2**n)]
 
 
-def trunk_states(dpoint: list) -> list:
+def trunk_states(state: np.array) -> list:
     """
     Args:
-        dpoint (list): Bitstring, genotype of a single patient
+        state (np.array): Binary state vector, representing the current sample's events.
     Returns:
         list: states that the tumor could have visited during progression
     """
-    n = len(dpoint)
+    n = len(state)
     inds = np.ones(1)
     for i in range(n):
-        if dpoint[i] == 1:
+        if state[i] == 1:
             inds = np.kron(np.array([1, 1]), inds)
         else:
             inds = np.kron(np.array([1, 0]), inds)
@@ -78,19 +78,18 @@ def reachable_states(n: int):
     reachable[2**(2*n):] = 1
     return reachable.astype(bool)
 
-    return theta
 
 
-def finite_sample(pTh: np.array, k: int) -> np.array:
+def finite_sample(p_th: np.array, k: int) -> np.array:
     """
     Generates k random samples drawn from a probability distribution pTh
     Code taken from https://github.com/spang-lab/LearnMHN/blob/main/mhn/original/UtilityFunctions.py
     Args:
-        pTh (np.array): Probability distribution to draw samples from
+        p_th (np.array): Probability distribution to draw samples from
         k (int): Number of samples to draw
     Returns:
-         np.array: Subsampled probability distribution
+        np.array: Subsampled probability distribution
     """
-    n = pTh.size
-    return np.bincount(np.random.choice(n, k, replace=True, p=pTh), minlength=n) / k
+    n = p_th.size
+    return np.bincount(np.random.choice(n, k, replace=True, p=p_th), minlength=n) / k
 

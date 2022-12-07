@@ -106,19 +106,19 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array
     return z
 
 
-def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, transpose: bool = False) -> np.array:
-    """This computes R_i^{-1} x = (\lambda_i I - Q)^{-1} x
+def R_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, transpose: bool = False) -> np.array:
+    """This computes R^{-1} x = (\lambda I - Q)^{-1} x
 
     Args:
         log_theta (np.array): Log values of the theta matrix
         x (np.array): Vector to multiply with from the right. Length must equal the number of
         nonzero entries in the state vector.
-        lam (float): Value of \lambda_i
+        lam (float): Value of \lambda
         state (np.array): Binary state vector, representing the current sample's events.
 
 
     Returns:
-        np.array: R_i^{-1} x
+        np.array: R^{-1} x
     """
     n = log_theta.shape[0] - 1
 
@@ -158,13 +158,13 @@ def gradient(log_theta: np.array, p_D: np.array, lam1: float, lam2: float, state
     p_0 = np.zeros(2**n_ss)
     p_0[0] = 1
     lam = (lam1 * lam2 / (lam1 - lam2))
-    R_1_inv_p_0 = R_i_inv_vec(
+    R_1_inv_p_0 = R_inv_vec(
         log_theta=log_theta,
         x=p_0,
         lam=lam1,
         state=state)
 
-    R_2_inv_p_0 = R_i_inv_vec(
+    R_2_inv_p_0 = R_inv_vec(
         log_theta=log_theta,
         x=p_0,
         lam=lam2,
@@ -176,9 +176,9 @@ def gradient(log_theta: np.array, p_D: np.array, lam1: float, lam2: float, state
     # some states are not reachable and therefore have zero probability density
     minuend = p_D * np.divide(lam, p_theta, where=reachable[restricted])
     subtrahend = minuend.copy()
-    minuend = R_i_inv_vec(log_theta=log_theta, x=minuend,
+    minuend = R_inv_vec(log_theta=log_theta, x=minuend,
                           lam=lam2, state=state, transpose=True)
-    subtrahend = R_i_inv_vec(log_theta=log_theta, x=minuend,
+    subtrahend = R_inv_vec(log_theta=log_theta, x=minuend,
                              lam=lam1, state=state, transpose=True)
     minuend = x_partial_Q_y(log_theta=log_theta,
                             x=minuend, y=R_2_inv_p_0, state=state)
@@ -196,12 +196,12 @@ def log_likelihood(log_theta: np.array, p_D: np.array, lam1: float, lam2: float,
 
     p_0 = np.zeros(2 ** state.sum())
     p_0[0] = 1
-    p_th = R_i_inv_vec(
+    p_th = R_inv_vec(
         log_theta=log_theta,
         x=p_0,
         lam=lam2,
         state=state
-    ) - R_i_inv_vec(
+    ) - R_inv_vec(
         log_theta=log_theta,
         x=p_0,
         lam=lam1,
@@ -246,9 +246,9 @@ if __name__ == "__main__":
     p0[0] = 1
     restricted = utils.ssr_to_fss(state)
     lam = np.array([10.01245993])
-    p = R_i_inv_vec(log_theta=log_theta, x=p0[restricted],
+    p = R_inv_vec(log_theta=log_theta, x=p0[restricted],
                         lam=lam, state=state)
-    q = R_i_inv_vec(log_theta=log_theta, x=p0[restricted],
+    q = R_inv_vec(log_theta=log_theta, x=p0[restricted],
                         lam=lam, state=state, transpose=True)
 
     x_partial_Q_y(log_theta=log_theta,
