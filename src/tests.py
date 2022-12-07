@@ -22,8 +22,8 @@ class KroneckerTestCase(unittest.TestCase):
         self.R = self.lam1*np.eye(2**(2*self.n + 1)) - self.Q
         self.state = np.random.randint(2, size=2*self.n+1)
         self.n_ss = self.state.sum()
-        self.pTh1, self.pTh2 = fss.generate_pths(self.log_theta, self.p_0, self.lam1, self.lam2)
-        self.p_th = self.lam1 * self.lam2 / (self.lam1 - self.lam2)*(self.pTh2 - self.pTh1)
+        self.p_th_1, self.p_th_2 = fss.generate_pths(self.log_theta, self.p_0, self.lam1, self.lam2)
+        self.p_th = self.lam1 * self.lam2 / (self.lam1 - self.lam2)*(self.p_th_2 - self.p_th_1)
 
 
     def test_fss_q_p(self):
@@ -33,7 +33,7 @@ class KroneckerTestCase(unittest.TestCase):
         self.assertTrue(
             np.allclose(
                 self.Q @ self.p_0,
-                kv.qvec(self.log_theta, self.p_0, True, False)
+                kv.kronvec(self.log_theta, self.p_0, True, False)
             )
         )
 
@@ -44,7 +44,7 @@ class KroneckerTestCase(unittest.TestCase):
         self.assertTrue(
             np.allclose(
                 self.Q.T @ self.p_0,
-                kv.qvec(log_theta=self.log_theta,
+                kv.kronvec(log_theta=self.log_theta,
                         p=self.p_0, diag=True, transpose=True)
             )
         )
@@ -69,7 +69,7 @@ class KroneckerTestCase(unittest.TestCase):
         self.assertTrue(
             np.allclose(
                 (self.Q - self.q_diag) @ self.p_0,
-                kv.qvec(self.log_theta, self.p_0, False, False)
+                kv.kronvec(self.log_theta, self.p_0, False, False)
             )
         )
 
@@ -202,7 +202,7 @@ class KroneckerTestCase(unittest.TestCase):
                                 n=self.n, state=self.state, diag=False, transpose=True)
                 ))
 
-    def test_ssr_q_grad_p(self):
+    def test_ssr_Q_grad_p(self):
         """
         Tests restricted version of q (d Q/d theta) p
         """
@@ -219,7 +219,7 @@ class KroneckerTestCase(unittest.TestCase):
             np.allclose(
                 kv.x_partial_Q_y(log_theta=self.log_theta,
                                   x=p_fss, y=q_fss, n=self.n),
-                ssr.x_partial_Q_y(log_theta=self.log_theta,
+                ssr_kv.x_partial_Q_y(log_theta=self.log_theta,
                                   x=p, y=q, state=self.state)
             )
         )
@@ -230,9 +230,9 @@ class KroneckerTestCase(unittest.TestCase):
         tests if the numeric and the analytic gradient of S_D d S_D/ d theta_ij for all ij match
         Adapted from https://github.com/spang-lab/LearnMHN/blob/main/test/test_state_space_restriction.py
         """
-        pD = utils.finite_sample(self.p_th, 50)
+        p_D = utils.finite_sample(self.p_th, 50)
         h = 1e-10
-        original_score = fss.likelihood(self.log_theta, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
+        original_score = fss.log_likelihood(self.log_theta, p_D, self.lam1, self.lam2, self.p_th_1, self.p_th_2)
         # compute the gradient numerically
         # compute the partial derivatives dS_D/d theta_ij numerically
         numerical_gradient = np.empty((self.n+1, self.n+1), dtype=float)
@@ -240,18 +240,18 @@ class KroneckerTestCase(unittest.TestCase):
             for j in range(self.n+1):
                 theta_copy = self.log_theta.copy()
                 theta_copy[i, j] += h
-                new_score = fss.likelihood(theta_copy, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
+                new_score = fss.log_likelihood(theta_copy, p_D, self.lam1, self.lam2, self.p_th_1, self.p_th_2)
                 numerical_gradient[i, j] = (new_score - original_score) / h
 
         # compute the partial derivatives dS_D/d theta_ij numerically
-        new_score = fss.likelihood(self.log_theta, pD, self.lam1+h, self.lam2, self.pTh1, self.pTh2)
+        new_score = fss.log_likelihood(self.log_theta, p_D, self.lam1+h, self.lam2, self.p_th_1, self.p_th_2)
         deriv_lam1 = (new_score - original_score) / h
 
-        new_score = fss.likelihood(self.log_theta, pD, self.lam1, self.lam2+h, self.pTh1, self.pTh2)
+        new_score = fss.log_likelihood(self.log_theta, p_D, self.lam1, self.lam2+h, self.p_th_1, self.p_th_2)
         deriv_lam2 = (new_score - original_score) / h
         grad = np.append(numerical_gradient.flatten(), [deriv_lam1, deriv_lam2])
 
-        analytic_gradient = fss.gradient(self.log_theta, pD, self.lam1, self.lam2, self.n, self.p_0)
+        analytic_gradient = fss.gradient(self.log_theta, p_D, self.lam1, self.lam2, self.n, self.p_0)
         self.assertTrue(
             np.allclose(
                 np.around(grad, decimals=3),

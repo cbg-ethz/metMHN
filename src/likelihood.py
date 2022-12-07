@@ -22,7 +22,7 @@ def jacobi(log_theta: np.array, b: np.array, lam: float, transpose: bool = False
     dg = fss.diag_q(log_theta) + lam
     
     for _ in range(2*n+2):
-        x = b + fss.qvec(log_theta, x, diag=False, transpose=transpose)
+        x = b + fss.kronvec(log_theta, x, diag=False, transpose=transpose)
         x = x/dg
     return x
 
@@ -56,12 +56,11 @@ def diag_forward(log_theta: np.array, p: np.array) -> np.array:
     dg = fss.diag_q(log_theta)+diagnosed
     for i in range(2*n+1):
         np.divide(p, dg, out=p, where=dg != 0)
-        p = fss.qvec(log_theta, p.copy(), False) + diagnosed*p
+        p = fss.kronvec(log_theta, p.copy(), False) + diagnosed*p
     return p
 
 
-
-def likelihood(log_theta: np.array, p_D: np.array, lam1: float, lam2: float,
+def log_likelihood(log_theta: np.array, p_D: np.array, lam1: float, lam2: float,
                p_th_1_space: np.array, p_th_2_space: np.array) -> float:
     """
     This function computes the log likelihood score
@@ -81,7 +80,6 @@ def likelihood(log_theta: np.array, p_D: np.array, lam1: float, lam2: float,
     p_th_1_space, p_th_2_space = generate_pths(log_theta, p_0, lam1, lam2)
     p_th = lam1 * lam2 / (lam1 - lam2) * (p_th_2_space - p_th_1_space)
     return p_D.dot(np.log(p_th, out=np.zeros_like(p_th), where=utils.reachable_states(n=n)))
-
 
 
 def gradient(log_theta: np.array, p_D: np.array, lam1: float, lam2: float, n: int, p_0: np.array,
