@@ -251,7 +251,7 @@ class KroneckerTestCase(unittest.TestCase):
         deriv_lam2 = (new_score - original_score) / h
         grad = np.append(numerical_gradient.flatten(), [deriv_lam1, deriv_lam2])
 
-        analytic_gradient = fss.gradient(self.log_theta, pD, self.lam1, self.lam2, self.n, self.p0)
+        analytic_gradient = fss.gradient(self.log_theta, pD, self.lam1, self.lam2, self.n, self.p_0)
         self.assertTrue(
             np.allclose(
                 np.around(grad, decimals=3),
