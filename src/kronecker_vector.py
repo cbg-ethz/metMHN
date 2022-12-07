@@ -209,7 +209,7 @@ def kronvec_seed(log_theta: np.array, p: np.array, n: int, diag: bool = True, tr
     return p
 
 
-def qvec(log_theta: np.array, p: np.array, diag: bool, transpose: bool = False) -> np.array:
+def kronvec(log_theta: np.array, p: np.array, diag: bool, transpose: bool = False) -> np.array:
     """
     This function computes Q*p implicitly
     Args:
