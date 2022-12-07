@@ -446,7 +446,6 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, n: int) -> np.a
                 np.sum(z_prim[:, (1, 3)]) +\
                 np.sum(z_met[:, (2, 3)])
             if i == j:
-                # np.sum(z_sync[:, 0]) + np.sum(z_prim[:, (0, 2)]) + np.sum(z_met[:, (0, 1)])
                 g[i, j] = np.sum(z_sync) + np.sum(z_prim) + np.sum(z_met)
 
             z_sync = z_sync.flatten(order="F")
@@ -454,7 +453,7 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, n: int) -> np.a
             z_met = z_met.flatten(order="F")
         g[i, n] = np.sum(z_met)
 
-    z_seed = x * kronvec_seed(log_theta, y, n)
+    z_seed = x * kronvec_seed(log_theta, y.copy(), n)
 
     g[n, n] = np.sum(z_seed)
 
