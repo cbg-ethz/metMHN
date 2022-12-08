@@ -366,7 +366,7 @@ def kronvec_prim_transp(theta: jnp.array, p: jnp.array, i: int, n: int, diag: bo
     p = p.at[:, (1, 3)].set(p.at[:, (0, 2)].get() * theta_i[i])
     p = lax.cond(diag,
                  prim_lambda_diag,
-                 prim_lambda_no_diag(), p, theta_i[i])
+                 prim_lambda_no_diag, p, theta_i[i])
     p = p.flatten(order="F")
 
     # Diagonal 4x4 Kronecker factors j>i
@@ -413,7 +413,6 @@ def kronvec_seed_transp(theta: jnp.array, p: jnp.array, n: int, diag: bool = Tru
           p (jnp.array): state vector
           n (int): number of genomic events
           diag (bool): Flag indicating wether to build the diagonal
-          transp (bool): indicates wether to transpose Qp or not
     Returns:
           jnp.array: Q_seed^T p
     """
