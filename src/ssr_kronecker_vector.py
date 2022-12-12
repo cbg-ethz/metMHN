@@ -251,7 +251,7 @@ def kronvec_seed(log_theta: np.array, p: np.array, n: int, state: np.array, diag
         transpose (bool, optional): Whether to transpose Q_M before multiplying. Defaults to False.
 
     Returns:
-        np.array: Q_i p
+        np.array: Q_seed p
     """
 
     # there are no non-diagonal entries if met has not seeded
