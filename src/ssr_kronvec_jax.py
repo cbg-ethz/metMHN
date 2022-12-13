@@ -452,8 +452,8 @@ def kronvec_seed(log_theta: jnp.array, p: jnp.array, n: int, state: jnp.array, d
     return y
 
 
-# @partial(jit, static_argnames=["n", "diag", "tranpose"])
-def kronvec(log_theta: np.array, p: np.array, n: int, state: np.array, diag: bool = True, transpose: bool = False) -> np.array:
+@partial(jit, static_argnames=["n", "diag", "transpose", "state_size"])
+def kronvec(log_theta: np.array, p: np.array, n: int, state: np.array, state_size: int, diag: bool = True, transpose: bool = False) -> np.array:
     """This computes the restricted version of the product of the rate matrix Q with a vector Q p.
 
     Args:
@@ -468,7 +468,7 @@ def kronvec(log_theta: np.array, p: np.array, n: int, state: np.array, diag: boo
     Returns:
         np.array: Q p
     """
-    y = jnp.zeros(shape=2**sum(state))
+    y = jnp.zeros(shape=2**state_size)
 
     log_theta = jnp.array(log_theta)
     p = jnp.array(p)
@@ -482,24 +482,7 @@ def kronvec(log_theta: np.array, p: np.array, n: int, state: np.array, diag: boo
         y += kronvec_met(log_theta=log_theta, p=p, i=i,
                          n=n, state=state, diag=diag, transpose=transpose)
 
-    # y = jnp.zeros(shape=2**sum(state))
-
-    # def loop_body(i, val):
-    #     val += kronvec_sync(log_theta=log_theta, p=p, i=i,
-    #                       n=n, state=state, diag=diag, transpose=transpose)
-    #     val += kronvec_prim(log_theta=log_theta, p=p, i=i,
-    #                       n=n, state=state, diag=diag, transpose=transpose)
-    #     val += kronvec_met(log_theta=log_theta, p=p, i=i,
-    #                      n=n, state=state, diag=diag, transpose=transpose)
-    #     return val
-
-    # lax.fori_loop(
-    #     lower=0,
-    #     upper=n,
-    #     body_fun=loop_body,
-    #     init_val=y
-    # )
-
+   
     y += kronvec_seed(log_theta=log_theta, p=p, n=n,
                       state=state, diag=diag, transpose=transpose)
 
