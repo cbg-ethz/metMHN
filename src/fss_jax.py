@@ -431,8 +431,6 @@ def kronvec_seed_transp(theta: jnp.array, p: jnp.array, n: int, diag: bool = Tru
     return p
 
 
-
-
 @partial(jit, static_argnums=3)
 def qvec(log_theta: jnp.array, p: jnp.array, diag: bool, n: int) -> jnp.array:
     """
