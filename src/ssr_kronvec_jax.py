@@ -9,44 +9,55 @@ import jax
 @jit
 def k2dt0(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
-    p = p.at[:, 0].multiply(-theta)
-    p = p.at[:, 1].set(0.)
+    # p = p.at[:, 0].multiply(-theta)
+    # p = p.at[:, 1].set(0.)
+    theta_slice = jnp.array([-theta, 0.])
+    p = jax.vmap(lambda a, x: a * x, (None, 0), 0)(theta_slice, p)
     return p.flatten(order="F")
 
 
 @jit
 def k2d0t(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
-    p = p.at[:, 0].set(0.)
-    p = p.at[:, 1].multiply(theta)
+    # p = p.at[:, 0].set(0.)
+    # p = p.at[:, 1].multiply(theta)
+    theta_slice = jnp.array([0., theta])
+    p = jax.vmap(lambda a, x: a * x, (None, 0), 0)(theta_slice, p)
     return p.flatten(order="F")
 
 
 @jit
 def k2dtt(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
-    p = p.at[:, [0, 1]].multiply(-theta)
+    # p = p.at[:, [0, 1]].multiply(-theta)
+    p = jax.vmap(lambda x: -theta * x, 0, 0)(p)
     return p.flatten(order="F")
 
 
 @jit
 def k2d1t(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
-    p = p.at[:, 1].multiply(theta)
+    # p = p.at[:, 1].multiply(theta)
+    theta_slice = jnp.array([1., theta])
+    p = jax.vmap(lambda a, x: a * x, (None, 0), 0)(theta_slice, p)
     return p.flatten(order="F")
 
 
 @jit
 def k2d10(p: jnp.array) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
-    p = p.at[:, 1].set(0.)
+    # p = p.at[:, 1].set(0.)
+    theta_slice = jnp.array([1., 0.])
+    p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
     return p.flatten(order="F")
 
 
 @jit
 def k2d01(p: jnp.array) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
-    p = p.at[:, 0].set(0.)
+    # p = p.at[:, 0].set(0.)
+    theta_slice = jnp.array([0., 1.])
+    p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
     return p.flatten(order="F")
 
 
@@ -63,18 +74,22 @@ def k2ntt(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False
         diag,
         lambda p: lax.cond(
             transpose,
-            lambda p: p.at[:, 0].set(theta * (-p.at[:, 0].get() +
-                                              p.at[:, 1].get())).at[:, 1].set(0.),
-            lambda p: p.at[:, 1].set(-p.at[:, 0].get()
-                                     ).at[:, :].multiply(-theta),
+            # lambda p: p.at[:, 0].set(theta * (-p.at[:, 0].get() +
+            #                                   p.at[:, 1].get())).at[:, 1].set(0.),
+            lambda x: x @ jnp.array([[-theta, 0.], [theta, 0.]]),
+            # lambda p: p.at[:, 1].set(-p.at[:, 0].get()
+            #                          ).at[:, :].multiply(-theta),
+            lambda x: x @ jnp.array([[-theta, theta], [0., 0.]]),
             operand=p
         ),
         lambda p: lax.cond(
             transpose,
-            lambda p: p.at[:, 0].set(
-                theta * p.at[:, 1].get()).at[:, 1].set(0.),
-            lambda p: p.at[:, 1].set(
-                theta * p.at[:, 0].get()).at[:, 0].set(0.),
+            # lambda p: p.at[:, 0].set(
+            #     theta * p.at[:, 1].get()).at[:, 1].set(0.),
+            lambda x: x @ jnp.array([[0, 0], [theta, 0]]),
+            # lambda p: p.at[:, 1].set(
+            #     theta * p.at[:, 0].get()).at[:, 0].set(0.),
+            lambda x: x @ jnp.array([[0, theta], [0, 0]]),
             operand=p
         ),
         operand=p
@@ -89,17 +104,21 @@ def k4ns(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False)
         diag,
         lambda p: lax.cond(
             transpose,
-            lambda p: p.at[:, 0].set(theta * (-p.at[:, 0].get() +
-                                              p.at[:, 3].get())).at[:, [1, 2, 3]].set(0.),
-            lambda p: p.at[:, 3].set(- p.at[:, 0].get()).at[:,
-                                                            [0, 3]].multiply(-theta).at[:, [1, 2]].set(0.),
+            # lambda p: p.at[:, 0].set(theta * (-p.at[:, 0].get() +
+            #                                   p.at[:, 3].get())).at[:, [1, 2, 3]].set(0.),
+            lambda x: x @ jnp.array([[-theta, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [theta, 0, 0, 0]]),
+            # lambda p: p.at[:, 3].set(- p.at[:, 0].get()).at[:,
+            #                                                 [0, 3]].multiply(-theta).at[:, [1, 2]].set(0.),
+            lambda x: x @ jnp.array([[-theta, 0, 0, theta], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]),
             operand=p),
         lambda p: lax.cond(
             transpose,
-            lambda p: p.at[:, 0].set(
-                theta * p.at[:, 3].get()).at[:, [1, 2, 3]].set(0.),
-            lambda p: p.at[:, 3].set(
-                theta * p.at[:, 0].get()).at[:, [0, 1, 2]].set(0.),
+            # lambda p: p.at[:, 0].set(
+            #     theta * p.at[:, 3].get()).at[:, [1, 2, 3]].set(0.),
+            lambda x: x @ jnp.array([[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [theta, 0, 0, 0]]),
+            # lambda p: p.at[:, 3].set(
+            #     theta * p.at[:, 0].get()).at[:, [0, 1, 2]].set(0.),
+            lambda x: x @ jnp.array([[0, 0, 0, theta], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]),
             operand=p
         ),
         operand=p
@@ -114,18 +133,22 @@ def k4np(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False)
         diag,
         lambda p: lax.cond(
             transpose,
-            lambda p: p.at[:, 0].set(theta * (-p.at[:, 0].get() + p.at[:, 1].get())).at[:, 2].set(
-                theta * (-p.at[:, 2].get() + p.at[:, 3].get())).at[:, [1, 3]].set(0.),
-            lambda p: p.at[:, [1, 3]].set(-p.at[:, [0, 2]].get()
-                                          ).at[:, :].multiply(-theta),
+            # lambda p: p.at[:, 0].set(theta * (-p.at[:, 0].get() + p.at[:, 1].get())).at[:, 2].set(
+            #     theta * (-p.at[:, 2].get() + p.at[:, 3].get())).at[:, [1, 3]].set(0.),
+            lambda x: x @ jnp.array([[-theta, 0, 0, 0], [theta, 0, 0, 0], [0, 0, -theta, 0], [0, 0, theta, 0]]),
+            # lambda p: p.at[:, [1, 3]].set(-p.at[:, [0, 2]].get()
+            #                               ).at[:, :].multiply(-theta),
+            lambda x: x @ jnp.array([[-theta, theta, 0, 0], [0, 0, 0, 0], [0, 0, -theta, theta], [0, 0, 0, 0]]),
             operand=p
         ),
         lambda p: lax.cond(
             transpose,
-            lambda p: p.at[:, [0, 2]].set(theta * p.at[:, [1, 3]].get()
-                                          ).at[:, [1, 3]].set(0.),
-            lambda p: p.at[:, [1, 3]].set(theta * p.at[:, [0, 2]].get()
-                                          ).at[:, [0, 2]].set(0.),
+            # lambda p: p.at[:, [0, 2]].set(theta * p.at[:, [1, 3]].get()
+            #                               ).at[:, [1, 3]].set(0.),
+            lambda x: x @ jnp.array([[0, 0, 0, 0], [theta, 0, 0, 0], [0, 0, 0, 0], [0, 0, theta, 0]]),
+            # lambda p: p.at[:, [1, 3]].set(theta * p.at[:, [0, 2]].get()
+            #                               ).at[:, [0, 2]].set(0.),
+            lambda x: x @ jnp.array([[0, theta, 0, 0], [0, 0, 0, 0], [0, 0, 0, theta], [0, 0, 0, 0]]),
             operand=p
         ),
         operand=p
@@ -140,18 +163,22 @@ def k4nm(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False)
         diag,
         lambda p: lax.cond(
             transpose,
-            lambda p: p.at[:, [0, 1]].set(
-                theta * (-p.at[:, [0, 1]].get() + p.at[:, [2, 3]].get())).at[:, [2, 3]].set(0.),
-            lambda p: p.at[:, [2, 3]].set(-p.at[:, [0, 1]].get()
-                                          ).at[:, :].multiply(-theta),
+            # lambda p: p.at[:, [0, 1]].set(
+            #     theta * (-p.at[:, [0, 1]].get() + p.at[:, [2, 3]].get())).at[:, [2, 3]].set(0.),
+            lambda x: x @ jnp.array([[-theta, 0, 0, 0], [0, -theta, 0, 0], [theta, 0, 0, 0], [0, theta, 0, 0]]),
+            # lambda p: p.at[:, [2, 3]].set(-p.at[:, [0, 1]].get()
+            #                               ).at[:, :].multiply(-theta),
+            lambda x: x @ jnp.array([[-theta, 0, theta, 0], [0, -theta, 0, theta], [0, 0, 0, 0], [0, 0, 0, 0]]),
             operand=p
         ),
         lambda p: lax.cond(
             transpose,
-            lambda p: p.at[:, [0, 1]].set(theta * p.at[:, [2, 3]].get()
-                                          ).at[:, [2, 3]].set(0.),
-            lambda p: p.at[:, [2, 3]].set(theta * p.at[:, [0, 1]].get()
-                                          ).at[:, [0, 1]].set(0.),
+            # lambda p: p.at[:, [0, 1]].set(theta * p.at[:, [2, 3]].get()
+            #                               ).at[:, [2, 3]].set(0.),
+            lambda x: x @ jnp.array([[0, 0, 0, 0], [0, 0, 0, 0], [theta, 0, 0, 0], [0, theta, 0, 0]]),
+            # lambda p: p.at[:, [2, 3]].set(theta * p.at[:, [0, 1]].get()
+            #                               ).at[:, [0, 1]].set(0.),
+            lambda x: x @ jnp.array([[0, 0, theta, 0], [0, 0, 0, theta], [0, 0, 0, 0], [0, 0, 0, 0]]),
             operand=p
         ),
         operand=p
@@ -162,21 +189,27 @@ def k4nm(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False)
 @jit
 def k4ds(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
-    p = p.at[:, 3].multiply(theta).at[:, [1, 2]].set(0.)
+    # p = p.at[:, 3].multiply(theta).at[:, [1, 2]].set(0.)
+    theta_slice = jnp.array([1., 0., 0., theta])
+    p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
     return p.flatten(order="F")
 
 
 @jit
 def k4dp(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
-    p = p.at[:, [1, 3]].multiply(theta)
+    # p = p.at[:, [1, 3]].multiply(theta)
+    theta_slice = jnp.array([1., theta, 1., theta])
+    p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
     return p.flatten(order="F")
 
 
 @jit
 def k4dm(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
-    p = p.at[:, [2, 3]].multiply(theta)
+    theta_slice = jnp.array([1., 1., theta, theta])
+    p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
+    # p = p.at[:, [2, 3]].multiply(theta)
     return p.flatten(order="F")
 
 
@@ -198,7 +231,6 @@ def kronvec_sync(log_theta: jnp.array, p: jnp.array, i: int, n: int, state: jnp.
     Returns:
         np.array: Q_i p
     """
-
     y = p.copy()
 
     # there are no non-diagonal entries if event i is not mutated in both prim and met
