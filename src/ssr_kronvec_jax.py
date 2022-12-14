@@ -750,7 +750,7 @@ def kron_seed_diag(log_theta: jnp.array, n: int, state: jnp.array, state_size: i
     diag = lax.cond(
         state[-1] == 1,
         lambda x: k2dt0(x, jnp.exp(log_theta[-1, -1])),
-        lambda x: x * jnp.exp(log_theta[-1, -1]),
+        lambda x: x * -jnp.exp(log_theta[-1, -1]),
         operand=diag
     )
 

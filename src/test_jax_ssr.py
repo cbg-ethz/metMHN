@@ -24,6 +24,7 @@ class KroneckerTestCase(unittest.TestCase):
         while self.n_ss < 2:
             self.state = np.random.randint(2, size=2*self.n+1)
             self.n_ss = self.state.sum()
+        # print(self.state)
         # self.pTh1, self.pTh2 = fss.generate_pths(self.log_theta, self.p0, self.lam1, self.lam2)
         # self.pTh = self.lam1 * self.lam2 / (self.lam1 - self.lam2)*(self.pTh2 - self.pTh1)
 
@@ -57,57 +58,57 @@ class KroneckerTestCase(unittest.TestCase):
                     self.log_theta), n=self.n, state=jnp.array(self.state), state_size=sum(self.state))
             )
         )
+    
+    def test_kronvec(self):
+        for j in range(1 << self.n_ss):
+            with self.subTest(j=j):
+                p = np.zeros(1 << self.n_ss)
+                p[j] = 1
+                self.assertTrue(np.allclose(
+                    ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
+                        p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss),
+                    ssr_kv.kronvec(log_theta=self.log_theta, p=p,
+                                        n=self.n, state=self.state)
+                ))
 
-    # def test_kronvec(self):
-    #     for j in range(1 << self.n_ss):
-    #         with self.subTest(j=j):
-    #             p = np.zeros(1 << self.n_ss)
-    #             p[j] = 1
-    #             self.assertTrue(np.allclose(
-    #                 ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
-    #                     p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss),
-    #                 ssr_kv.kronvec(log_theta=self.log_theta, p=p,
-    #                                     n=self.n, state=self.state)
-    #             ))
+    def test_kronvec_no_diag(self):
 
-    # def test_kronvec_no_diag(self):
+        for j in range(1 << self.n_ss):
+            with self.subTest(j=j):
+                p = np.zeros(1 << self.n_ss)
+                p[j] = 1
+                self.assertTrue(np.allclose(
+                    ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
+                        p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss, diag=False),
+                    ssr_kv.kronvec(log_theta=self.log_theta, p=p,
+                                        n=self.n, state=self.state, diag=False)
+                ))
 
-    #     for j in range(1 << self.n_ss):
-    #         with self.subTest(j=j):
-    #             p = np.zeros(1 << self.n_ss)
-    #             p[j] = 1
-    #             self.assertTrue(np.allclose(
-    #                 ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
-    #                     p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss, diag=False),
-    #                 ssr_kv.kronvec(log_theta=self.log_theta, p=p,
-    #                                     n=self.n, state=self.state, diag=False)
-    #             ))
+    def test_kronvec_transp(self):
 
-    # def test_kronvec_transp(self):
+        for j in range(1 << self.n_ss):
+            with self.subTest(j=j):
+                p = np.zeros(1 << self.n_ss)
+                p[j] = 1
+                self.assertTrue(np.allclose(
+                    ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
+                        p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss, transpose=True),
+                    ssr_kv.kronvec(log_theta=self.log_theta, p=p,
+                                        n=self.n, state=self.state, transpose=True)
+                ))
 
-    #     for j in range(1 << self.n_ss):
-    #         with self.subTest(j=j):
-    #             p = np.zeros(1 << self.n_ss)
-    #             p[j] = 1
-    #             self.assertTrue(np.allclose(
-    #                 ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
-    #                     p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss, transpose=True),
-    #                 ssr_kv.kronvec(log_theta=self.log_theta, p=p,
-    #                                     n=self.n, state=self.state, transpose=True)
-    #             ))
+    def test_kronvec_transp_no_diag(self):
 
-    # def test_kronvec_transp_no_diag(self):
-
-    #     for j in range(1 << self.n_ss):
-    #         with self.subTest(j=j):
-    #             p = np.zeros(1 << self.n_ss)
-    #             p[j] = 1
-    #             self.assertTrue(np.allclose(
-    #                 ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
-    #                     p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss, diag=False, transpose=True),
-    #                 ssr_kv.kronvec(log_theta=self.log_theta, p=p,
-    #                                     n=self.n, state=self.state, diag=False, transpose=True)
-    #             ))
+        for j in range(1 << self.n_ss):
+            with self.subTest(j=j):
+                p = np.zeros(1 << self.n_ss)
+                p[j] = 1
+                self.assertTrue(np.allclose(
+                    ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
+                        p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss, diag=False, transpose=True),
+                    ssr_kv.kronvec(log_theta=self.log_theta, p=p,
+                                        n=self.n, state=self.state, diag=False, transpose=True)
+                ))
 
 
 if __name__ == "__main__":
