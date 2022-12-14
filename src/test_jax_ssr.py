@@ -11,7 +11,7 @@ import jax
 class KroneckerTestCase(unittest.TestCase):
     @classmethod
     def setUp(self):
-        self.n = 3
+        self.n = 4
         self.log_theta = utils.random_theta(self.n, 0.4)
         # self.Q = essp.build_q(self.log_theta)
         # self.q_diag = np.diag(np.diag(self.Q))
@@ -35,18 +35,28 @@ class KroneckerTestCase(unittest.TestCase):
     #             ssr_kv_jx.kronvec_sync(log_theta=jnp.array(self.log_theta), p=jnp.array(
     #                 p), n=self.n, i=0, state=jnp.array(self.state))
 
-    def test_speed(self):
-            for j in range(1 << self.n_ss):
-                p = np.zeros(1 << self.n_ss)
-                p[j] = 1
-                t0 = time.time()
-                ssr_kv_jx.kronvec_sync(log_theta=jnp.array(self.log_theta), p=jnp.array(
-                    p), n=self.n, i=0, state=jnp.array(self.state))
-                t1 = time.time()
-                ssr_kv.kronvec(log_theta=self.log_theta, p=p,
-                                    n=self.n, state=self.state)
-                t2 = time.time()
-                print(f"jax {t1-t0:3.5f}, no jax {t2-t1:3.5f}")
+    # def test_speed(self):
+    #         for j in range(1 << self.n_ss):
+    #             p = np.zeros(1 << self.n_ss)
+    #             p[j] = 1
+    #             t0 = time.time()
+    #             ssr_kv_jx.kronvec_sync(log_theta=jnp.array(self.log_theta), p=jnp.array(
+    #                 p), n=self.n, i=0, state=jnp.array(self.state))
+    #             t1 = time.time()
+    #             ssr_kv.kronvec(log_theta=self.log_theta, p=p,
+    #                                 n=self.n, state=self.state)
+    #             t2 = time.time()
+    #             print(f"jax {t1-t0:3.5f}, no jax {t2-t1:3.5f}")
+
+    def test_kron_diag(self):
+        self.assertTrue(
+            np.allclose(
+                ssr_kv.kron_diag(
+                    log_theta=self.log_theta, n=self.n, state=self.state),
+                ssr_kv_jx.kron_diag(log_theta=jnp.array(
+                    self.log_theta), n=self.n, state=jnp.array(self.state), state_size=sum(self.state))
+            )
+        )
 
     # def test_kronvec(self):
     #     for j in range(1 << self.n_ss):
