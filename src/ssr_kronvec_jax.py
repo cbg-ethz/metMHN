@@ -139,7 +139,7 @@ def k4nm(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False)
         diag,
         lambda p: lax.cond(
             transpose,
-            lambda x: x @ jnp.array([[-theta, 0., 0., 0.], [0., - \
+            lambda x: x @ jnp.array([[-theta, 0., 0., 0.], [0., -
                                     theta, 0., 0.], [theta, 0., 0., 0.], [0., theta, 0., 0.]]),
             lambda x: x @ jnp.array([[-theta, 0., theta, 0.],
                                     [0., -theta, 0., theta], [0., 0., 0., 0.], [0., 0., 0., 0.]]),
@@ -181,7 +181,6 @@ def k4dtt00(p: jnp.array, theta: float) -> jnp.array:
     theta_slice = jnp.array([-theta, -theta, 0., 0.])
     p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
     return p.flatten(order="F")
-
 
 
 @jit
@@ -228,13 +227,25 @@ def kronvec_sync(log_theta: jnp.array, p: jnp.array, i: int, n: int, state: jnp.
     Returns:
         jnp.array: Q_i p
     """
-    y = p.copy()
 
-    # there are no non-diagonal entries if event i is not mutated in both prim and met
-    y = lax.cond(not diag and sum(state[2 * i: 2 * i + 2]) != 2,
-                 lambda: jnp.zeros_like(y),
-                 lambda: y,
-                 )
+    return lax.cond(not diag and sum(state[2 * i: 2 * i + 2]) != 2,
+                    lambda: jnp.zeros_like(p),
+                    lambda: _kronvec_sync(
+        log_theta=log_theta,
+        p=p,
+        i=i,
+        n=n,
+        state=state,
+        diag=diag,
+        transpose=transpose
+    ),
+    )
+
+
+@partial(jit, static_argnames=["i", "diag", "n", "transpose"])
+def _kronvec_sync(log_theta: jnp.array, p: jnp.array, i: int, n: int, state: jnp.array, diag: bool = True, transpose: bool = False) -> jnp.array:
+
+    y = p.copy()
 
     def loop_body_diag(j, val):
 
@@ -299,17 +310,32 @@ def kronvec_prim(log_theta: jnp.array, p: jnp.array, i: int, n: int, state: jnp.
         jnp.array: Q_i p
     """
 
-    y = p.copy()
-
     # there are no non-diagonal entries if event i is not mutated in prim
-    y = lax.cond(not diag and state[2 * i] == 0,
-                 lambda: jnp.zeros_like(y),
-                 lambda: y,
-                 )
-    y = lax.cond(state[-1] == 0,
-                 lambda: jnp.zeros_like(y),
-                 lambda: y,
-                 )
+    return lax.cond(
+        not diag and state[2 * i] == 0,
+        lambda: jnp.zeros_like(p),
+        lambda: lax.cond(
+            state[-1] == 0,
+            lambda: jnp.zeros_like(p),
+            lambda: _kronvec_prim(
+                log_theta=log_theta,
+                p=p,
+                i=i,
+                n=n,
+                state=state,
+                diag=diag,
+                transpose=transpose
+            ),
+        )
+    )
+
+    return y
+
+
+@ partial(jit, static_argnames=["i", "diag", "n", "transpose"])
+def _kronvec_prim(log_theta: jnp.array, p: jnp.array, i: int, n: int, state: jnp.array, diag: bool = True, transpose: bool = False) -> jnp.array:
+
+    y = p.copy()
 
     def loop_body_diag(j, val):
 
@@ -351,7 +377,7 @@ def kronvec_prim(log_theta: jnp.array, p: jnp.array, i: int, n: int, state: jnp.
     return y
 
 
-@partial(jit, static_argnames=["i", "diag", "n", "transpose"])
+@ partial(jit, static_argnames=["i", "diag", "n", "transpose"])
 def kronvec_met(log_theta: jnp.array, p: jnp.array, i: int, n: int, state: jnp.array, diag: bool = True, transpose: bool = False) -> jnp.array:
     """This computes the restricted version of the product of the asynchronous metastasis
     part of the ith Q summand Q_i with a vector Q_i p.
@@ -423,9 +449,9 @@ def kronvec_met(log_theta: jnp.array, p: jnp.array, i: int, n: int, state: jnp.a
     return y
 
 
-@partial(jit, static_argnames=["n", "diag",
-                               # "transpose"
-                               ])
+@ partial(jit, static_argnames=["n", "diag",
+                                # "transpose"
+                                ])
 def kronvec_seed(log_theta: jnp.array, p: jnp.array, n: int, state: jnp.array, diag: bool = True, transpose: bool = False) -> jnp.array:
     """This computes the restricted version of the product of the seeding summand of Q with a vector Q_M p.
 
@@ -481,7 +507,7 @@ def kronvec_seed(log_theta: jnp.array, p: jnp.array, n: int, state: jnp.array, d
     return y
 
 
-@partial(jit, static_argnames=["n", "diag", "transpose", "state_size"])
+@ partial(jit, static_argnames=["n", "diag", "transpose", "state_size"])
 def kronvec(log_theta: jnp.array, p: jnp.array, n: int, state: jnp.array, state_size: int, diag: bool = True, transpose: bool = False) -> jnp.array:
     """This computes the restricted version of the product of the rate matrix Q with a vector Q p.
 
@@ -517,7 +543,7 @@ def kronvec(log_theta: jnp.array, p: jnp.array, n: int, state: jnp.array, state_
     return y
 
 
-@partial(jit, static_argnames=["i", "n", "state_size"])
+@ partial(jit, static_argnames=["i", "n", "state_size"])
 def kron_sync_diag(log_theta: jnp.array, i: int, n: int, state: jnp.array, state_size: int) -> jnp.array:
     """This computes the diagonal of the synchronized part of the ith Q summand Q_i.
 
@@ -575,13 +601,13 @@ def kron_sync_diag(log_theta: jnp.array, i: int, n: int, state: jnp.array, state
         state[-1] == 1,
         lambda x: k2d10(x),
         lambda x: x,
-        operand = diag
+        operand=diag
     )
 
     return diag
 
 
-@partial(jit, static_argnames=["i", "n", "state_size"])
+@ partial(jit, static_argnames=["i", "n", "state_size"])
 def kron_prim_diag(log_theta: jnp.array, i: int, n: int, state: jnp.array, state_size: int) -> jnp.array:
     """This computes the diagonal of the asynchronous primary tumour part of the ith
     Q summand Q_i.
@@ -602,7 +628,6 @@ def kron_prim_diag(log_theta: jnp.array, i: int, n: int, state: jnp.array, state
         lambda: jnp.zeros(2 ** state_size),
         lambda: jnp.ones(2 ** state_size),
     )
-
 
     def loop_body(j, val):
         val = lax.switch(
@@ -647,7 +672,7 @@ def kron_prim_diag(log_theta: jnp.array, i: int, n: int, state: jnp.array, state
     return diag
 
 
-@partial(jit, static_argnames=["i", "n", "state_size"])
+@ partial(jit, static_argnames=["i", "n", "state_size"])
 def kron_met_diag(log_theta: jnp.array, i: int, n: int, state: jnp.array, state_size: int) -> jnp.array:
     """This computes the diagonal of the asynchronous metastasis part of the ith
     Q summand Q_i.
@@ -667,7 +692,6 @@ def kron_met_diag(log_theta: jnp.array, i: int, n: int, state: jnp.array, state_
         lambda: jnp.zeros(2 ** state_size),
         lambda: jnp.ones(2 ** state_size),
     )
-
 
     def loop_body(j, val):
         val = lax.switch(
@@ -712,7 +736,7 @@ def kron_met_diag(log_theta: jnp.array, i: int, n: int, state: jnp.array, state_
     return diag
 
 
-@partial(jit, static_argnames=["n", "state_size"])
+@ partial(jit, static_argnames=["n", "state_size"])
 def kron_seed_diag(log_theta: jnp.array, n: int, state: jnp.array, state_size: int) -> jnp.array:
     """This computes the diagonal of the seeding summand of Q.
 
@@ -724,7 +748,7 @@ def kron_seed_diag(log_theta: jnp.array, n: int, state: jnp.array, state_size: i
     Returns:
         jnp.array: diag(Q_seed)
     """
-    
+
     diag = jnp.ones(2 ** state_size)
 
     def loop_body(j, val):
@@ -757,7 +781,7 @@ def kron_seed_diag(log_theta: jnp.array, n: int, state: jnp.array, state_size: i
     return diag
 
 
-@partial(jit, static_argnames=["n", "state_size"])
+@ partial(jit, static_argnames=["n", "state_size"])
 def kron_diag(log_theta: jnp.array, n: int, state: jnp.array, state_size: int) -> jnp.array:
     """This computes diagonal of the rate matrix Q.
 
@@ -778,6 +802,7 @@ def kron_diag(log_theta: jnp.array, n: int, state: jnp.array, state_size: int) -
                             n=n, state=state, state_size=state_size)
         y += kron_met_diag(log_theta=log_theta, i=i,
                            n=n, state=state, state_size=state_size)
-    y += kron_seed_diag(log_theta=log_theta, n=n, state=state, state_size=state_size)
+    y += kron_seed_diag(log_theta=log_theta, n=n,
+                        state=state, state_size=state_size)
 
     return y
