@@ -94,3 +94,16 @@ def finite_sample(pTh: np.array, k: int) -> np.array:
     n = pTh.size
     return np.bincount(np.random.choice(n, k, replace=True, p=pTh), minlength=n) / k
 
+def marginalize(p_in: np.array, n: int, prim: bool=True) -> np.array:
+    p = p_in.copy()
+    for _ in range(n):
+        p = p.reshape((-1, 4), order = "C")
+        if prim:
+            y = np.column_stack((p[:, 0] + p[:, 2], p[:, 1] + p[:, 3]))
+        else:
+            y = np.column_stack((p[:, 0] + p[:, 1], p[:, 2] + p[:, 3]))
+        p = y.flatten(order="F")
+
+    p = p.reshape((-1, 2), order="C")
+    return p.flatten(order="F")
+

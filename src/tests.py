@@ -5,6 +5,7 @@ import kronecker_vector as kv
 import ssr_kronecker_vector as ssr_kv
 import Utilityfunctions as utils
 import explicit_statetespace as essp
+import mhn as mhn
 import unittest
 
 
@@ -106,6 +107,31 @@ class KroneckerTestCase(unittest.TestCase):
                 kv.q_partialQ_pth(theta_test, q, p, self.n)
             )
         )
+
+    def test_fss_met_marginalization(self):
+        """
+        tests whether explicit marginalization over primary tumor states in the full joint distribution and
+        direct generation of the marginal distribution yield the same results
+        """
+        full_met_marg = utils.marginalize(self.pTh, self.n, False)
+        mhn_met_marg = self.lam1 * self.lam2 / (self.lam1 - self.lam2) * \
+                       (mhn.generate_pTh(self.log_theta, self.lam2) - mhn.generate_pTh(self.log_theta, self.lam1))
+        self.assertTrue(np.allclose(full_met_marg, mhn_met_marg))
+
+
+    def test_fss_prim_marginalization(self):
+        """
+        tests whether explicit marginalization over metastases states in the full joint distribution and
+        direct generation of the marginal distribution yield the same results
+        """
+        marg = utils.marginalize(self.pTh, self.n)
+        theta_copy = self.log_theta.copy()
+        met_base = self.log_theta[-1, -1]
+        theta_copy[:, -1] = 0.
+        theta_copy[-1, -1] = met_base
+        mhn_marg = self.lam1 * self.lam2 / (self.lam1 - self.lam2) * \
+                   (mhn.generate_pTh(theta_copy, self.lam2) - mhn.generate_pTh(theta_copy, self.lam1))
+        self.assertTrue(np.allclose(marg, mhn_marg))
 
     def test_ssr_Q_p(self):
         """
