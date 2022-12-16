@@ -1,5 +1,7 @@
 import ssr_kronecker_vector as ssr_kv
 import ssr_kronvec_jax as ssr_kv_jx
+import ssr_likelihood_jax as ssr_jx
+import ssr_likelihood as ssr
 import Utilityfunctions as utils
 import numpy as np
 import unittest
@@ -35,7 +37,7 @@ class KroneckerTestCase(unittest.TestCase):
     #             p[j] = 1
     #             ssr_kv_jx.kronvec_sync(log_theta=jnp.array(self.log_theta), p=jnp.array(
     #                 p), n=self.n, i=0, state=jnp.array(self.state))
-
+    # 
     # def test_speed(self):
     #         for j in range(1 << self.n_ss):
     #             p = np.zeros(1 << self.n_ss)
@@ -49,6 +51,7 @@ class KroneckerTestCase(unittest.TestCase):
     #             t2 = time.time()
     #             print(f"jax {t1-t0:3.5f}, no jax {t2-t1:3.5f}")
 
+    @unittest.skip("")
     def test_kron_diag(self):
         self.assertTrue(
             np.allclose(
@@ -59,6 +62,7 @@ class KroneckerTestCase(unittest.TestCase):
             )
         )
     
+    @unittest.skip("")
     def test_kronvec(self):
         for j in range(1 << self.n_ss):
             with self.subTest(j=j):
@@ -71,6 +75,7 @@ class KroneckerTestCase(unittest.TestCase):
                                         n=self.n, state=self.state)
                 ))
 
+    @unittest.skip("")
     def test_kronvec_no_diag(self):
 
         for j in range(1 << self.n_ss):
@@ -84,6 +89,7 @@ class KroneckerTestCase(unittest.TestCase):
                                         n=self.n, state=self.state, diag=False)
                 ))
 
+    @unittest.skip("")
     def test_kronvec_transp(self):
 
         for j in range(1 << self.n_ss):
@@ -97,6 +103,7 @@ class KroneckerTestCase(unittest.TestCase):
                                         n=self.n, state=self.state, transpose=True)
                 ))
 
+    @unittest.skip("")
     def test_kronvec_transp_no_diag(self):
 
         for j in range(1 << self.n_ss):
@@ -108,6 +115,28 @@ class KroneckerTestCase(unittest.TestCase):
                         p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss, diag=False, transpose=True),
                     ssr_kv.kronvec(log_theta=self.log_theta, p=p,
                                         n=self.n, state=self.state, diag=False, transpose=True)
+                ))
+
+    def test_ssr_resolvent_p(self):
+        """
+        Test the restricted version of R^-1 e_i = (lam I - Q)^-1 e_i for e_i the
+        ith standard base vector
+        """
+        for j in range(1 << self.n_ss):
+            with self.subTest(j=j):
+                p = np.zeros(1 << self.n_ss)
+                p[j] = 1
+                t0 = time.time()
+                a = ssr.R_i_inv_vec(log_theta=self.log_theta,
+                                    x=p, lam=self.lam1, state=self.state)
+                t1 = time.time()
+                b = ssr_jx.R_i_inv_vec(log_theta=self.log_theta,
+                                    x=p, lam=self.lam1, state=self.state, state_size=self.n_ss)
+                t2 = time.time()
+                print(f"no jax {t1-t0:2.6f}, jax {t2-t1:2.6f}")
+                assert (np.allclose(
+                    a,
+                    b
                 ))
 
 
