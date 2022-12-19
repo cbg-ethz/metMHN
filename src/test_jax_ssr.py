@@ -15,29 +15,36 @@ class KroneckerTestCase(unittest.TestCase):
     def setUp(self):
         self.n = 4
         self.log_theta = utils.random_theta(self.n, 0.4)
-        # self.Q = essp.build_q(self.log_theta)
-        # self.q_diag = np.diag(np.diag(self.Q))
         self.p0 = np.zeros(2**(2*self.n+1))
         self.p0[0] = 1
         self.lam1 = np.random.exponential(10, 1)
         self.lam2 = np.random.exponential(10, 1)
-        # self.R = self.lam1*np.eye(2**(2*self.n + 1)) - self.Q
         self.n_ss = 0
         while self.n_ss < 2:
-            self.state = np.random.randint(2, size=2*self.n+1)
+            # self.state = np.random.randint(2, size=2*self.n+1)
+            self.state = np.array([1, 1, 0, 1, 0, 0, 0, 0, 0])
             self.n_ss = self.state.sum()
-        # print(self.state)
-        # self.pTh1, self.pTh2 = fss.generate_pths(self.log_theta, self.p0, self.lam1, self.lam2)
-        # self.pTh = self.lam1 * self.lam2 / (self.lam1 - self.lam2)*(self.pTh2 - self.pTh1)
 
-    # def test_with_profiler(self):
-    #     with jax.profiler.trace("/tmp/tensorboard"):
-    #         for j in range(1 << self.n_ss):
-    #             p = np.zeros(1 << self.n_ss)
-    #             p[j] = 1
-    #             ssr_kv_jx.kronvec_sync(log_theta=jnp.array(self.log_theta), p=jnp.array(
-    #                 p), n=self.n, i=0, state=jnp.array(self.state))
-    # 
+    @unittest.skip("")
+    def test_with_profiler(self):
+        with jax.profiler.trace("/tmp/tensorboard"):
+            p0 = np.zeros(1 << self.n_ss)
+            p0[0] = 1
+            p = ssr.R_i_inv_vec(log_theta=self.log_theta, x=p0,
+                                lam=self.lam1, state=self.state)
+            q = ssr.R_i_inv_vec(log_theta=self.log_theta, x=p0,
+                                lam=self.lam1, state=self.state, transpose=True)
+            self.assertTrue(
+                np.allclose(
+                    ssr.x_partial_Q_y(log_theta=self.log_theta,
+                                      x=p, y=q, state=self.state),
+                    np.array(ssr_jx.x_partial_Q_y(
+                        log_theta=jnp.array(self.log_theta),
+                        x=jnp.array(p), y=jnp.array(q), state=jnp.array(self.state), n=self.n))
+                )
+            )
+
+    #
     # def test_speed(self):
     #         for j in range(1 << self.n_ss):
     #             p = np.zeros(1 << self.n_ss)
@@ -61,7 +68,7 @@ class KroneckerTestCase(unittest.TestCase):
                     self.log_theta), n=self.n, state=jnp.array(self.state), state_size=sum(self.state))
             )
         )
-    
+
     @unittest.skip("")
     def test_kronvec(self):
         for j in range(1 << self.n_ss):
@@ -72,7 +79,7 @@ class KroneckerTestCase(unittest.TestCase):
                     ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
                         p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss),
                     ssr_kv.kronvec(log_theta=self.log_theta, p=p,
-                                        n=self.n, state=self.state)
+                                   n=self.n, state=self.state)
                 ))
 
     @unittest.skip("")
@@ -86,7 +93,7 @@ class KroneckerTestCase(unittest.TestCase):
                     ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
                         p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss, diag=False),
                     ssr_kv.kronvec(log_theta=self.log_theta, p=p,
-                                        n=self.n, state=self.state, diag=False)
+                                   n=self.n, state=self.state, diag=False)
                 ))
 
     @unittest.skip("")
@@ -100,7 +107,7 @@ class KroneckerTestCase(unittest.TestCase):
                     ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
                         p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss, transpose=True),
                     ssr_kv.kronvec(log_theta=self.log_theta, p=p,
-                                        n=self.n, state=self.state, transpose=True)
+                                   n=self.n, state=self.state, transpose=True)
                 ))
 
     @unittest.skip("")
@@ -114,9 +121,10 @@ class KroneckerTestCase(unittest.TestCase):
                     ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
                         p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss, diag=False, transpose=True),
                     ssr_kv.kronvec(log_theta=self.log_theta, p=p,
-                                        n=self.n, state=self.state, diag=False, transpose=True)
+                                   n=self.n, state=self.state, diag=False, transpose=True)
                 ))
 
+    @unittest.skip("")
     def test_ssr_resolvent_p(self):
         """
         Test the restricted version of R^-1 e_i = (lam I - Q)^-1 e_i for e_i the
@@ -126,18 +134,61 @@ class KroneckerTestCase(unittest.TestCase):
             with self.subTest(j=j):
                 p = np.zeros(1 << self.n_ss)
                 p[j] = 1
-                t0 = time.time()
-                a = ssr.R_i_inv_vec(log_theta=self.log_theta,
-                                    x=p, lam=self.lam1, state=self.state)
-                t1 = time.time()
-                b = ssr_jx.R_i_inv_vec(log_theta=self.log_theta,
-                                    x=p, lam=self.lam1, state=self.state, state_size=self.n_ss)
-                t2 = time.time()
-                print(f"no jax {t1-t0:2.6f}, jax {t2-t1:2.6f}")
-                assert (np.allclose(
+                self.assertTrue(
+                    np.allclose(
+                        ssr.R_i_inv_vec(log_theta=self.log_theta,
+                                        x=p, lam=self.lam1, state=self.state),
+                        ssr_jx.R_i_inv_vec(log_theta=self.log_theta,
+                                           x=p, lam=self.lam1, state=self.state, state_size=self.n_ss)
+                    ))
+
+    @unittest.skip("")
+    def test_ssr_q_grad_p(self):
+        """
+        Tests restricted version of q (d Q/d theta) p
+        """
+        p0 = np.zeros(1 << self.n_ss)
+        p0[0] = 1
+        p = ssr.R_i_inv_vec(log_theta=self.log_theta, x=p0,
+                            lam=self.lam1, state=self.state)
+        q = ssr.R_i_inv_vec(log_theta=self.log_theta, x=p0,
+                            lam=self.lam1, state=self.state, transpose=True)
+        self.assertTrue(
+            np.allclose(
+                ssr.x_partial_Q_y(log_theta=self.log_theta,
+                                  x=p, y=q, state=self.state),
+                np.array(ssr_jx.x_partial_Q_y(log_theta=jnp.array(self.log_theta),
+                                              x=jnp.array(p), y=jnp.array(q), state=jnp.array(self.state), n=self.n))
+            )
+        )
+
+    # @unittest.skip("")
+    def test_ssr_gradient(self):
+        """
+        Tests restricted version of q (d Q/d theta) p
+        """
+        for i in range(3):
+            p0 = np.zeros(1 << self.n_ss)
+            p0[0] = 1
+            p_D = ssr.R_i_inv_vec(log_theta=self.log_theta, x=p0,
+                                lam=self.lam1, state=self.state)
+            t0=time.time()
+            a = ssr.gradient(log_theta=self.log_theta,
+                                p_D=p_D, lam1=self.lam1, lam2=self.lam2, state=self.state)
+            t1=time.time()
+            b = ssr_jx.gradient(
+                        log_theta=self.log_theta,
+                        p_D=p_D, lam1=self.lam1, lam2=self.lam2, state=self.state, state_size=self.n_ss, n=self.n)
+            t2=time.time()
+            print(t1-t0, t2-t1)
+            self.assertTrue(
+                np.allclose(
                     a,
-                    b
-                ))
+                    b,
+                    rtol=0,
+                    atol=1e-03
+                )
+            )
 
 
 if __name__ == "__main__":
