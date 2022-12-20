@@ -167,20 +167,21 @@ class KroneckerTestCase(unittest.TestCase):
         """
         Tests restricted version of q (d Q/d theta) p
         """
-        for i in range(3):
+        m = 30
+        t0, t1, t2 = list(), list(), list()
+        for _ in range(m):
             p0 = np.zeros(1 << self.n_ss)
             p0[0] = 1
             p_D = ssr.R_i_inv_vec(log_theta=self.log_theta, x=p0,
                                 lam=self.lam1, state=self.state)
-            t0=time.time()
+            t0.append(time.time())
             a = ssr.gradient(log_theta=self.log_theta,
                                 p_D=p_D, lam1=self.lam1, lam2=self.lam2, state=self.state)
-            t1=time.time()
+            t1.append(time.time())
             b = ssr_jx.gradient(
                         log_theta=self.log_theta,
-                        p_D=p_D, lam1=self.lam1, lam2=self.lam2, state=self.state, state_size=self.n_ss, n=self.n)
-            t2=time.time()
-            print(t1-t0, t2-t1)
+                        p_D=p_D, lam1=self.lam1, lam2=self.lam2, state=jnp.array(self.state), state_size=self.n_ss, n=self.n)
+            t2.append(time.time())
             self.assertTrue(
                 np.allclose(
                     a,
@@ -189,7 +190,10 @@ class KroneckerTestCase(unittest.TestCase):
                     atol=1e-03
                 )
             )
-
+        nj_time = np.array(t1) - np.array(t0)
+        j_time = np.array(t2) - np.array(t1) 
+        print(f"No jax: {nj_time.mean(): 3.7f} ({nj_time.std(): 3.7f})")
+        print(f"Jax:    {j_time[1:].mean(): 3.7f} ({j_time[1:].std(): 3.7f}), compile time {j_time[0]:.7f}")
 
 if __name__ == "__main__":
     unittest.main()
