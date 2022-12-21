@@ -8,22 +8,20 @@ import unittest
 import jax.numpy as jnp
 import time
 import jax
+from jax import device_put
 
 
 class KroneckerTestCase(unittest.TestCase):
     @classmethod
     def setUp(self):
-        self.n = 4
+        self.n = 50
         self.log_theta = utils.random_theta(self.n, 0.4)
-        self.p0 = np.zeros(2**(2*self.n+1))
-        self.p0[0] = 1
         self.lam1 = np.random.exponential(10, 1)
         self.lam2 = np.random.exponential(10, 1)
-        self.n_ss = 0
-        while self.n_ss < 2:
-            # self.state = np.random.randint(2, size=2*self.n+1)
-            self.state = np.array([1, 1, 0, 1, 0, 0, 0, 0, 0])
-            self.n_ss = self.state.sum()
+        self.n_ss = 10
+        self.state = np.random.choice(
+            [1] * self.n_ss + [0] * (2 * self.n + 1 - self.n_ss), size=2*self.n+1, replace=False)
+
 
     @unittest.skip("")
     def test_with_profiler(self):
@@ -147,53 +145,56 @@ class KroneckerTestCase(unittest.TestCase):
         """
         Tests restricted version of q (d Q/d theta) p
         """
-        p0 = np.zeros(1 << self.n_ss)
-        p0[0] = 1
-        p = ssr.R_i_inv_vec(log_theta=self.log_theta, x=p0,
-                            lam=self.lam1, state=self.state)
-        q = ssr.R_i_inv_vec(log_theta=self.log_theta, x=p0,
-                            lam=self.lam1, state=self.state, transpose=True)
-        self.assertTrue(
-            np.allclose(
-                ssr.x_partial_Q_y(log_theta=self.log_theta,
-                                  x=p, y=q, state=self.state),
-                np.array(ssr_jx.x_partial_Q_y(log_theta=jnp.array(self.log_theta),
-                                              x=jnp.array(p), y=jnp.array(q), state=jnp.array(self.state), n=self.n))
-            )
-        )
+        for i in range(1 << self.n_ss):
+            for j in range(1 << self.n_ss):
+                with self.subTest(i=i, j=j):
+                    p, q = np.zeros(1 << self.n_ss), np.zeros(1 << self.n_ss)
+                    p[0], q[0] = 1, 1
+                    self.assertTrue(
+                        np.allclose(
+                            ssr.x_partial_Q_y(log_theta=self.log_theta,
+                                              x=p, y=q, state=self.state),
+                            np.array(ssr_jx.x_partial_Q_y(log_theta=jnp.array(self.log_theta),
+                                                          x=jnp.array(p), y=jnp.array(q), state=jnp.array(self.state), n=self.n))
+                        )
+                    )
 
     # @unittest.skip("")
     def test_ssr_gradient(self):
         """
         Tests restricted version of q (d Q/d theta) p
         """
-        m = 30
+    # with jax.profiler.trace("/tmp/tensorboard"):
         t0, t1, t2 = list(), list(), list()
-        for _ in range(m):
-            p0 = np.zeros(1 << self.n_ss)
-            p0[0] = 1
-            p_D = ssr.R_i_inv_vec(log_theta=self.log_theta, x=p0,
-                                lam=self.lam1, state=self.state)
-            t0.append(time.time())
-            a = ssr.gradient(log_theta=self.log_theta,
-                                p_D=p_D, lam1=self.lam1, lam2=self.lam2, state=self.state)
+        p0 = np.zeros(1 << self.n_ss)
+        p0[0] = 1
+        p_D = ssr_jx.R_i_inv_vec(log_theta=self.log_theta, x=p0,
+                              lam=self.lam1, state=self.state, state_size=self.n_ss)
+        d_log_theta = device_put(self.log_theta)
+        d_p_D = device_put(p_D)
+        d_state = device_put(self.state)
+        for _ in range(30):
+            # t0.append(time.time())
+            # a = ssr.gradient(log_theta=self.log_theta,
+            #                  p_D=p_D, lam1=self.lam1, lam2=self.lam2, state=self.state)
             t1.append(time.time())
             b = ssr_jx.gradient(
-                        log_theta=self.log_theta,
-                        p_D=p_D, lam1=self.lam1, lam2=self.lam2, state=jnp.array(self.state), state_size=self.n_ss, n=self.n)
+                log_theta=d_log_theta,
+                p_D=d_p_D, lam1=self.lam1, lam2=self.lam2, state=d_state, state_size=self.n_ss, n=self.n)
             t2.append(time.time())
-            self.assertTrue(
-                np.allclose(
-                    a,
-                    b,
-                    rtol=0,
-                    atol=1e-03
-                )
-            )
-        nj_time = np.array(t1) - np.array(t0)
-        j_time = np.array(t2) - np.array(t1) 
-        print(f"No jax: {nj_time.mean(): 3.7f} ({nj_time.std(): 3.7f})")
-        print(f"Jax:    {j_time[1:].mean(): 3.7f} ({j_time[1:].std(): 3.7f}), compile time {j_time[0]:.7f}")
+            # self.assertTrue(
+            #     np.allclose(
+            #         a,
+            #         b,
+            #     )
+            # )
+        # nj_time = np.array(t1) - np.array(t0)
+        j_time = np.array(t2) - np.array(t1)
+        print("\n")
+        # print(f"\nNo jax: {nj_time.mean(): 3.7f} ({nj_time.std(): 3.7f})")
+        print(
+            f"Jax:    {j_time[1:].mean(): 3.7f} ({j_time[1:].std(): 3.7f}), compile time {j_time[0]:.7f}")
+
 
 if __name__ == "__main__":
     unittest.main()

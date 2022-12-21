@@ -111,7 +111,8 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array
     """
     z = jnp.zeros(shape=(n + 1, n + 1))
 
-    for i in range(n):
+    def body_fun(i, val):
+    # for i in range(n):
         z_sync = x * kronvec_sync(log_theta=jnp.array(log_theta),
                                   p=jnp.array(y), i=i, n=n, state=jnp.array(state))
         z_prim = x * kronvec_prim(log_theta=jnp.array(log_theta),
@@ -119,7 +120,7 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array
         z_met = x * kronvec_met(log_theta=jnp.array(log_theta),
                                 p=jnp.array(y), i=i, n=n, state=state)
 
-        z = z.at[i, -1].set(z_met.sum())
+        val = val.at[i, -1].set(z_met.sum())
 
         def body_fun(j, val):
 
@@ -138,11 +139,11 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array
             )
             return _z_sync, _z_prim, _z_met, val[3].at[i, j].set(_z)
 
-        z_sync, z_prim, z_met, z = lax.fori_loop(
+        z_sync, z_prim, z_met, val = lax.fori_loop(
             lower=0,
             upper=i,
             body_fun=body_fun,
-            init_val=(z_sync, z_prim, z_met, z)
+            init_val=(z_sync, z_prim, z_met, val)
         )
 
         z_sync, z_prim, z_met, _z = lax.switch(
@@ -158,14 +159,23 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array
             z_prim,
             z_met,
         )
-        z = z.at[i, i].set(_z)
+        val = val.at[i, i].set(_z)
 
-        z_sync, z_prim, z_met, z = lax.fori_loop(
+        z_sync, z_prim, z_met, val = lax.fori_loop(
             lower=i+1,
             upper=n,
             body_fun=body_fun,
-            init_val=(z_sync, z_prim, z_met, z)
+            init_val=(z_sync, z_prim, z_met, val)
         )
+
+        return val
+    
+    z = lax.fori_loop(
+        lower=0,
+        upper=n,
+        body_fun=body_fun,
+        init_val=z
+    )
 
     z_seed = x * kronvec_seed(log_theta=jnp.array(log_theta),
                               p=jnp.array(y), n=n, state=jnp.array(state))

@@ -209,7 +209,7 @@ def k4d11tt(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-@partial(jit, static_argnames=["i", "diag", "n", "transpose"])
+@partial(jit, static_argnames=["diag", "n", "transpose"])
 def kronvec_sync(
     log_theta: jnp.array,
     p: jnp.array,
@@ -235,7 +235,7 @@ def kronvec_sync(
     Returns:
         jnp.array: Q_i p
     """
-    @partial(jit, static_argnames=["i", "diag", "n", "transpose"])
+    @partial(jit, static_argnames=["diag", "n", "transpose"])
     def _kronvec_sync(
         log_theta: jnp.array,
         p: jnp.array,
@@ -295,7 +295,7 @@ def kronvec_sync(
         return y
 
     return lax.cond(
-        not diag and sum(state[2 * i: 2 * i + 2]) != 2,
+        not diag and lax.dynamic_slice(state, [2*i], [2]).sum() != 2,
         lambda: jnp.zeros_like(p),
         lambda: _kronvec_sync(
             log_theta=log_theta,
@@ -309,7 +309,7 @@ def kronvec_sync(
     )
 
 
-@partial(jit, static_argnames=["i", "diag", "n", "transpose"])
+@partial(jit, static_argnames=["diag", "n", "transpose"])
 def kronvec_prim(
     log_theta: jnp.array,
     p: jnp.array,
@@ -336,7 +336,7 @@ def kronvec_prim(
         jnp.array: Q_i p
     """
 
-    @ partial(jit, static_argnames=["i", "diag", "n", "transpose"])
+    @ partial(jit, static_argnames=["diag", "n", "transpose"])
     def _kronvec_prim(
         log_theta: jnp.array,
         p: jnp.array,
@@ -412,7 +412,7 @@ def kronvec_prim(
     )
 
 
-@ partial(jit, static_argnames=["i", "diag", "n", "transpose"])
+@ partial(jit, static_argnames=["diag", "n", "transpose"])
 def kronvec_met(
     log_theta: jnp.array,
     p: jnp.array,
@@ -439,7 +439,7 @@ def kronvec_met(
         jnp.array: Q_i p
     """
 
-    @ partial(jit, static_argnames=["i", "diag", "n", "transpose"])
+    @ partial(jit, static_argnames=["diag", "n", "transpose"])
     def _kronvec_met(
         log_theta: jnp.array,
         p: jnp.array,
@@ -618,17 +618,23 @@ def kronvec(log_theta: jnp.array, p: jnp.array, n: int, state: jnp.array, state_
     """
     y = jnp.zeros(shape=2**state_size)
 
-    log_theta = jnp.array(log_theta)
-    p = jnp.array(p)
-    state = jnp.array(state)
+    def body_fun(i, val):
 
-    for i in range(n):
-        y += kronvec_sync(log_theta=log_theta, p=p, i=i,
-                          n=n, state=state, diag=diag, transpose=transpose)
-        y += kronvec_prim(log_theta=log_theta, p=p, i=i,
-                          n=n, state=state, diag=diag, transpose=transpose)
-        y += kronvec_met(log_theta=log_theta, p=p, i=i,
-                         n=n, state=state, diag=diag, transpose=transpose)
+        val += kronvec_sync(log_theta=log_theta, p=p, i=i,
+                            n=n, state=state, diag=diag, transpose=transpose)
+        val += kronvec_prim(log_theta=log_theta, p=p, i=i,
+                            n=n, state=state, diag=diag, transpose=transpose)
+        val += kronvec_met(log_theta=log_theta, p=p, i=i,
+                           n=n, state=state, diag=diag, transpose=transpose)
+
+        return val
+
+    y = lax.fori_loop(
+        lower=0,
+        upper=n,
+        body_fun=body_fun,
+        init_val=y
+    )
 
     y += kronvec_seed(log_theta=log_theta, p=p, n=n,
                       state=state, diag=diag, transpose=transpose)
@@ -636,7 +642,7 @@ def kronvec(log_theta: jnp.array, p: jnp.array, n: int, state: jnp.array, state_
     return y
 
 
-@ partial(jit, static_argnames=["i", "n", "state_size"])
+@ partial(jit, static_argnames=["n", "state_size"])
 def kron_sync_diag(
         log_theta: jnp.array,
         i: int,
@@ -705,7 +711,7 @@ def kron_sync_diag(
     return diag
 
 
-@ partial(jit, static_argnames=["i", "n", "state_size"])
+@ partial(jit, static_argnames=["n", "state_size"])
 def kron_prim_diag(
         log_theta: jnp.array,
         i: int,
@@ -726,7 +732,7 @@ def kron_prim_diag(
         jnp.array: diag(Q_i_prim)
     """
 
-    @ partial(jit, static_argnames=["i", "n", "state_size"])
+    @ partial(jit, static_argnames=["n", "state_size"])
     def _kron_prim_diag(
             log_theta: jnp.array,
             i: int,
@@ -791,7 +797,7 @@ def kron_prim_diag(
     )
 
 
-@ partial(jit, static_argnames=["i", "n", "state_size"])
+@ partial(jit, static_argnames=["n", "state_size"])
 def kron_met_diag(
         log_theta: jnp.array,
         i: int,
@@ -812,7 +818,7 @@ def kron_met_diag(
         jnp.array: diag(Q_i_met)
     """
 
-    @ partial(jit, static_argnames=["i", "n", "state_size"])
+    @ partial(jit, static_argnames=["n", "state_size"])
     def _kron_met_diag(
             log_theta: jnp.array,
             i: int,
@@ -943,13 +949,24 @@ def kron_diag(log_theta: jnp.array, n: int, state: jnp.array, state_size: int) -
     """
     y = jnp.zeros(shape=2**state_size)
 
-    for i in range(n):
-        y += kron_sync_diag(log_theta=log_theta, i=i,
-                            n=n, state=state, state_size=state_size)
-        y += kron_prim_diag(log_theta=log_theta, i=i,
-                            n=n, state=state, state_size=state_size)
-        y += kron_met_diag(log_theta=log_theta, i=i,
-                           n=n, state=state, state_size=state_size)
+    def body_fun(i, val):
+
+        val += kron_sync_diag(log_theta=log_theta, i=i,
+                              n=n, state=state, state_size=state_size)
+        val += kron_prim_diag(log_theta=log_theta, i=i,
+                              n=n, state=state, state_size=state_size)
+        val += kron_met_diag(log_theta=log_theta, i=i,
+                             n=n, state=state, state_size=state_size)
+
+        return val
+
+    y = lax.fori_loop(
+        lower=0,
+        upper=n,
+        body_fun=body_fun,
+        init_val=y
+    )
+
     y += kron_seed_diag(log_theta=log_theta, n=n,
                         state=state, state_size=state_size)
 
