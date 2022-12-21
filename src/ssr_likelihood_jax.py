@@ -41,7 +41,7 @@ def f3(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, 
     p = p.reshape((-1, 4), order="C")
     m = m.reshape((-1, 4), order="C")
     
-    z = s[:, 1].sum() + p[:, [1, 3]].sum() + m[:, [1, 3]].sum()
+    z = s[:, 3].sum() + p[:, [1, 3]].sum() + m[:, [2, 3]].sum()
     
     s = s.flatten(order="F")
     p = p.flatten(order="F")
@@ -151,7 +151,7 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array
             )
         z = z.at[i, i].set(_z)
 
-        for j in range(i+1, n):
+        for j in range(i + 1, n):
 
             z_sync, z_prim, z_met, _z = lax.switch(
                 state.at[2*j].get() + 2 * state.at[2*j+1].get(),
@@ -263,6 +263,7 @@ def gradient(log_theta: np.array, p_D: np.array, lam1: float, lam2: float, state
     p_theta = lam * (R_1_inv_p_0 - R_2_inv_p_0)
 
     # some states are not reachable and therefore have zero probability density
+    # minuend = p_D * np.divide(lam, p_theta, where=reachable[restricted])
     minuend = p_D * jnp.divide(lam, p_theta)
     minuend = jnp.nan_to_num(minuend, posinf=0., neginf=0.)
     subtrahend = minuend.copy()
