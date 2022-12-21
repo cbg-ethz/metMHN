@@ -6,28 +6,30 @@ import jax.numpy as jnp
 from jax import jit, lax
 from functools import partial
 
+
 @jit
 def f1(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, jnp.array, float]:
     s = s.reshape((-1, 2), order="C")
     p = p.reshape((-1, 2), order="C")
     m = m.reshape((-1, 2), order="C")
-    
+
     z = p[:, 1].sum()
-    
+
     s = s.flatten(order="F")
     p = p.flatten(order="F")
     m = m.flatten(order="F")
 
     return s, p, m, z
 
+
 @jit
 def f2(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, jnp.array, float]:
     s = s.reshape((-1, 2), order="C")
     p = p.reshape((-1, 2), order="C")
     m = m.reshape((-1, 2), order="C")
-    
+
     z = m[:, 1].sum()
-    
+
     s = s.flatten(order="F")
     p = p.flatten(order="F")
     m = m.flatten(order="F")
@@ -40,9 +42,9 @@ def f3(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, 
     s = s.reshape((-1, 4), order="C")
     p = p.reshape((-1, 4), order="C")
     m = m.reshape((-1, 4), order="C")
-    
+
     z = s[:, 3].sum() + p[:, [1, 3]].sum() + m[:, [2, 3]].sum()
-    
+
     s = s.flatten(order="F")
     p = p.flatten(order="F")
     m = m.flatten(order="F")
@@ -55,9 +57,9 @@ def t12(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array,
     s = s.reshape((-1, 2), order="C")
     p = p.reshape((-1, 2), order="C")
     m = m.reshape((-1, 2), order="C")
-    
+
     z = s[:, 0].sum() + p.sum() + m.sum()
-    
+
     s = s.flatten(order="F")
     p = p.flatten(order="F")
     m = m.flatten(order="F")
@@ -70,9 +72,9 @@ def t3(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, 
     s = s.reshape((-1, 4), order="C")
     p = p.reshape((-1, 4), order="C")
     m = m.reshape((-1, 4), order="C")
-    
+
     z = s.sum() + p.sum() + m.sum()
-    
+
     s = s.flatten(order="F")
     p = p.flatten(order="F")
     m = m.flatten(order="F")
@@ -83,13 +85,12 @@ def t3(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, 
 @jit
 def z3(s: jnp.array) -> tuple[jnp.array, float]:
     s = s.reshape((-1, 4), order="C")
-    
+
     z = s[:, 3].sum()
-    
+
     s = s.flatten(order="F")
 
     return s, z
-
 
 
 @partial(jit, static_argnames=["n"])
@@ -120,9 +121,9 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array
 
         z = z.at[i, -1].set(z_met.sum())
 
-        for j in range(i):
+        def body_fun(j, val):
 
-            z_sync, z_prim, z_met, _z = lax.switch(
+            _z_sync, _z_prim, _z_met, _z = lax.switch(
                 state.at[2*j].get() + 2 * state.at[2*j+1].get(),
                 [
                     lambda s, p, m: (s, p, m, 0.),
@@ -130,62 +131,69 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array
                     f2,
                     f3
                 ],
-                z_sync,
-                z_prim,
-                z_met,
+                val[0],
+                val[1],
+                val[2],
 
             )
-            z = z.at[i,j].set(_z)
+            return _z_sync, _z_prim, _z_met, val[3].at[i, j].set(_z)
+
+        z_sync, z_prim, z_met, z = lax.fori_loop(
+            lower=0,
+            upper=i,
+            body_fun=body_fun,
+            init_val=(z_sync, z_prim, z_met, z)
+        )
 
         z_sync, z_prim, z_met, _z = lax.switch(
-                state.at[2*i].get() + 2 * state.at[2*i+1].get(),
-                [
-                    lambda s, p, m: (s, p, m, (sum(s) + sum(p) + sum(m)).astype(float)),
-                    t12,
-                    t12,
-                    t3
-                ],
-                z_sync,
-                z_prim,
-                z_met,
-            )
+            state.at[2*i].get() + 2 * state.at[2*i+1].get(),
+            [
+                lambda s, p, m: (
+                    s, p, m, (sum(s) + sum(p) + sum(m)).astype(float)),
+                t12,
+                t12,
+                t3
+            ],
+            z_sync,
+            z_prim,
+            z_met,
+        )
         z = z.at[i, i].set(_z)
 
-        for j in range(i + 1, n):
-
-            z_sync, z_prim, z_met, _z = lax.switch(
-                state.at[2*j].get() + 2 * state.at[2*j+1].get(),
-                [
-                    lambda s, p, m: (s, p, m, 0.),
-                    f1,
-                    f2,
-                    f3
-                ],
-                z_sync,
-                z_prim,
-                z_met,
-
-            )
-            z = z.at[i,j].set(_z)
+        z_sync, z_prim, z_met, z = lax.fori_loop(
+            lower=i+1,
+            upper=n,
+            body_fun=body_fun,
+            init_val=(z_sync, z_prim, z_met, z)
+        )
 
     z_seed = x * kronvec_seed(log_theta=jnp.array(log_theta),
                               p=jnp.array(y), n=n, state=jnp.array(state))
 
     z = z.at[-1, -1].set(z_seed.sum())
 
-    for j in range(n):
+    def body_fun(j, val):
 
-        z_seed, _z = lax.switch(
+        _z_seed, _z = lax.switch(
             state.at[2*j].get() + 2 * state.at[2*j+1].get(),
             branches=[
                 lambda s: (s, 0.),
-                lambda s: (s.reshape((-1, 2), order="C").flatten(order="F"), 0.),
-                lambda s: (s.reshape((-1, 2), order="C").flatten(order="F"), 0.),
+                lambda s: (
+                    s.reshape((-1, 2), order="C").flatten(order="F"), 0.),
+                lambda s: (
+                    s.reshape((-1, 2), order="C").flatten(order="F"), 0.),
                 z3
             ],
-            operand=z_seed
+            operand=val[0]
         )
-        z = z.at[-1, j].set(_z)
+        return _z_seed, val[1].at[-1, j].set(_z)
+
+    z_seed, z = lax.fori_loop(
+        lower=0,
+        upper=n,
+        body_fun=body_fun,
+        init_val=(z_seed, z)
+    )
 
     return z
 
@@ -211,16 +219,19 @@ def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, 
                  state=jnp.array(state), state_size=state_size) - lam)
     y = lidg * x
 
-    for _ in range(state_size + 1):
-        y = lidg * (kronvec(log_theta=jnp.array(log_theta), p=y, n=n,
-                            state=jnp.array(state), diag=False, transpose=transpose, state_size=state_size) + x)
+    y = lax.fori_loop(
+        lower=0,
+        upper=state_size+1,
+        body_fun=lambda _, val: lidg * (kronvec(log_theta=jnp.array(log_theta), p=val, n=n,
+                                                state=jnp.array(state), diag=False, transpose=transpose, state_size=state_size) + x),
+        init_val=y
+    )
 
     return y
 
 
-
 @partial(jit, static_argnames=["state_size", "n"])
-def gradient(log_theta: np.array, p_D: np.array, lam1: float, lam2: float, state: np.array, state_size: int, n: int) -> np.array:
+def gradient(log_theta: jnp.array, p_D: jnp.array, lam1: float, lam2: float, state: jnp.array, state_size: int, n: int) -> jnp.array:
     """This computes the gradient of the score function, which is the log-likelihood of a data vector p_D
     with respect to the log_theta matrix
 
@@ -242,8 +253,8 @@ def gradient(log_theta: np.array, p_D: np.array, lam1: float, lam2: float, state
     # if np.any(p_D[~reachable[restricted]] != 0):
     #     raise ValueError("The data vector contains unreachable states.")
 
-    p_0 = np.zeros(2**state_size)
-    p_0[0] = 1
+    p_0 = jnp.zeros(2**state_size, dtype=float)
+    p_0 = p_0.at[0].set(1.)
     lam = (lam1 * lam2 / (lam1 - lam2))
     R_1_inv_p_0 = R_i_inv_vec(
         log_theta=log_theta,
@@ -318,18 +329,9 @@ if __name__ == "__main__":
     p0 = np.zeros(1 << n_ss)
     p0[0] = 1
     p = R_i_inv_vec(log_theta=log_theta, x=p0,
-                        lam=lam1, state=state, state_size=n_ss)
+                    lam=lam1, state=state, state_size=n_ss)
     q = R_i_inv_vec(log_theta=log_theta, x=p0,
-                            lam=lam1, state=state, transpose=True, state_size=n_ss)
+                    lam=lam1, state=state, transpose=True, state_size=n_ss)
     x_partial_Q_y(
         log_theta=jnp.array(log_theta),
         x=jnp.array(p), y=jnp.array(q), state=jnp.array(state), n=n)
-
-    # a = kronvec_met(log_theta=jnp.array(log_theta),
-    #                             p=jnp.array(p), i=0, n=n, state=state)
-    # type(a.sum())
-
-    # a, b, c = jnp.arange(4), jnp.arange(4), jnp.arange(4)
-    # z = np.arange(4).reshape(2,2)
-    # a, b, c, z[0,0] = t3(a, b, c)
-    # print(z)
