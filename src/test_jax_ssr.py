@@ -6,27 +6,23 @@ import Utilityfunctions as utils
 import numpy as np
 import unittest
 import jax.numpy as jnp
-import time
 import jax
-from jax import device_put
 
 
 class KroneckerTestCase(unittest.TestCase):
     @classmethod
     def setUp(self):
-        self.n = 50
+        self.n = 4
         self.log_theta = utils.random_theta(self.n, 0.4)
         self.lam1 = np.random.exponential(10, 1)
         self.lam2 = np.random.exponential(10, 1)
-        self.n_ss = 10
+        self.state_size = 4
         self.state = np.random.choice(
-            [1] * self.n_ss + [0] * (2 * self.n + 1 - self.n_ss), size=2*self.n+1, replace=False)
+            [1] * self.state_size + [0] * (2 * self.n + 1 - self.state_size), size=2*self.n+1, replace=False)
 
-
-    @unittest.skip("")
     def test_with_profiler(self):
         with jax.profiler.trace("/tmp/tensorboard"):
-            p0 = np.zeros(1 << self.n_ss)
+            p0 = np.zeros(1 << self.state_size)
             p0[0] = 1
             p = ssr.R_i_inv_vec(log_theta=self.log_theta, x=p0,
                                 lam=self.lam1, state=self.state)
@@ -42,21 +38,6 @@ class KroneckerTestCase(unittest.TestCase):
                 )
             )
 
-    #
-    # def test_speed(self):
-    #         for j in range(1 << self.n_ss):
-    #             p = np.zeros(1 << self.n_ss)
-    #             p[j] = 1
-    #             t0 = time.time()
-    #             ssr_kv_jx.kronvec_sync(log_theta=jnp.array(self.log_theta), p=jnp.array(
-    #                 p), n=self.n, i=0, state=jnp.array(self.state))
-    #             t1 = time.time()
-    #             ssr_kv.kronvec(log_theta=self.log_theta, p=p,
-    #                                 n=self.n, state=self.state)
-    #             t2 = time.time()
-    #             print(f"jax {t1-t0:3.5f}, no jax {t2-t1:3.5f}")
-
-    @unittest.skip("")
     def test_kron_diag(self):
         self.assertTrue(
             np.allclose(
@@ -67,89 +48,84 @@ class KroneckerTestCase(unittest.TestCase):
             )
         )
 
-    @unittest.skip("")
     def test_kronvec(self):
-        for j in range(1 << self.n_ss):
+        for j in range(1 << self.state_size):
             with self.subTest(j=j):
-                p = np.zeros(1 << self.n_ss)
+                p = np.zeros(1 << self.state_size)
                 p[j] = 1
                 self.assertTrue(np.allclose(
                     ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
-                        p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss),
+                        p), n=self.n, state=jnp.array(self.state), state_size=self.state_size),
                     ssr_kv.kronvec(log_theta=self.log_theta, p=p,
                                    n=self.n, state=self.state)
                 ))
 
-    @unittest.skip("")
     def test_kronvec_no_diag(self):
 
-        for j in range(1 << self.n_ss):
+        for j in range(1 << self.state_size):
             with self.subTest(j=j):
-                p = np.zeros(1 << self.n_ss)
+                p = np.zeros(1 << self.state_size)
                 p[j] = 1
                 self.assertTrue(np.allclose(
                     ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
-                        p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss, diag=False),
+                        p), n=self.n, state=jnp.array(self.state), state_size=self.state_size, diag=False),
                     ssr_kv.kronvec(log_theta=self.log_theta, p=p,
                                    n=self.n, state=self.state, diag=False)
                 ))
 
-    @unittest.skip("")
     def test_kronvec_transp(self):
 
-        for j in range(1 << self.n_ss):
+        for j in range(1 << self.state_size):
             with self.subTest(j=j):
-                p = np.zeros(1 << self.n_ss)
+                p = np.zeros(1 << self.state_size)
                 p[j] = 1
                 self.assertTrue(np.allclose(
                     ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
-                        p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss, transpose=True),
+                        p), n=self.n, state=jnp.array(self.state), state_size=self.state_size, transpose=True),
                     ssr_kv.kronvec(log_theta=self.log_theta, p=p,
                                    n=self.n, state=self.state, transpose=True)
                 ))
 
-    @unittest.skip("")
     def test_kronvec_transp_no_diag(self):
 
-        for j in range(1 << self.n_ss):
+        for j in range(1 << self.state_size):
             with self.subTest(j=j):
-                p = np.zeros(1 << self.n_ss)
+                p = np.zeros(1 << self.state_size)
                 p[j] = 1
                 self.assertTrue(np.allclose(
                     ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
-                        p), n=self.n, state=jnp.array(self.state), state_size=self.n_ss, diag=False, transpose=True),
+                        p), n=self.n, state=jnp.array(self.state), state_size=self.state_size, diag=False, transpose=True),
                     ssr_kv.kronvec(log_theta=self.log_theta, p=p,
                                    n=self.n, state=self.state, diag=False, transpose=True)
                 ))
 
-    @unittest.skip("")
     def test_ssr_resolvent_p(self):
         """
         Test the restricted version of R^-1 e_i = (lam I - Q)^-1 e_i for e_i the
         ith standard base vector
         """
-        for j in range(1 << self.n_ss):
+        for j in range(1 << self.state_size):
             with self.subTest(j=j):
-                p = np.zeros(1 << self.n_ss)
+                p = np.zeros(1 << self.state_size)
                 p[j] = 1
                 self.assertTrue(
                     np.allclose(
                         ssr.R_i_inv_vec(log_theta=self.log_theta,
                                         x=p, lam=self.lam1, state=self.state),
                         ssr_jx.R_i_inv_vec(log_theta=self.log_theta,
-                                           x=p, lam=self.lam1, state=self.state, state_size=self.n_ss)
+                                           x=p, lam=self.lam1, state=self.state, state_size=self.state_size)
                     ))
 
-    @unittest.skip("")
     def test_ssr_q_grad_p(self):
         """
         Tests restricted version of q (d Q/d theta) p
         """
-        for i in range(1 << self.n_ss):
-            for j in range(1 << self.n_ss):
+        for i in range(1 << self.state_size):
+            for j in range(1 << self.state_size):
                 with self.subTest(i=i, j=j):
-                    p, q = np.zeros(1 << self.n_ss), np.zeros(1 << self.n_ss)
-                    p[0], q[0] = 1, 1
+                    p, q = np.zeros(1 << self.state_size), np.zeros(
+                        1 << self.state_size)
+                    p[i], q[j] = 1, 1
                     self.assertTrue(
                         np.allclose(
                             ssr.x_partial_Q_y(log_theta=self.log_theta,
@@ -159,41 +135,24 @@ class KroneckerTestCase(unittest.TestCase):
                         )
                     )
 
-    # @unittest.skip("")
     def test_ssr_gradient(self):
         """
         Tests restricted version of q (d Q/d theta) p
         """
-    # with jax.profiler.trace("/tmp/tensorboard"):
-        t0, t1, t2 = list(), list(), list()
-        p0 = np.zeros(1 << self.n_ss)
+        p0 = np.zeros(1 << self.state_size)
         p0[0] = 1
-        p_D = ssr_jx.R_i_inv_vec(log_theta=self.log_theta, x=p0,
-                              lam=self.lam1, state=self.state, state_size=self.n_ss)
-        d_log_theta = device_put(self.log_theta)
-        d_p_D = device_put(p_D)
-        d_state = device_put(self.state)
-        for _ in range(30):
-            # t0.append(time.time())
-            # a = ssr.gradient(log_theta=self.log_theta,
-            #                  p_D=p_D, lam1=self.lam1, lam2=self.lam2, state=self.state)
-            t1.append(time.time())
-            b = ssr_jx.gradient(
-                log_theta=d_log_theta,
-                p_D=d_p_D, lam1=self.lam1, lam2=self.lam2, state=d_state, state_size=self.n_ss, n=self.n)
-            t2.append(time.time())
-            # self.assertTrue(
-            #     np.allclose(
-            #         a,
-            #         b,
-            #     )
-            # )
-        # nj_time = np.array(t1) - np.array(t0)
-        j_time = np.array(t2) - np.array(t1)
-        print("\n")
-        # print(f"\nNo jax: {nj_time.mean(): 3.7f} ({nj_time.std(): 3.7f})")
-        print(
-            f"Jax:    {j_time[1:].mean(): 3.7f} ({j_time[1:].std(): 3.7f}), compile time {j_time[0]:.7f}")
+        p_D = ssr.R_i_inv_vec(log_theta=self.log_theta, x=p0,
+                              lam=self.lam1, state=self.state)
+        self.assertTrue(
+            np.allclose(
+                ssr.gradient(
+                    log_theta=self.log_theta,
+                    p_D=p_D, lam1=self.lam1, lam2=self.lam2, state=self.state),
+                ssr_jx.gradient(
+                    log_theta=jnp.array(self.log_theta),
+                    p_D=jnp.array(p_D), lam1=self.lam1, lam2=self.lam2, state=jnp.array(self.state), state_size=self.state_size, n=self.n),
+            )
+        )
 
 
 if __name__ == "__main__":
