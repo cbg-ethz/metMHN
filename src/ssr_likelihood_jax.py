@@ -3,7 +3,7 @@ import numpy as np
 from ssr_kronvec_jax import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed, kronvec, kron_diag
 import Utilityfunctions as utils
 import jax.numpy as jnp
-from jax import jit, lax
+from jax import jit, lax, vmap
 from functools import partial
 
 
@@ -120,9 +120,9 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array
         z_met = x * kronvec_met(log_theta=jnp.array(log_theta),
                                 p=jnp.array(y), i=i, n=n, state=state)
 
-        val = val.at[i, -1].set(z_met.sum())
+        val = val.at[-1].set(z_met.sum())
 
-        def body_fun(j, val):
+        def body_fun(j, l_val):
 
             _z_sync, _z_prim, _z_met, _z = lax.switch(
                 state.at[2*j].get() + 2 * state.at[2*j+1].get(),
@@ -132,12 +132,12 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array
                     f2,
                     f3
                 ],
-                val[0],
-                val[1],
-                val[2],
+                l_val[0],
+                l_val[1],
+                l_val[2],
 
             )
-            return _z_sync, _z_prim, _z_met, val[3].at[i, j].set(_z)
+            return _z_sync, _z_prim, _z_met, l_val[3].at[j].set(_z)
 
         z_sync, z_prim, z_met, val = lax.fori_loop(
             lower=0,
@@ -159,7 +159,7 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array
             z_prim,
             z_met,
         )
-        val = val.at[i, i].set(_z)
+        val = val.at[i].set(_z)
 
         z_sync, z_prim, z_met, val = lax.fori_loop(
             lower=i+1,
@@ -170,12 +170,14 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array
 
         return val
     
-    z = lax.fori_loop(
-        lower=0,
-        upper=n,
-        body_fun=body_fun,
-        init_val=z
-    )
+    z = z.at[:-1,:].set(vmap(body_fun, in_axes=(0,0), out_axes=0)(jnp.arange(n), z[:-1,:]))
+
+    # z = lax.fori_loop(
+    #     lower=0,
+    #     upper=n,
+    #     body_fun=body_fun,
+    #     init_val=z
+    # )
 
     z_seed = x * kronvec_seed(log_theta=jnp.array(log_theta),
                               p=jnp.array(y), n=n, state=jnp.array(state))
