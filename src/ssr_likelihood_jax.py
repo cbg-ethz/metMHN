@@ -111,14 +111,15 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array
     """
     z = jnp.zeros(shape=(n + 1, n + 1))
 
+
     def body_fun(i, val):
-    # for i in range(n):
-        z_sync = x * kronvec_sync(log_theta=jnp.array(log_theta),
-                                  p=jnp.array(y), i=i, n=n, state=jnp.array(state))
-        z_prim = x * kronvec_prim(log_theta=jnp.array(log_theta),
-                                  p=jnp.array(y), i=i, n=n, state=jnp.array(state))
-        z_met = x * kronvec_met(log_theta=jnp.array(log_theta),
-                                p=jnp.array(y), i=i, n=n, state=state)
+
+        z_sync = x * kronvec_sync(log_theta=log_theta,
+                                  p=y, i=i, n=n, state=state)
+        z_prim = x * kronvec_prim(log_theta=log_theta,
+                                  p=y, i=i, n=n, state=state)
+        z_met = x * kronvec_met(log_theta=log_theta,
+                                p=y, i=i, n=n, state=state)
 
         val = val.at[-1].set(z_met.sum())
 
@@ -150,7 +151,7 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array
             state.at[2*i].get() + 2 * state.at[2*i+1].get(),
             [
                 lambda s, p, m: (
-                    s, p, m, (sum(s) + sum(p) + sum(m)).astype(float)),
+                    s, p, m, (sum(s) + sum(p) + sum(m))),
                 t12,
                 t12,
                 t3
@@ -170,14 +171,7 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array
 
         return val
     
-    z = z.at[:-1,:].set(vmap(body_fun, in_axes=(0,0), out_axes=0)(jnp.arange(n), z[:-1,:]))
-
-    # z = lax.fori_loop(
-    #     lower=0,
-    #     upper=n,
-    #     body_fun=body_fun,
-    #     init_val=z
-    # )
+    z = z.at[:-1,:].set(vmap(body_fun, in_axes=(0,0), out_axes=0)(jnp.arange(n, dtype=int), z[:-1,:]))
 
     z_seed = x * kronvec_seed(log_theta=jnp.array(log_theta),
                               p=jnp.array(y), n=n, state=jnp.array(state))
@@ -329,21 +323,23 @@ def gradient(log_theta: jnp.array, p_D: jnp.array, lam1: float, lam2: float, sta
 #     )
 
 if __name__ == "__main__":
+
+    import ssr_likelihood as ssr
+
     n = 4
     log_theta = utils.random_theta(n, 0.4)
     lam1 = np.random.exponential(10, 1)
     lam2 = np.random.exponential(10, 1)
-    n_ss = 0
-    while n_ss < 2:
-        state = np.random.randint(2, size=2*n+1)
-        n_ss = state.sum()
-
-    p0 = np.zeros(1 << n_ss)
-    p0[0] = 1
-    p = R_i_inv_vec(log_theta=log_theta, x=p0,
-                    lam=lam1, state=state, state_size=n_ss)
-    q = R_i_inv_vec(log_theta=log_theta, x=p0,
-                    lam=lam1, state=state, transpose=True, state_size=n_ss)
-    x_partial_Q_y(
-        log_theta=jnp.array(log_theta),
-        x=jnp.array(p), y=jnp.array(q), state=jnp.array(state), n=n)
+    state_size = 2
+    state = np.random.choice(
+        [1] * state_size + [0] * (2 * n + 1 - state_size), size=2*n+1, replace=False)
+    state = np.array([0, 0, 0, 0, 1, 0, 0, 0, 1])
+    i = 3
+    j = 2
+    p, q = np.zeros(1 << state_size), np.zeros(
+        1 << state_size)
+    p[i], q[j] = 1, 1
+    a = ssr.x_partial_Q_y(log_theta=log_theta,
+                                x=p, y=q, state=state),
+    b = np.array(x_partial_Q_y(log_theta=jnp.array(log_theta),
+                                            x=jnp.array(p), y=jnp.array(q), state=jnp.array(state), n=n))
