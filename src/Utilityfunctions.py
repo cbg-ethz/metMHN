@@ -95,9 +95,18 @@ def finite_sample(pTh: np.array, k: int) -> np.array:
     return np.bincount(np.random.choice(n, k, replace=True, p=pTh), minlength=n) / k
 
 def marginalize(p_in: np.array, n: int, prim: bool=True) -> np.array:
+    """
+    Returns the marginal distribution of a joint distribution of primary tumors and metastases wrt. to the tumor type
+    Args:
+        p_in (np.array): Joint distribution to maginalize
+        n (int): number of genomic events
+        prim (bool): If true: marginalise over primaries, else: marginalise over metastases
+    Returns:
+         np.array: 2^n dimensional marginal distribution
+    """
     p = p_in.copy()
     for _ in range(n):
-        p = p.reshape((-1, 4), order = "C")
+        p = p.reshape((-1, 4), order="C")
         if prim:
             y = np.column_stack((p[:, 0] + p[:, 2], p[:, 1] + p[:, 3]))
         else:
