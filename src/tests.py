@@ -23,9 +23,10 @@ class KroneckerTestCase(unittest.TestCase):
         self.R = self.lam1*np.eye(2**(2*self.n + 1)) - self.Q
         self.state = np.random.randint(2, size=2*self.n+1)
         self.n_ss = self.state.sum()
-        self.pTh1, self.pTh2 = fss.generate_pths(self.log_theta, self.p0, self.lam1, self.lam2)
-        self.pTh = self.lam1 * self.lam2 / (self.lam1 - self.lam2)*(self.pTh2 - self.pTh1)
-
+        self.pTh1, self.pTh2 = fss.generate_pths(
+            self.log_theta, self.p0, self.lam1, self.lam2)
+        self.pTh = self.lam1 * self.lam2 / \
+            (self.lam1 - self.lam2)*(self.pTh2 - self.pTh1)
 
     def test_fss_q_p(self):
         """
@@ -50,7 +51,6 @@ class KroneckerTestCase(unittest.TestCase):
             )
         )
 
-
     def test_fss_diag_Q_p(self):
         """
         tests whether implicit and explicit version of diag(Q(theta)) * p return the same results
@@ -61,7 +61,6 @@ class KroneckerTestCase(unittest.TestCase):
                 (-1) * kv.diag_q(self.log_theta) * self.p0
             )
         )
-
 
     def test_fss_q_no_diag_p(self):
         """
@@ -74,7 +73,6 @@ class KroneckerTestCase(unittest.TestCase):
             )
         )
 
-
     def test_fss_resolvent_p(self):
         """
         tests whether implicit and explicit version of (lambda * I - Q(theta))^(-1) p return the same results
@@ -86,13 +84,11 @@ class KroneckerTestCase(unittest.TestCase):
             )
         )
 
-
     def test_gen_pths(self):
         """
         tests if pTh is a valid distribution
         """
         self.assertTrue(np.around(sum(self.pTh), decimals=5) == 1)
-
 
     def test_fss_q_grad_p(self):
         """
@@ -115,9 +111,9 @@ class KroneckerTestCase(unittest.TestCase):
         """
         full_met_marg = utils.marginalize(self.pTh, self.n, False)
         mhn_met_marg = self.lam1 * self.lam2 / (self.lam1 - self.lam2) * \
-                       (mhn.generate_pTh(self.log_theta, self.lam2) - mhn.generate_pTh(self.log_theta, self.lam1))
+            (mhn.generate_pTh(self.log_theta, self.lam2) -
+             mhn.generate_pTh(self.log_theta, self.lam1))
         self.assertTrue(np.allclose(full_met_marg, mhn_met_marg))
-
 
     def test_fss_prim_marginalization(self):
         """
@@ -130,7 +126,8 @@ class KroneckerTestCase(unittest.TestCase):
         theta_copy[:, -1] = 0.
         theta_copy[-1, -1] = met_base
         mhn_marg = self.lam1 * self.lam2 / (self.lam1 - self.lam2) * \
-                   (mhn.generate_pTh(theta_copy, self.lam2) - mhn.generate_pTh(theta_copy, self.lam1))
+            (mhn.generate_pTh(theta_copy, self.lam2) -
+             mhn.generate_pTh(theta_copy, self.lam1))
         self.assertTrue(np.allclose(marg, mhn_marg))
 
     def test_ssr_Q_p(self):
@@ -178,15 +175,32 @@ class KroneckerTestCase(unittest.TestCase):
                              n=self.n, state=self.state)
         ))
 
-    def test_ssr_resolvent_p(self):
+    def test_ssr_jacobian_p(self):
         """
         Test the restricted version of R^-1 e_i = (lam I - Q)^-1 e_i for e_i the
-        ith standard base vector
+        ith standard base vector using jacobi inverse
         """
         for j in range(1 << self.n_ss):
             with self.subTest(j=j):
                 p = np.zeros(1 << self.n_ss)
                 p[j] = 1
+                assert (np.allclose(
+                    np.linalg.inv(self.lam1 * np.identity(1 << self.n_ss)
+                        - essp.ssr_build_q(dpoint=self.state, log_theta=self.log_theta)) @ p,
+                    ssr.R_i_jacobian_vec(log_theta=self.log_theta,
+                                         x=p, lam=self.lam1, state=self.state),
+                ))
+
+    def test_ssr_resolvent_p(self):
+        """
+        Test the restricted version of R^-1 e_i = (lam I - Q)^-1 e_i for e_i the
+        ith standard base vector using forward substitution
+        """
+        print(self.state)
+        for i in range(1 << self.n_ss):
+            with self.subTest(i=i):
+                p = np.zeros(1 << self.n_ss)
+                p[i] = 1
                 assert (np.allclose(
                     np.linalg.inv(self.lam1 * np.identity(1 << self.n_ss)
                         - essp.ssr_build_q(dpoint=self.state, log_theta=self.log_theta)) @ p,
@@ -233,10 +247,10 @@ class KroneckerTestCase(unittest.TestCase):
         Tests restricted version of q (d Q/d theta) p
         """
         restricted = utils.ssr_to_fss(self.state)
-        p = ssr.R_i_inv_vec(log_theta=self.log_theta, x=self.p0[restricted],
-                            lam=self.lam1, state=self.state)
-        q = ssr.R_i_inv_vec(log_theta=self.log_theta, x=self.p0[restricted],
-                            lam=self.lam1, state=self.state, transpose=True)
+        p = ssr.R_i_jacobian_vec(log_theta=self.log_theta, x=self.p0[restricted],
+                                 lam=self.lam1, state=self.state)
+        q = ssr.R_i_jacobian_vec(log_theta=self.log_theta, x=self.p0[restricted],
+                                 lam=self.lam1, state=self.state, transpose=True)
         p_fss = np.zeros(1 << (2*self.n + 1))
         q_fss = np.zeros(1 << (2*self.n + 1))
         p_fss[restricted] = p
@@ -250,7 +264,6 @@ class KroneckerTestCase(unittest.TestCase):
             )
         )
 
-
     def test_fss_grad(self):
         """
         tests if the numeric and the analytic gradient of S_D d S_D/ d theta_ij for all ij match
@@ -258,7 +271,8 @@ class KroneckerTestCase(unittest.TestCase):
         """
         pD = utils.finite_sample(self.pTh, 50)
         h = 1e-10
-        original_score = fss.likelihood(self.log_theta, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
+        original_score = fss.likelihood(
+            self.log_theta, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
         # compute the gradient numerically
         # compute the partial derivatives dS_D/d theta_ij numerically
         numerical_gradient = np.empty((self.n+1, self.n+1), dtype=float)
@@ -266,24 +280,30 @@ class KroneckerTestCase(unittest.TestCase):
             for j in range(self.n+1):
                 theta_copy = self.log_theta.copy()
                 theta_copy[i, j] += h
-                new_score = fss.likelihood(theta_copy, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
+                new_score = fss.likelihood(
+                    theta_copy, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
                 numerical_gradient[i, j] = (new_score - original_score) / h
 
         # compute the partial derivatives dS_D/d theta_ij numerically
-        new_score = fss.likelihood(self.log_theta, pD, self.lam1+h, self.lam2, self.pTh1, self.pTh2)
+        new_score = fss.likelihood(
+            self.log_theta, pD, self.lam1+h, self.lam2, self.pTh1, self.pTh2)
         deriv_lam1 = (new_score - original_score) / h
 
-        new_score = fss.likelihood(self.log_theta, pD, self.lam1, self.lam2+h, self.pTh1, self.pTh2)
+        new_score = fss.likelihood(
+            self.log_theta, pD, self.lam1, self.lam2+h, self.pTh1, self.pTh2)
         deriv_lam2 = (new_score - original_score) / h
-        grad = np.append(numerical_gradient.flatten(), [deriv_lam1, deriv_lam2])
+        grad = np.append(numerical_gradient.flatten(),
+                         [deriv_lam1, deriv_lam2])
 
-        analytic_gradient = fss.gradient(self.log_theta, pD, self.lam1, self.lam2, self.n, self.p0)
+        analytic_gradient = fss.gradient(
+            self.log_theta, pD, self.lam1, self.lam2, self.n, self.p0)
         self.assertTrue(
             np.allclose(
                 np.around(grad, decimals=3),
-                    np.around(analytic_gradient, decimals=3)
+                np.around(analytic_gradient, decimals=3)
             )
         )
+
 
 if __name__ == "__main__":
     unittest.main()

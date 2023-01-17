@@ -106,7 +106,7 @@ def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array
     return z
 
 
-def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, transpose: bool = False) -> np.array:
+def R_i_jacobian_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, transpose: bool = False) -> np.array:
     """This computes R_i^{-1} x = (\lambda_i I - Q)^{-1} x
 
     Args:
@@ -128,6 +128,108 @@ def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, 
     for _ in range(sum(state) + 1):
         y = lidg * (kronvec(log_theta=log_theta, p=y, n=n,
                             state=state, diag=False, transpose=transpose) + x)
+
+    return y
+
+
+def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, transpose: bool = False) -> np.array:
+    """This computes R_i^{-1} x = (\lambda_i I - Q)^{-1} x
+
+    Args:
+        log_theta (np.array): Log values of the theta matrix
+        x (np.array): Vector to multiply with from the right. Length must equal the number of
+        nonzero entries in the state vector.
+        lam (float): Value of \lambda_i
+        state (np.array): Binary state vector, representing the current sample's events.
+
+
+    Returns:
+        np.array: R_i^{-1} x
+    """
+
+    n = log_theta.shape[0] - 1
+    diag = lam - kron_diag(log_theta=log_theta, n=n, state=state)
+
+    y = x.copy()
+
+    reachable = utils.reachable_states(n)
+    translation = utils.ssr_to_fss(state=state)
+    nonsync = np.array([])
+    sync = np.arange(1 << 2 * n + 1)[translation]
+    if state[-1] == 1:
+        sync, nonsync = np.split(translation, 2)
+        sync, nonsync = np.arange(
+            1 << 2 * n)[sync], np.arange(1 << 2 * n, 1 << 2 * n + 1)[nonsync]
+    translation = np.arange(1 << 2 * n + 1)[translation]
+
+    for i in sync:
+        i_index = np.where(translation == i)[0][0]
+        y[i_index] /= diag[i_index]
+
+        if not reachable[i]:
+            continue
+
+        bit_setter = 3
+        for j in range(n):
+            modified_i = (i | bit_setter)
+
+            if modified_i != i and modified_i in sync:
+                i_copy = i
+                theta = 0
+                for k in range(n):
+                    if i_copy & 1:
+                        theta += log_theta[j, k]
+                    i_copy >>= 2
+                y[np.where(translation == modified_i)[0][0]
+                  ] += np.exp(theta + log_theta[j, j]) * y[i_index]
+            bit_setter <<= 2
+
+        if state[-1] == 1:
+            i_copy = i
+            theta = 0
+            for k in range(n):
+                if i_copy & 1:
+                    theta += log_theta[-1, k]
+                i_copy >>= 2
+            y[np.where(translation == i | 1 << 2*n)[0][0]
+              ] += np.exp(theta + log_theta[-1, -1]) * y[i_index]
+
+    for i in nonsync:
+        i_index = np.where(translation == i)[0][0]
+        y[i_index] /= diag[i_index]
+
+        bit_setter = 1
+        for j in range(n):
+
+            # primary
+
+            modified_i = (i | bit_setter)
+            if modified_i != i and modified_i in nonsync:
+                i_copy = i
+                theta = 0
+                for k in range(n):
+                    if i_copy & 1:
+                        theta += log_theta[j, k]
+                    i_copy >>= 2
+                y[np.where(translation == modified_i)[0][0]
+                  ] += np.exp(theta + log_theta[j, j]) * y[i_index]
+
+            bit_setter <<= 1
+
+            # metastasis
+
+            modified_i = (i | bit_setter)
+            if modified_i != i and modified_i in nonsync:
+                i_copy = i
+                theta = 0
+                for k in range(n):
+                    if i_copy & 2:
+                        theta += log_theta[j, k]
+                    i_copy >>= 2
+                y[np.where(translation == modified_i)[
+                    0][0]] += np.exp(theta + log_theta[j, -1] + log_theta[j, j]) * y[i_index]
+
+            bit_setter <<= 1
 
     return y
 
@@ -158,13 +260,13 @@ def gradient(log_theta: np.array, p_D: np.array, lam1: float, lam2: float, state
     p_0 = np.zeros(2**n_ss)
     p_0[0] = 1
     lam = (lam1 * lam2 / (lam1 - lam2))
-    R_1_inv_p_0 = R_i_inv_vec(
+    R_1_inv_p_0 = R_i_jacobian_vec(
         log_theta=log_theta,
         x=p_0,
         lam=lam1,
         state=state)
 
-    R_2_inv_p_0 = R_i_inv_vec(
+    R_2_inv_p_0 = R_i_jacobian_vec(
         log_theta=log_theta,
         x=p_0,
         lam=lam2,
@@ -176,10 +278,10 @@ def gradient(log_theta: np.array, p_D: np.array, lam1: float, lam2: float, state
     # some states are not reachable and therefore have zero probability density
     minuend = p_D * np.divide(lam, p_theta, where=reachable[restricted])
     subtrahend = minuend.copy()
-    minuend = R_i_inv_vec(log_theta=log_theta, x=minuend,
-                          lam=lam2, state=state, transpose=True)
-    subtrahend = R_i_inv_vec(log_theta=log_theta, x=minuend,
-                             lam=lam1, state=state, transpose=True)
+    minuend = R_i_jacobian_vec(log_theta=log_theta, x=minuend,
+                               lam=lam2, state=state, transpose=True)
+    subtrahend = R_i_jacobian_vec(log_theta=log_theta, x=minuend,
+                                  lam=lam1, state=state, transpose=True)
     minuend = x_partial_Q_y(log_theta=log_theta,
                             x=minuend, y=R_2_inv_p_0, state=state)
     subtrahend = x_partial_Q_y(
@@ -196,12 +298,12 @@ def log_likelihood(log_theta: np.array, p_D: np.array, lam1: float, lam2: float,
 
     p_0 = np.zeros(2 ** state.sum())
     p_0[0] = 1
-    p_th = R_i_inv_vec(
+    p_th = R_i_jacobian_vec(
         log_theta=log_theta,
         x=p_0,
         lam=lam2,
         state=state
-    ) - R_i_inv_vec(
+    ) - R_i_jacobian_vec(
         log_theta=log_theta,
         x=p_0,
         lam=lam1,

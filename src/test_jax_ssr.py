@@ -24,10 +24,10 @@ class KroneckerTestCase(unittest.TestCase):
         with jax.profiler.trace("/tmp/tensorboard"):
             p0 = np.zeros(1 << self.state_size)
             p0[0] = 1
-            p = ssr.R_i_inv_vec(log_theta=self.log_theta, x=p0,
-                                lam=self.lam1, state=self.state)
-            q = ssr.R_i_inv_vec(log_theta=self.log_theta, x=p0,
-                                lam=self.lam1, state=self.state, transpose=True)
+            p = ssr.R_i_jacobian_vec(log_theta=self.log_theta, x=p0,
+                                     lam=self.lam1, state=self.state)
+            q = ssr.R_i_jacobian_vec(log_theta=self.log_theta, x=p0,
+                                     lam=self.lam1, state=self.state, transpose=True)
             self.assertTrue(
                 np.allclose(
                     ssr.x_partial_Q_y(log_theta=self.log_theta,
@@ -110,8 +110,8 @@ class KroneckerTestCase(unittest.TestCase):
                 p[j] = 1
                 self.assertTrue(
                     np.allclose(
-                        ssr.R_i_inv_vec(log_theta=self.log_theta,
-                                        x=p, lam=self.lam1, state=self.state),
+                        ssr.R_i_jacobian_vec(log_theta=self.log_theta,
+                                             x=p, lam=self.lam1, state=self.state),
                         ssr_jx.R_i_inv_vec(log_theta=self.log_theta,
                                            x=p, lam=self.lam1, state=self.state, state_size=self.state_size)
                     ))
@@ -141,8 +141,8 @@ class KroneckerTestCase(unittest.TestCase):
         """
         p0 = np.zeros(1 << self.state_size)
         p0[0] = 1
-        p_D = ssr.R_i_inv_vec(log_theta=self.log_theta, x=p0,
-                              lam=self.lam1, state=self.state)
+        p_D = ssr.R_i_jacobian_vec(log_theta=self.log_theta, x=p0,
+                                   lam=self.lam1, state=self.state)
         self.assertTrue(
             np.allclose(
                 ssr.gradient(
