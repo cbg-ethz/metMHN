@@ -1,6 +1,8 @@
 from itertools import compress, chain, combinations
 import numpy as np
 
+import Utilityfunctions
+
 
 def state_space(n: int) -> np.array:
     """
@@ -112,20 +114,20 @@ def diagnosis_theta(log_theta: np.array, log_diag_rate: float = 0) -> np.array:
     theta_diag[n + 1, n + 1] = log_theta[n, n]
     return theta_diag
 
-def marginalize(p_in: np.array, n: int, prim: bool=True) -> np.array:
+def marginalize(p_in: np.array, n: int, marg_met: bool=True) -> np.array:
     """
     Returns the marginal distribution of a joint distribution of primary tumors and metastases wrt. to the tumor type
     Args:
         p_in (np.array): Joint distribution to marginalise
         n (int): number of genomic events
-        prim (bool): If true: marginalize over metastases, else: marginalize over primaries
+        marg_met (bool): If true: marginalize over metastases, else: marginalize over primaries
     Returns:
          np.array: 2^n dimensional marginal distribution
     """
     p = p_in.copy()
     for _ in range(n):
         p = p.reshape((-1, 4), order="C")
-        if not prim:
+        if not marg_met:
             y = np.column_stack((p[:, 0] + p[:, 2], p[:, 1] + p[:, 3]))
         else:
             y = np.column_stack((p[:, 0] + p[:, 1], p[:, 2] + p[:, 3]))
@@ -134,14 +136,15 @@ def marginalize(p_in: np.array, n: int, prim: bool=True) -> np.array:
     p = p.reshape((-1, 2), order="C")
     return p.flatten(order="F")
 
-def ssr_marginalize(p_in: np.array, n: int, state: np.array, prim: bool=True) -> np.array:
+def ssr_marginalize(p_in: np.array, n: int, state: np.array, marg_met: bool=True, marg_seeding: bool=False) -> np.array:
     """
     Returns the marginal distribution of a joint distribution of primary tumors and metastases wrt. to the tumor type
     Args:
         p_in (np.array): Joint distribution to marginalise
         n (int): number of genomic events
         state (np.array): Binary state vector, representing the current sample's events
-        prim (bool): If true: marginalize over metastases, else: marginalize over primaries
+        marg_met (bool): If true: marginalize over metastases, else: marginalize over primaries
+        marg_seeding (bool): If true marginalize over the status of the seeding event
     Returns:
          np.array: 2^m dimensional marginal distribution
     """
@@ -149,21 +152,35 @@ def ssr_marginalize(p_in: np.array, n: int, state: np.array, prim: bool=True) ->
     for i in range(n):
         mut = state[2 * i: 2 * i + 2]
         muts = mut.sum()
-        if muts == 0:               # Prim and Met not mutated
+        print(mut)
+
+        if muts == 0:               
             pass
-        elif muts == 1:             # Prim xor Met mutated
-            p = p.reshape((-1,2))
-            p = p[:, 0] + p[:, 1]
-        else:                       # Prim and Met mutated
+        # Prim[i] = 1 and Met[i] = 0 and marg. over mets
+        # Or Prim[i] = 0 and Met[i] = 1 and marg. over prims
+        elif (mut[0] == 0 and not marg_met) or (mut[1] == 0 and marg_met):
+            p = p.reshape((-1,2), order="C").ravel(order="F")
+            print(i)
+        # Prim[i] = Met[i] = 1
+        elif muts == 2:
             p = p.reshape((-1, 4), order = "C")
-            if not prim:
+            if marg_met:
+                 # Marg. over mets
                 y = np.column_stack((p[:, 0] + p[:, 2], p[:, 1] + p[:, 3]))
             else:
+                # Marg. over prims
                 y = np.column_stack((p[:, 0] + p[:, 1], p[:, 2] + p[:, 3]))
-            p = y.flatten(order="F")
-    if state[-1] == 1:
+            p = y.ravel(order="F")
+        # Prim[i] = 0 and Met[i] = 1 and marg. over mets
+        # Or Prim[i] =1 and Met[i] = 0 and marg. over prims
+        else: 
+            p = p.reshape((-1, 2), order = "C")
+            p = p[:, 0] + p[:, 1]
+            p = p.ravel(order="F")
+
+    if state[-1] == 1 and marg_seeding:
         p = p.reshape((-1, 2), order="C")
         p = p[:, 0] + p[:, 1]
     else:
-        p =  p.reshape((-1,2)).flatten(order="F")
+        p =  p.reshape((-1,2)).ravel(order="F")
     return p
