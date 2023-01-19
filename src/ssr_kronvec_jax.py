@@ -971,3 +971,71 @@ def kron_diag(log_theta: jnp.array, n: int, state: jnp.array, state_size: int) -
                         state=state, state_size=state_size)
 
     return y
+
+@jit
+def marg0not1(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1,2), order="C")
+    p = p.at[:,0].add(p.at[:,1].get())
+    p = p.at[:,1].set(0.)
+    return p.ravel(order="F")
+
+def marg_met_1and1(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1,4), order="C")
+    p = p.at[:,0].add(p.at[:,2].get())
+    p = p.at[:, 1].add(p.at[:, 3].get())       
+    p = p.at[:, (2, 3)].set(0.)
+    return p.ravel(order="F")
+
+def marg_prim_1and1(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1,4), order="C")
+    p = p.at[:,0].add(p.at[:,1].get())
+    p = p.at[:, 2].add(p.at[:, 3].get())
+    p = p.at[:, 1].set(p.at[:, 2].get())
+    p = p.at[:,(2,3)].set(0.)
+    return p.ravel(order="F")
+
+def marg1not0(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1, 2), order="C")
+    return p.ravel(order="F")
+
+@partial(jit, static_argnames=["n", "size_marg", "marg_met", "marg_seeding"])
+def marginalize(p_in: jnp.array, n: int, state: jnp.array, size_marg: int, marg_met: bool=True, marg_seeding: bool=False) -> jnp.array:
+    """
+    Marginalizes over unobserved events in the primary tumor or metastasis for a partial observation state
+    Args:
+        p_in (jnp.array): probability distribution to marginalise
+        n (int): total number of mutations
+        state (jnp.array): bitsring, tumor sample of a single patient
+        size_marg (int): number of mutations to marginalise over
+        marg_met (bool): if true: marginalise over mets, else: marginalise over prims
+        marg_seeding (bool): if true: marginalise over the seeding event as well 
+    Returns:
+        p: marginal distribution
+    """
+    def loop_body(i, p):
+        ind = state.at[2*i].get() + 2*state.at[2*i+1].get() + (1 - marg_met)*4
+        p = lax.switch(
+            index = ind,
+            branches = [
+                lambda p: p,                        # 00 marg_met=1
+                lambda p: marg1not0(p),             # 10 marg_met=1
+                lambda p: marg0not1(p),             # 01 marg_met=1
+                lambda p: marg_met_1and1(p),        # 11 marg_met=1
+                lambda p: p,                        # 00 marg_met=0
+                lambda p: marg0not1(p),             # 10 marg_met=0
+                lambda p: marg1not0(p),             # 01 marg_met=0
+                lambda p: marg_prim_1and1(p),       # 11 marg_met=0         
+            ],
+            operand = p
+        )
+        return p
+    p = lax.fori_loop(0, n, loop_body, p_in)
+    p = lax.cond(
+        (marg_seeding and state[-1] == 1),
+        lambda x: marg0not1(x),
+        lambda x: x.reshape((-1, 2), order="C").ravel(order="F"),
+        operand = p
+    )
+    out = p.nonzero(size=size_marg)
+    return p.at[out].get()
+

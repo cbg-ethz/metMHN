@@ -152,7 +152,6 @@ def ssr_marginalize(p_in: np.array, n: int, state: np.array, marg_met: bool=True
     for i in range(n):
         mut = state[2 * i: 2 * i + 2]
         muts = mut.sum()
-        print(mut)
 
         if muts == 0:               
             pass
@@ -160,7 +159,7 @@ def ssr_marginalize(p_in: np.array, n: int, state: np.array, marg_met: bool=True
         # Or Prim[i] = 0 and Met[i] = 1 and marg. over prims
         elif (mut[0] == 0 and not marg_met) or (mut[1] == 0 and marg_met):
             p = p.reshape((-1,2), order="C").ravel(order="F")
-            print(i)
+    
         # Prim[i] = Met[i] = 1
         elif muts == 2:
             p = p.reshape((-1, 4), order = "C")
