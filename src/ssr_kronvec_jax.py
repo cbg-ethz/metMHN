@@ -994,7 +994,7 @@ def marg_prim_1and1(p: jnp.array) -> jnp.array:
     p = p.at[:,(2,3)].set(0.)
     return p.ravel(order="F")
 
-def marg1not0(p: jnp.array) -> jnp.array:
+def shuffle_stride2(p: jnp.array) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     return p.ravel(order="F")
 
@@ -1018,12 +1018,12 @@ def marginalize(p_in: jnp.array, n: int, state: jnp.array, size_marg: int, marg_
             index = ind,
             branches = [
                 lambda p: p,                        # 00 marg_met=1
-                lambda p: marg1not0(p),             # 10 marg_met=1
+                lambda p: shuffle_stride2(p),       # 10 marg_met=1
                 lambda p: marg0not1(p),             # 01 marg_met=1
                 lambda p: marg_met_1and1(p),        # 11 marg_met=1
                 lambda p: p,                        # 00 marg_met=0
                 lambda p: marg0not1(p),             # 10 marg_met=0
-                lambda p: marg1not0(p),             # 01 marg_met=0
+                lambda p: shuffle_stride2(p),       # 01 marg_met=0
                 lambda p: marg_prim_1and1(p),       # 11 marg_met=0         
             ],
             operand = p
@@ -1039,3 +1039,61 @@ def marginalize(p_in: jnp.array, n: int, state: jnp.array, size_marg: int, marg_
     out = p.nonzero(size=size_marg)
     return p.at[out].get()
 
+def keep_col2(p: jnp.array) -> jnp.array:
+    """
+    Shuffle p with stride = 2 and set the first half to zero 
+    """
+    p = p.reshape((-1, 2), order="C")
+    p = p.at[:,0].set(0.)
+    return p.ravel(order="F")
+
+def keep_col1_3(p: jnp.array) -> jnp.array:
+    """
+    Shuffle p with stride = 4, set 1. and 2. quarter to 0
+    """
+    p = p.reshape((-1, 4), order="C")
+    p = p.at[:, (0, 2)].set(0.)
+    return p.ravel(order="F")
+
+def keep_col2_3(p: jnp.array) -> jnp.array:
+    """
+    Shuffle p with stride = 4, set first half to 0
+    """
+    p = p.reshape((-1,4), order="C")
+    p = p.at[:, (0,1)].set(0.)
+    return p.ravel(order="F")
+
+@partial(jit, static_argnames=["n", "latent_size", "obs_prim"])
+def obs_dist(p_in: jnp.array, state: jnp.array, n: int, latent_size: int, obs_prim: bool=True) -> jnp.array:
+    """
+    Returns the indices of P(Prim = prim_obs, Met) or P(Prim, Met = met_obs), the joint distribution evaluated at either
+    the observed metastasis state or the observed primary tumor state
+    Args:
+        p_in (jnp.array): Joint probability distribution of prims and mets
+        state (jnp.array): bitstring, mutational state of prim and met of a patient
+        n (int): total number of genomic events
+        latent_size (int): number of mutations in the observed part of the datapoint
+        obs_prim (bool): If true return P(Prim = prim_obs, Met) else return P(Prim, Met = met_obs)
+    Returns:
+        jnp.array
+    """
+    def loop_body(i, p):
+        ind = state.at[2*i].get() + 2*state.at[2*i+1].get() + (1 - obs_prim)*4
+        p = lax.switch(
+            index = ind,
+            branches = [
+                lambda p: p,                        # 00 obs_prim=1
+                lambda p: keep_col2(p),             # 10 obs_primt=1
+                lambda p: shuffle_stride2(p),       # 01 obs_prim=1
+                lambda p: keep_col1_3(p),           # 11 obs_prim=1
+                lambda p: p,                        # 00 obs_prim=0
+                lambda p: shuffle_stride2(p),       # 10 obs_prim=0
+                lambda p: keep_col2(p),             # 01 obs_prim=0
+                lambda p: keep_col2_3(p),           # 11 obs_prim=0         
+            ],
+            operand = p
+        )
+        return p
+    p = lax.fori_loop(0, n, loop_body, p_in)
+
+    return shuffle_stride2(p).astype(bool)
