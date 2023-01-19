@@ -183,3 +183,38 @@ def ssr_marginalize(p_in: np.array, n: int, state: np.array, marg_met: bool=True
     else:
         p =  p.reshape((-1,2)).ravel(order="F")
     return p
+
+def ssr_obs_dist(p_in: np.array, state: np.array, n: int, obs_prim: bool=True) -> np.array:
+    """
+    Returns P(Prim = prim_obs, Met) or P(Prim, Met = met_obs), the joint distribution evaluated at either
+    the observed metastasis state or the observed primary tumor state
+    Args:
+        p_in (np.array): Joint probability distribution of prims and mets
+        state (np.array): bitstring, mutational state of prim and met of a patient
+        n (int): total number of genomic events
+        obs_prim (bool): If true return P(Prim = prim_obs, Met) else return P(Prim, Met = met_obs)
+    Returns:
+        np.array
+    """
+    p = p_in.copy()
+    for i in range(n):
+        mut = state[2*i] + 2 * state[2*i+1]
+        print(mut)
+        if mut == 0:
+            pass
+        elif (mut == 1 and obs_prim) or (mut == 2 and not obs_prim):
+            p = p.reshape((-1, 2), order="C")
+            p = p[:,1]
+            p = p.ravel(order="F")
+        elif (mut == 2 and obs_prim) or (mut == 1 and not obs_prim):
+            p = p.reshape((-1, 2), order="C")
+            p = p.ravel(order="F")
+        else:
+            p = p.reshape((-1, 4), order="C")
+            if obs_prim:
+                p = np.column_stack([p[:,1], p[:,3]])
+            else:
+                p = np.column_stack([p[:,2], p[:,3]])
+            p = p.ravel(order="F")
+    p = p.reshape((-1, 2), order="C")
+    return p.ravel(order="F")
