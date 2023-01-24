@@ -1,5 +1,6 @@
 import kronecker_vector as fss
 import numpy as np
+import Utilityfunctions as utils
 
 
 def jacobi(log_theta: np.array, b: np.array, lam: float, transp: bool = False, x_inp: np.array = None) -> np.array:
@@ -39,7 +40,9 @@ def generate_pths(log_theta: np.array, p0: np.array, lam1: float, lam2: float) -
     Returns:
          np.array: pth1, pth2
     """
-    return jacobi(log_theta, p0, lam1), jacobi(log_theta, p0, lam2)
+    pTh1 = jacobi(log_theta, p0, lam1)
+    pTh2 = jacobi(log_theta, p0, lam2)
+    return pTh1, pTh2
 
 
 def diag_forward(log_theta: np.array, p: np.array) -> np.array:
@@ -58,7 +61,6 @@ def diag_forward(log_theta: np.array, p: np.array) -> np.array:
         np.divide(p, dg, out=p, where=dg != 0)
         p = fss.qvec(log_theta, p.copy(), False) + diagnosed*p
     return p
-
 
 
 def likelihood(log_theta: np.array, pd: np.array, lam1: float, lam2: float,
@@ -82,6 +84,16 @@ def likelihood(log_theta: np.array, pd: np.array, lam1: float, lam2: float,
     pTh = lam1*lam2/(lam1-lam2)*(pTh2_space-pTh1_space)
     return pd.dot(np.log(pTh, out=np.zeros_like(pTh), where=pTh != 0))
 
+
+def grad_ij(log_theta: np.array, pD: np.array, lam1: float, i: int, j: int, p0: np.array) -> float:
+    n = log_theta.shape[0]-1
+    pTh = jacobi(log_theta, p0, lam1)
+    dQ = fss.dqvec(log_theta, pTh, i, j)
+    p = jacobi(log_theta, dQ, lam1)
+    p_marg = utils.marginalize(p, n, False)
+    pTh_marg = utils.marginalize(pTh, n, False)
+    q = np.divide(pD, pTh_marg, out=np.zeros_like(pD), where=pTh_marg != 0)
+    return q.dot(p_marg)
 
 
 def gradient(log_theta: np.array, pD: np.array, lam1: float, lam2: float, n: int, p0: np.array,
@@ -108,13 +120,13 @@ def gradient(log_theta: np.array, pD: np.array, lam1: float, lam2: float, n: int
         pTh2 = pTh2_space
     lam_ratio = lam1 * lam2 / (lam1 - lam2)
     pTh = lam_ratio * (pTh2 - pTh1)
-
+    pTh = pTh1
     # Build the vector to multiply from the left to dQ/d th
     q = np.divide(pD, pTh, out=np.zeros_like(pD), where=pTh != 0)
     q1 = jacobi(log_theta, q, lam1, True)
     q2 = jacobi(log_theta, q, lam2, True)
     d_theta = fss.q_partialQ_pth(log_theta, q2, pTh2, n) - fss.q_partialQ_pth(log_theta, q1, pTh1, n)
-
+    d_theta = fss.q_partialQ_pth(log_theta, q1, pTh1, n)
     # Derivatives wrt. lam1 and lam2
     d_lam1 = q.dot(-1 * lam2/(lam1*(lam1 - lam2)) * pTh + lam_ratio * jacobi(log_theta, pTh1, lam1))
     d_lam2 = q.dot(lam1 / (lam2 * (lam1 - lam2)) * pTh - lam_ratio * jacobi(log_theta, pTh2, lam2))

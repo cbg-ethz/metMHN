@@ -971,3 +971,185 @@ def kron_diag(log_theta: jnp.array, n: int, state: jnp.array, state_size: int) -
                         state=state, state_size=state_size)
 
     return y
+
+
+
+def keep_col0(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1,4), order="C")
+    p = p.at[:, 1:4].set(0.)
+    return p.ravel(order="F")
+
+def keep_col0_1(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1,4), order="C")
+    p = p.at[:, (2,3)].set(0.)
+    return p.ravel(order="F")
+
+def keep_col0_2(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1,4), order="C")
+    p = p.at[:, (1,3)].set(0.)
+    return p.ravel(order="F")
+
+def copy_col0(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1, 2), order="C")
+    p = p.at[:,1].set(p.at[:,0].get())
+    return p.ravel(order="F")
+
+
+@partial(jit, static_argnames=["n", "obs_prim", "size_marg"])
+def marg_indices(p_in: jnp.array, state: jnp.array, n: int, size_marg: int, obs_prim: bool=True) -> jnp.array:
+    """
+    Returns indices of the states where the marginal probability is stored
+    Args:
+        p_in (jnp.array): Joint probability distribution of prims and mets
+        state (jnp.array): bitstring, mutational state of prim and met of a patient
+        n (int): total number of genomic events
+        size_marg (int): number of latent states
+        obs_prim (bool): If true return P(Prim = prim_obs, Met) else return P(Prim, Met = met_obs)
+    Returns:
+        jnp.array
+    """
+    def loop_body(i, p):
+        ind = state.at[2*i].get()*obs_prim + (1-obs_prim)*(state.at[2*i+1].get())+2
+        p = lax.switch(
+            index = ind,
+            branches = [
+                lambda p: keep_col0(p),
+                lambda p: keep_col0_1(p),           # 11 obs_prim=1
+                lambda p: keep_col0(p),                   # 00 obs_prim=0
+                lambda p: keep_col0_2(p),       # 10 obs_prim=0       
+            ],
+            operand = p
+        )
+        return p
+    p = lax.fori_loop(0, n, loop_body, p_in)
+
+    return jnp.where(copy_col0(p) == 1, size = size_marg)
+
+
+@jit
+def marg0not1(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1,2), order="C")
+    #p = p.at[:,0].add(p.at[:,1].get())
+    #p = p.at[:,1].set(0.)
+    p = p @ jnp.array([[1, 0], [1, 0]])
+    return p.ravel(order="F")
+
+def marg_met_1and1(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1,4), order="C")
+    #p = p.at[:,0].add(p.at[:,2].get())
+    #p = p.at[:, 1].add(p.at[:, 3].get())       
+    #p = p.at[:, (2, 3)].set(0.)
+    p = p @ jnp.array([[1, 0, 0, 0], [0,1,0, 0], [1,0,0,0], [0,1,0, 0]])
+    return p.ravel(order="F")
+
+def marg_prim_1and1(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1,4), order="C")
+    #p = p.at[:,0].add(p.at[:,1].get())
+    #p = p.at[:, 2].add(p.at[:, 3].get())
+    #p = p.at[:, 1].set(p.at[:, 2].get())
+    #p = p.at[:,(2,3)].set(0.)
+    p = p @ jnp.array([[1, 0, 0, 0], [1,0,0, 0], [0,1,0,0], [0,1,0, 0]])
+    return p.ravel(order="F")
+
+def shuffle_stride2(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1, 2), order="C")
+    return p.ravel(order="F")
+
+@partial(jit, static_argnames=["n", "size_marg", "marg_met", "marg_seeding"])
+def marginalize(p_in: jnp.array, n: int, state: jnp.array, size_marg: int, marg_met: bool=True, marg_seeding: bool=False) -> jnp.array:
+    """
+    Marginalizes over unobserved events in the primary tumor or metastasis for a partial observation state
+    Args:
+        p_in (jnp.array): probability distribution to marginalise
+        n (int): total number of mutations
+        state (jnp.array): bitsring, tumor sample of a single patient
+        size_marg (int): Number of latent states
+        marg_met (bool): if true: marginalise over mets, else: marginalise over prims
+        marg_seeding (bool): if true: marginalise over the seeding event as well 
+    Returns:
+        p: marginal distribution
+    """
+    def loop_body(i, p):
+        ind = state.at[2*i].get() + 2*state.at[2*i+1].get() + (1 - marg_met)*4
+        p = lax.switch(
+            index = ind,
+            branches = [
+                lambda p: p,                        # 00 marg_met=1
+                lambda p: shuffle_stride2(p),       # 10 marg_met=1
+                lambda p: marg0not1(p),             # 01 marg_met=1
+                lambda p: marg_met_1and1(p),        # 11 marg_met=1
+                lambda p: p,                        # 00 marg_met=0
+                lambda p: marg0not1(p),             # 10 marg_met=0
+                lambda p: shuffle_stride2(p),       # 01 marg_met=0
+                lambda p: marg_prim_1and1(p),       # 11 marg_met=0         
+            ],
+            operand = p
+        )
+        return p
+    # The shape of the carry_over argument in a for_i loop has to remain constant
+    p = lax.fori_loop(0, n, loop_body, p_in)
+    p = lax.cond(
+        (marg_seeding and state[-1] == 1),
+        lambda x: marg0not1(x),
+        lambda x: x.reshape((-1, 2), order="C").ravel(order="F"),
+        operand = p
+    )
+    # JAX makes us jump through a lot of hoops here in order to jit this function
+    out_inds = marg_indices(jnp.ones_like(p), state, n, size_marg)
+    return p.at[out_inds].get()
+
+def keep_col2(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1, 2), order="C")
+    p = p.at[:,0].set(0.)
+    return p.ravel(order="F")
+
+def keep_col1(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1, 2), order="C")
+    p = p.at[:,1].set(0.)
+    return p.ravel(order="F")
+
+def keep_col1_3(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1, 4), order="C")
+    p = p.at[:, (0, 2)].set(0.)
+    return p.ravel(order="F")
+
+def keep_col2_3(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1,4), order="C")
+    p = p.at[:, (0,1)].set(0.)
+    return p.ravel(order="F")
+
+@partial(jit, static_argnames=["n", "latent_size", "obs_prim"])
+def obs_dist(p_in: jnp.array, state: jnp.array, n: int, latent_size: int, obs_prim: bool=True) -> jnp.array:
+    """
+    Returns P(Prim = prim_obs, Met) or P(Prim, Met = met_obs), the joint distribution evaluated at either
+    the observed metastasis state or the observed primary tumor state
+    Args:
+        p_in (jnp.array): Joint probability distribution of prims and mets
+        state (jnp.array): bitstring, mutational state of prim and met of a patient
+        n (int): total number of genomic events
+    
+        obs_prim (bool): If true return P(Prim = prim_obs, Met) else return P(Prim, Met = met_obs)
+    Returns:
+        jnp.array
+    """
+    def loop_body(i, p):
+        ind = state.at[2*i].get() + 2*state.at[2*i+1].get() + (1 - obs_prim)*4
+        p = lax.switch(
+            index = ind,
+            branches = [
+                lambda p: p,                        # 00 obs_prim=1
+                lambda p: keep_col2(p),             # 10 obs_primt=1
+                lambda p: shuffle_stride2(p),       # 01 obs_prim=1
+                lambda p: keep_col1_3(p),           # 11 obs_prim=1
+                lambda p: p,                        # 00 obs_prim=0
+                lambda p: shuffle_stride2(p),       # 10 obs_prim=0
+                lambda p: keep_col2(p),             # 01 obs_prim=0
+                lambda p: keep_col2_3(p),           # 11 obs_prim=0         
+            ],
+            operand = p
+        )
+        return p
+    p = lax.fori_loop(0, n, loop_body, jnp.ones_like(p_in))
+    # Jax makes us jump through a lot of hoops here, in order to jit this function
+    inds = jnp.where(shuffle_stride2(p) == 1, size = latent_size)
+    return p_in.at[inds].get()
