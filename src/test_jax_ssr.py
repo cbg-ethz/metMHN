@@ -2,11 +2,13 @@ import ssr_kronecker_vector as ssr_kv
 import ssr_kronvec_jax as ssr_kv_jx
 import ssr_likelihood_jax as ssr_jx
 import ssr_likelihood as ssr
+import vanilla
 import Utilityfunctions as utils
 import numpy as np
 import unittest
 import jax.numpy as jnp
 import jax
+import explicit_statetespace as essp
 
 
 class KroneckerTestCase(unittest.TestCase):
@@ -19,24 +21,7 @@ class KroneckerTestCase(unittest.TestCase):
         self.state_size = 4
         self.state = np.random.choice(
             [1] * self.state_size + [0] * (2 * self.n + 1 - self.state_size), size=2*self.n+1, replace=False)
-
-    def test_with_profiler(self):
-        with jax.profiler.trace("/tmp/tensorboard"):
-            p0 = np.zeros(1 << self.state_size)
-            p0[0] = 1
-            p = ssr.R_i_jacobian_vec(log_theta=self.log_theta, x=p0,
-                                     lam=self.lam1, state=self.state)
-            q = ssr.R_i_jacobian_vec(log_theta=self.log_theta, x=p0,
-                                     lam=self.lam1, state=self.state, transpose=True)
-            self.assertTrue(
-                np.allclose(
-                    ssr.x_partial_Q_y(log_theta=self.log_theta,
-                                      x=p, y=q, state=self.state),
-                    np.array(ssr_jx.x_partial_Q_y(
-                        log_theta=jnp.array(self.log_theta),
-                        x=jnp.array(p), y=jnp.array(q), state=jnp.array(self.state), n=self.n))
-                )
-            )
+        self.state = np.array([1, 1, 0, 0, 0, 0, 1, 1, 0])
 
     def test_kron_diag(self):
         self.assertTrue(

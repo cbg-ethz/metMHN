@@ -196,7 +196,6 @@ class KroneckerTestCase(unittest.TestCase):
         Test the restricted version of R^-1 e_i = (lam I - Q)^-1 e_i for e_i the
         ith standard base vector using forward substitution
         """
-        print(self.state)
         for i in range(1 << self.n_ss):
             with self.subTest(i=i):
                 p = np.zeros(1 << self.n_ss)
