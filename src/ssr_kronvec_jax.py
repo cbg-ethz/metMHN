@@ -1029,41 +1029,31 @@ def marg_indices(p_in: jnp.array, state: jnp.array, n: int, size_marg: int, obs_
 @jit
 def marg0not1(p: jnp.array) -> jnp.array:
     p = p.reshape((-1,2), order="C")
-    #p = p.at[:,0].add(p.at[:,1].get())
-    #p = p.at[:,1].set(0.)
-    p = p @ jnp.array([[1, 0], [1, 0]])
+    p = p @ jnp.array([[1, 1], [0, 0]])
     return p.ravel(order="F")
 
 def marg_met_1and1(p: jnp.array) -> jnp.array:
     p = p.reshape((-1,4), order="C")
-    #p = p.at[:,0].add(p.at[:,2].get())
-    #p = p.at[:, 1].add(p.at[:, 3].get())       
-    #p = p.at[:, (2, 3)].set(0.)
-    p = p @ jnp.array([[1, 0, 0, 0], [0,1,0, 0], [1,0,0,0], [0,1,0, 0]])
+    p = p @ jnp.array([[1, 0, 1, 0], [0,1,0, 1], [0,0,0,0], [0,0,0, 0]])
     return p.ravel(order="F")
 
 def marg_prim_1and1(p: jnp.array) -> jnp.array:
     p = p.reshape((-1,4), order="C")
-    #p = p.at[:,0].add(p.at[:,1].get())
-    #p = p.at[:, 2].add(p.at[:, 3].get())
-    #p = p.at[:, 1].set(p.at[:, 2].get())
-    #p = p.at[:,(2,3)].set(0.)
-    p = p @ jnp.array([[1, 0, 0, 0], [1,0,0, 0], [0,1,0,0], [0,1,0, 0]])
+    p = p @ jnp.array([[1, 1, 0, 0], [0,0,1, 1], [0,0,0,0], [0,0,0, 0]])
     return p.ravel(order="F")
 
 def shuffle_stride2(p: jnp.array) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     return p.ravel(order="F")
 
-@partial(jit, static_argnames=["n", "size_marg", "marg_met", "marg_seeding"])
-def marginalize(p_in: jnp.array, n: int, state: jnp.array, size_marg: int, marg_met: bool=True, marg_seeding: bool=False) -> jnp.array:
+@partial(jit, static_argnames=["n", "marg_met", "marg_seeding"])
+def marg_transp(p_in: jnp.array, n: int, state: jnp.array, marg_met: bool=True, marg_seeding: bool=False) -> jnp.array:
     """
-    Marginalizes over unobserved events in the primary tumor or metastasis for a partial observation state
+    Calculates (p_in)^T M, where M is a 2^n x 2^(2*n) marginalization matrix implicitely  
     Args:
         p_in (jnp.array): probability distribution to marginalise
         n (int): total number of mutations
         state (jnp.array): bitsring, tumor sample of a single patient
-        size_marg (int): Number of latent states
         marg_met (bool): if true: marginalise over mets, else: marginalise over prims
         marg_seeding (bool): if true: marginalise over the seeding event as well 
     Returns:
@@ -1095,8 +1085,8 @@ def marginalize(p_in: jnp.array, n: int, state: jnp.array, size_marg: int, marg_
         operand = p
     )
     # JAX makes us jump through a lot of hoops here in order to jit this function
-    out_inds = marg_indices(jnp.ones_like(p), state, n, size_marg)
-    return p.at[out_inds].get()
+    #out_inds = marg_indices(jnp.ones_like(p), state, n, size_marg)
+    return p
 
 def keep_col2(p: jnp.array) -> jnp.array:
     p = p.reshape((-1, 2), order="C")

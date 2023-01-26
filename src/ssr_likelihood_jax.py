@@ -1,6 +1,6 @@
 import numpy as np
 
-from ssr_kronvec_jax import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed, kronvec, kron_diag
+from ssr_kronvec_jax import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed, kronvec, kron_diag, obs_dist, marg_transp
 import Utilityfunctions as utils
 import jax.numpy as jnp
 from jax import jit, lax, vmap
@@ -295,6 +295,59 @@ def gradient(log_theta: jnp.array, p_D: jnp.array, lam1: float, lam2: float, sta
 
     return minuend - subtrahend
 
+def log_prob_coupled(log_theta: jnp.array, n: int, lam1: float, lam2: float, state: jnp.array, m: int, prim_first: bool) -> float:
+    """
+    Evaluates the log probability of seeing coupled genotype data in state "state"
+    Args:
+        log_theta (jnp.array): Logarithmic entries of theta
+        n (int): Total number of mutations
+        lam1 (float): Rate of first diagnosis
+        lam2 (float): Rate of second diagnosis
+        state (jnp.array): Bitstring state of prim at t1 and met at t2 if prim_first else vice versa
+        m (int): Number of muations in state that happened
+        prim_first (bool): If true: the primary tumor was first observed, else the met was first observed
+    Returns:
+        float: log(P(state))
+    """
+    p0 =jnp.zeros(2**m)
+    p0[0] = 1.0
+    pTh1 = R_i_inv_vec(log_theta, p0, lam1,  state, m)
+    latent_size = lax.cond(prim_first,
+        lambda x: x.at[1:2*n:2].get().sum(),
+        lambda x: x.at[0:2*n:2].get().sum(),
+        operand = state)
+    latent_size = 2**(latent_size+1)
+    pTh1 = obs_dist(pTh1, state, n, latent_size, prim_first)
+    nK = pTh1.sum()
+    #pTh2 = vanilla_mhn(..., pTh1/nk, state)
+    return jnp.log(nK) #+ jnp.log(pTh2[latent_size])
+
+def log_prob_single(log_theta: jnp.array, n: int, lam1: float, state: jnp.array, m: int, prim_first: bool) -> float:
+    p0 = jnp.zeros(2**m)
+    p0[0] = 1.0
+    #pTh = vanilla_mhn(..., p0, state)
+    return jnp.log(pTh[-1])
+
+def gradient(log_theta: jnp.array, n: int, lam1: float, lam2: float, state: jnp.array, m: int, prim_first: bool) -> float:
+    p0 = jnp.zeros(2**m)
+    latent_size = lax.cond(prim_first,
+        lambda x: x.at[1:2*n:2].get().sum(),
+        lambda x: x.at[0:2*n:2].get().sum(),
+        operand = state)
+    pTh1 = R_i_inv_vec(log_theta, p0, lam1, state, m)
+    pTh1_obs = obs_dist(pTh1, state, n, 2**(latent_size+1), prim_first)
+    nk = pTh1_obs.sum()
+    q = jnp.zeros(2**m)
+    pos = 2**(m-latent_size-1)+2**(m-1)-1 
+    q = q.at[pos].set(1/nk)
+    q = marg_transp(q, n, state, prim_first, False)
+    q = R_i_inv_vec(log_theta, q, lam1, state, m, transp = True)
+    g_1 = x_partial_Q_y(log_theta, q, pTh1, state, n)
+    p_0_2 = pTh1_obs/nk
+    
+
+
+    
 
 # def log_likelihood(log_theta: np.array, p_D: np.array, lam1: float, lam2: float, state: np.array) -> float:
 
