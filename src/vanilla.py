@@ -194,8 +194,8 @@ def kron_diag(
 
 
 @partial(jit, static_argnames=["state_size", "transpose"])
-def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, state_size: int, transpose: bool = False) -> np.array:
-    """This computes R_i^{-1} x = (\lambda_i I - Q)^{-1} x
+def R_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, state_size: int, transpose: bool = False) -> np.array:
+    """This computes R^{-1} x = (\lambda I - Q)^{-1} x
 
     Args:
         log_theta (np.array): Log values of the theta matrix
@@ -297,3 +297,31 @@ def x_partial_Q_y(
         jnp.arange(n, dtype=int), val)
 
     return val
+
+
+@partial(jit, static_argnames=["state_size", "n"])
+def gradient(log_theta: jnp.array, p_D: jnp.array, lam: float, state: jnp.array, state_size: int, n: int) -> jnp.array:
+    """This computes the gradient of the score function, which is the log-likelihood of a data vector p_D
+    with respect to the log_theta matrix
+
+    Args:
+        log_theta (np.array): Log values of the theta matrix.
+        p_D (np.array): Data vector.
+        lam (float): Rate of the sampling.
+        state (np.array): Binary state vector, representing the current sample's events.
+
+
+    Returns:
+        np.array: \partial_theta (p_D^T log p_theta)
+    """
+
+    p_0 = jnp.zeros(2**state_size, dtype=float)
+    p_0 = p_0.at[0].set(1.)
+
+    p_theta = R_inv_vec(log_theta=log_theta, x=p_0, lam=lam,
+                        state=state, state_size=state_size, n=n)
+    x = R_inv_vec(log_theta=log_theta, x=p_D/p_theta, lam=lam,
+                  state=state, state_size=state_size, n=n, transpose=True)
+
+    return x_partial_Q_y(log_theta=log_theta,
+                         x=x, y=p_theta, state=state, n=n)
