@@ -34,7 +34,7 @@ class KroneckerTestCase(unittest.TestCase):
         self.assertTrue(
             np.allclose(
                 self.Q @ self.p_0,
-                kv.kronvec(self.log_theta, self.p_0, True, False)
+                kv.qvec(self.log_theta, self.p_0, True, False)
             )
         )
 
@@ -45,7 +45,7 @@ class KroneckerTestCase(unittest.TestCase):
         self.assertTrue(
             np.allclose(
                 self.Q.T @ self.p_0,
-                kv.kronvec(log_theta=self.log_theta,
+                kv.qvec(log_theta=self.log_theta,
                         p=self.p_0, diag=True, transpose=True)
             )
         )
@@ -68,7 +68,7 @@ class KroneckerTestCase(unittest.TestCase):
         self.assertTrue(
             np.allclose(
                 (self.Q - self.q_diag) @ self.p_0,
-                kv.kronvec(self.log_theta, self.p_0, False, False)
+                kv.qvec(self.log_theta, self.p_0, False, False)
             )
         )
 
@@ -87,7 +87,7 @@ class KroneckerTestCase(unittest.TestCase):
         """
         tests if p_th is a valid distribution
         """
-        self.assertTrue(np.around(sum(self.pTh), decimals=5) == 1)
+        self.assertTrue(np.around(sum(self.p_th), decimals=5) == 1)
 
 
     def test_fss_q_grad_p(self):
@@ -100,7 +100,7 @@ class KroneckerTestCase(unittest.TestCase):
         self.assertTrue(
             np.allclose(
                 essp.build_q_grad_p(theta_test, q, p),
-                kv.x_partial_Q_y(theta_test, q, p, self.n)
+                kv.q_partialQ_pth(theta_test, q, p, self.n)
             )
         )
 
@@ -109,7 +109,7 @@ class KroneckerTestCase(unittest.TestCase):
         tests whether explicit marginalization over primary tumor states in the full joint distribution and
         direct generation of the marginal distribution yield the same results
         """
-        full_met_marg = utils.marginalize(self.pTh, self.n, False)
+        full_met_marg = utils.marginalize(self.p_th, self.n, False)
         mhn_met_marg = self.lam1 * self.lam2 / (self.lam1 - self.lam2) * \
             (mhn.generate_pTh(self.log_theta, self.lam2) -
              mhn.generate_pTh(self.log_theta, self.lam1))
@@ -120,7 +120,7 @@ class KroneckerTestCase(unittest.TestCase):
         tests whether explicit marginalization over metastases states in the full joint distribution and
         direct generation of the marginal distribution yield the same results
         """
-        marg = utils.marginalize(self.pTh, self.n)
+        marg = utils.marginalize(self.p_th, self.n)
         theta_copy = self.log_theta.copy()
         met_base = self.log_theta[-1, -1]
         theta_copy[:, -1] = 0.
@@ -186,22 +186,6 @@ class KroneckerTestCase(unittest.TestCase):
                 p[j] = 1
                 assert (np.allclose(
                     np.linalg.inv(self.lam1 * np.identity(1 << self.n_ss)
-                        - essp.ssr_build_q(dpoint=self.state, log_theta=self.log_theta)) @ p,
-                    ssr.R_i_jacobian_vec(log_theta=self.log_theta,
-                                         x=p, lam=self.lam1, state=self.state),
-                ))
-
-    def test_ssr_resolvent_p(self):
-        """
-        Test the restricted version of R^-1 e_i = (lam I - Q)^-1 e_i for e_i the
-        ith standard base vector using forward substitution
-        """
-        for i in range(1 << self.n_ss):
-            with self.subTest(i=i):
-                p = np.zeros(1 << self.n_ss)
-                p[i] = 1
-                assert (np.allclose(
-                    np.linalg.inv(self.lam1 * np.identity(1 << self.n_ss)
                         - essp.ssr_build_q(state=self.state, log_theta=self.log_theta)) @ p,
                     ssr.R_i_jacobian_vec(log_theta=self.log_theta,
                                          x=p, lam=self.lam1, state=self.state),
@@ -219,7 +203,23 @@ class KroneckerTestCase(unittest.TestCase):
                 assert (np.allclose(
                     np.linalg.inv(self.lam1 * np.identity(1 << self.n_ss)
                         - essp.ssr_build_q(state=self.state, log_theta=self.log_theta)) @ p,
-                    ssr.R_inv_vec(log_theta=self.log_theta,
+                    ssr.R_i_jacobian_vec(log_theta=self.log_theta,
+                                         x=p, lam=self.lam1, state=self.state),
+                ))
+
+    def test_ssr_resolvent_p(self):
+        """
+        Test the restricted version of R^-1 e_i = (lam I - Q)^-1 e_i for e_i the
+        ith standard base vector using forward substitution
+        """
+        for i in range(1 << self.n_ss):
+            with self.subTest(i=i):
+                p = np.zeros(1 << self.n_ss)
+                p[i] = 1
+                assert (np.allclose(
+                    np.linalg.inv(self.lam1 * np.identity(1 << self.n_ss)
+                        - essp.ssr_build_q(state=self.state, log_theta=self.log_theta)) @ p,
+                    ssr.R_i_jacobian_vec(log_theta=self.log_theta,
                                     x=p, lam=self.lam1, state=self.state),
                 ))
 
@@ -262,9 +262,9 @@ class KroneckerTestCase(unittest.TestCase):
         Tests restricted version of q (d Q/d theta) p
         """
         restricted = utils.ssr_to_fss(self.state)
-        p = ssr.R_jacobian_vec(log_theta=self.log_theta, x=self.p_0[restricted],
+        p = ssr.R_i_jacobian_vec(log_theta=self.log_theta, x=self.p_0[restricted],
                                  lam=self.lam1, state=self.state)
-        q = ssr.R_jacobian_vec(log_theta=self.log_theta, x=self.p_0[restricted],
+        q = ssr.R_i_jacobian_vec(log_theta=self.log_theta, x=self.p_0[restricted],
                                  lam=self.lam1, state=self.state, transpose=True)
         p_fss = np.zeros(1 << (2*self.n + 1))
         q_fss = np.zeros(1 << (2*self.n + 1))
@@ -272,8 +272,8 @@ class KroneckerTestCase(unittest.TestCase):
         q_fss[restricted] = q
         self.assertTrue(
             np.allclose(
-                kv.x_partial_Q_y(log_theta=self.log_theta,
-                                  x=p_fss, y=q_fss, n=self.n),
+                kv.q_partialQ_pth(log_theta=self.log_theta,
+                                  q=p_fss, p_th=q_fss, n=self.n),
                 ssr_kv.x_partial_Q_y(log_theta=self.log_theta,
                                   x=p, y=q, state=self.state)
             )

@@ -22,7 +22,7 @@ def jacobi(log_theta: np.array, b: np.array, lam: float, transpose: bool = False
     dg = fss.diag_q(log_theta) + lam
     
     for _ in range(2*n+2):
-        x = b + fss.kronvec(log_theta, x, diag=False, transpose=transpose)
+        x = b + fss.qvec(log_theta, x, diag=False, transpose=transpose)
         x = x/dg
     return x
 
@@ -56,7 +56,7 @@ def diag_forward(log_theta: np.array, p: np.array) -> np.array:
     dg = fss.diag_q(log_theta)+diagnosed
     for i in range(2*n+1):
         np.divide(p, dg, out=p, where=dg != 0)
-        p = fss.kronvec(log_theta, p.copy(), False) + diagnosed*p
+        p = fss.qvec(log_theta, p.copy(), False) + diagnosed*p
     return p
 
 
@@ -121,7 +121,7 @@ def gradient(log_theta: np.array, p_D: np.array, lam1: float, lam2: float, n: in
     q = np.divide(p_D, p_th, out=np.zeros_like(p_D), where=p_th != 0)
     q1 = jacobi(log_theta, q, lam1, True)
     q2 = jacobi(log_theta, q, lam2, True)
-    d_theta = fss.x_partial_Q_y(log_theta, q2, p_th_2, n) - fss.x_partial_Q_y(log_theta, q1, p_th_1, n)
+    d_theta = fss.q_partialQ_pth(log_theta, q2, p_th_2, n) - fss.q_partialQ_pth(log_theta, q1, p_th_1, n)
 
     # Derivatives wrt. lam1 and lam2
     d_lam1 = q.dot(-1 * lam2/(lam1*(lam1 - lam2)) * p_th + lam_ratio * jacobi(log_theta, p_th_1, lam1))

@@ -14,10 +14,10 @@ p0[0] = 1
 
 # test the numpy implementation
 start = timer()
-res_np = kv.kronvec_sync(theta, p0, i, n, transp=False)
-res_met_np = kv.kronvec_met(theta, p0, i, n, transp=False)
-res_prim_np = kv.kronvec_prim(theta, p0, i, n, transp=False)
-res_seed_np = kv.kronvec_seed(theta, p0, n, transp=False)
+res_np = kv.kronvec_sync(theta, p0, i, n, transpose=False)
+res_met_np = kv.kronvec_met(theta, p0, i, n, transpose=False)
+res_prim_np = kv.kronvec_prim(theta, p0, i, n, transpose=False)
+res_seed_np = kv.kronvec_seed(theta, p0, n, transpose=False)
 end = timer()
 print(end - start)
 

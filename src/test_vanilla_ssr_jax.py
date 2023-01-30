@@ -96,7 +96,7 @@ class KroneckerTestCase(unittest.TestCase):
 
     def test_vanilla_resolvent_p(self):
 
-        Q = essp.build_q(self.log_theta)[np.ix_(utils.reachable_states(self.n) & utils.ssr_to_fss(
+        Q = essp.Q(self.log_theta)[np.ix_(utils.reachable_states(self.n) & utils.ssr_to_fss(
             self.state), utils.reachable_states(self.n) & utils.ssr_to_fss(self.state))]
         R = self.lam1*np.eye(2**(self.v_state_size)) - Q
         for j in range(1 << self.v_state_size):
@@ -106,7 +106,7 @@ class KroneckerTestCase(unittest.TestCase):
                 self.assertTrue(
                     np.allclose(
                         np.linalg.solve(R, p),
-                        vanilla.R_i_inv_vec(log_theta=self.log_theta[:-1, :-1],
+                        vanilla.R_inv_vec(log_theta=self.log_theta[:-1, :-1],
                                             x=p, lam=self.lam1, state=self.v_state, state_size=self.v_state_size)
                     ))
 
