@@ -120,11 +120,10 @@ class KroneckerTestCase(unittest.TestCase):
         tests whether explicit marginalization over metastases states in the full joint distribution and
         direct generation of the marginal distribution yield the same results
         """
-        marg = utils.marginalize(self.p_th, self.n)
+        marg = utils.marginalize(self.p_th, self.n, False)
         theta_copy = self.log_theta.copy()
-        met_base = self.log_theta[-1, -1]
-        theta_copy[:, -1] = 0.
-        theta_copy[-1, -1] = met_base
+        theta_copy[0:(self.n-1), -1] = 0.
+      
         mhn_marg = self.lam1 * self.lam2 / (self.lam1 - self.lam2) * \
             (mhn.generate_pTh(theta_copy, self.lam2) -
              mhn.generate_pTh(theta_copy, self.lam1))
