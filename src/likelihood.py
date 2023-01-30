@@ -82,6 +82,16 @@ def log_likelihood(log_theta: np.array, p_D: np.array, lam1: float, lam2: float,
     return p_D.dot(np.log(p_th, out=np.zeros_like(p_th), where=utils.reachable_states(n=n)))
 
 
+def grad_ij(log_theta: np.array, pD: np.array, lam1: float, i: int, j: int, p0: np.array) -> float:
+    n = log_theta.shape[0]-1
+    pTh = jacobi(log_theta, p0, lam1)
+    dQ = fss.dqvec(log_theta, pTh, i, j)
+    p = jacobi(log_theta, dQ, lam1)
+    p_marg = utils.marginalize(p, n, False)
+    pTh_marg = utils.marginalize(pTh, n, False)
+    q = np.divide(pD, pTh_marg, out=np.zeros_like(pD), where=pTh_marg != 0)
+    return q.dot(p_marg)
+
 def gradient(log_theta: np.array, p_D: np.array, lam1: float, lam2: float, n: int, p_0: np.array,
              p_th_1_space: np.array = None, p_th_2_space: np.array = None) -> np.array:
     """

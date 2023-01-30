@@ -4,8 +4,110 @@ from ssr_kronecker_vector import kronvec_sync, kronvec_met, kronvec_prim, kronve
 import Utilityfunctions as utils
 
 
-def R_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, transpose: bool = False) -> np.array:
-    """This computes R^{-1} x = (\lambda I - Q)^{-1} x
+def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array) -> np.array:
+    """This function computes x \partial Q y with \partial Q the Jacobian of Q w.r.t. all thetas
+    efficiently using the shuffle trick (sic!).
+
+    Args:
+        log_theta (np.array): Logarithmic theta values of the MHN 
+        x (np.array): x vector to multiply with from the left. Length must equal the number of
+        nonzero entries in the state vector.
+        y (np.array): y vector to multiply with from the right. Length must equal the number of
+        nonzero entries in the state vector.
+        state (np.array): Binary state vector, representing the current sample's events.
+
+    Returns:
+        np.array: x \partial_(\Theta_{ij}) Q y for i, j = 1, ..., n+1
+    """
+    n = log_theta.shape[0] - 1
+
+    z = np.zeros(shape=(n + 1, n + 1))
+
+    for i in range(n):
+        z_sync = x * kronvec_sync(log_theta=log_theta,
+                                  p=y, i=i, n=n, state=state)
+        z_prim = x * kronvec_prim(log_theta=log_theta,
+                                  p=y, i=i, n=n, state=state)
+        z_met = x * kronvec_met(log_theta=log_theta,
+                                p=y, i=i, n=n, state=state)
+
+        z[i, -1] = z_met.sum()
+
+        for j in range(n):
+            current = state[2*j: 2*j + 2]
+
+            if current.sum() == 0:
+                if i == j:
+                    z[i, j] = sum([
+                        z_sync.sum(),
+                        z_prim.sum(),
+                        z_met.sum()]
+                    )
+
+            elif current.sum() == 2:
+                z_sync = z_sync.reshape((-1, 4), order="C")
+                z_prim = z_prim.reshape((-1, 4), order="C")
+                z_met = z_met.reshape((-1, 4), order="C")
+
+                z[i, j] = sum([
+                    z_sync[:, 3].sum(),
+                    z_prim[:, [1, 3]].sum(),
+                    z_met[:, [2, 3]].sum()]
+                )
+
+                if i == j:
+                    z[i, j] += sum([
+                        z_sync[:, 0].sum(),
+                        z_prim[:, [0, 2]].sum(),
+                        z_met[:, [0, 1]].sum()]
+                    )
+
+                z_sync = z_sync.flatten(order="F")
+                z_prim = z_prim.flatten(order="F")
+                z_met = z_met.flatten(order="F")
+
+            else:
+                z_sync = z_sync.reshape((-1, 2), order="C")
+                z_prim = z_prim.reshape((-1, 2), order="C")
+                z_met = z_met.reshape((-1, 2), order="C")
+
+                if i != j:
+                    if current[1] == 1:  # met mutated
+                        z[i, j] = z_met[:, 1].sum()
+                    else:  # prim mutated
+                        z[i, j] = z_prim[:, 1].sum()
+                else:
+                    z[i, j] = sum([
+                        z_sync[:, 0].sum(),
+                        z_prim.sum(),
+                        z_met.sum()]
+                    )
+                z_sync = z_sync.flatten(order="F")
+                z_prim = z_prim.flatten(order="F")
+                z_met = z_met.flatten(order="F")
+
+    z_seed = x * kronvec_seed(log_theta=log_theta, p=y, n=n, state=state)
+
+    z[-1, -1] = z_seed.sum()
+
+    for j in range(n):
+        current = state[2*j: 2*j + 2]
+
+        if current.sum() == 2:
+            z_seed = z_seed.reshape((-1, 4), order="C")
+
+            z[-1, j] = z_seed[:, 3].sum()
+
+            z_seed = z_seed.flatten(order="F")
+
+        elif current.sum() == 1:
+            z_seed = z_seed.reshape((-1, 2), order="C").flatten(order="F")
+
+    return z
+
+
+def R_i_jacobian_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, transpose: bool = False) -> np.array:
+    """This computes R_i^{-1} x = (\lambda_i I - Q)^{-1} x
 
     Args:
         log_theta (np.array): Log values of the theta matrix
@@ -26,6 +128,108 @@ def R_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, tr
     for _ in range(sum(state) + 1):
         y = lidg * (kronvec(log_theta=log_theta, p=y, n=n,
                             state=state, diag=False, transpose=transpose) + x)
+
+    return y
+
+
+def R_i_inv_vec(log_theta: np.array, x: np.array, lam: float,  state: np.array, transpose: bool = False) -> np.array:
+    """This computes R_i^{-1} x = (\lambda_i I - Q)^{-1} x
+
+    Args:
+        log_theta (np.array): Log values of the theta matrix
+        x (np.array): Vector to multiply with from the right. Length must equal the number of
+        nonzero entries in the state vector.
+        lam (float): Value of \lambda_i
+        state (np.array): Binary state vector, representing the current sample's events.
+
+
+    Returns:
+        np.array: R_i^{-1} x
+    """
+
+    n = log_theta.shape[0] - 1
+    diag = lam - kron_diag(log_theta=log_theta, n=n, state=state)
+
+    y = x.copy()
+
+    reachable = utils.reachable_states(n)
+    translation = utils.ssr_to_fss(state=state)
+    nonsync = np.array([])
+    sync = np.arange(1 << 2 * n + 1)[translation]
+    if state[-1] == 1:
+        sync, nonsync = np.split(translation, 2)
+        sync, nonsync = np.arange(
+            1 << 2 * n)[sync], np.arange(1 << 2 * n, 1 << 2 * n + 1)[nonsync]
+    translation = np.arange(1 << 2 * n + 1)[translation]
+
+    for i in sync:
+        i_index = np.where(translation == i)[0][0]
+        y[i_index] /= diag[i_index]
+
+        if not reachable[i]:
+            continue
+
+        bit_setter = 3
+        for j in range(n):
+            modified_i = (i | bit_setter)
+
+            if modified_i != i and modified_i in sync:
+                i_copy = i
+                theta = 0
+                for k in range(n):
+                    if i_copy & 1:
+                        theta += log_theta[j, k]
+                    i_copy >>= 2
+                y[np.where(translation == modified_i)[0][0]
+                  ] += np.exp(theta + log_theta[j, j]) * y[i_index]
+            bit_setter <<= 2
+
+        if state[-1] == 1:
+            i_copy = i
+            theta = 0
+            for k in range(n):
+                if i_copy & 1:
+                    theta += log_theta[-1, k]
+                i_copy >>= 2
+            y[np.where(translation == i | 1 << 2*n)[0][0]
+              ] += np.exp(theta + log_theta[-1, -1]) * y[i_index]
+
+    for i in nonsync:
+        i_index = np.where(translation == i)[0][0]
+        y[i_index] /= diag[i_index]
+
+        bit_setter = 1
+        for j in range(n):
+
+            # primary
+
+            modified_i = (i | bit_setter)
+            if modified_i != i and modified_i in nonsync:
+                i_copy = i
+                theta = 0
+                for k in range(n):
+                    if i_copy & 1:
+                        theta += log_theta[j, k]
+                    i_copy >>= 2
+                y[np.where(translation == modified_i)[0][0]
+                  ] += np.exp(theta + log_theta[j, j]) * y[i_index]
+
+            bit_setter <<= 1
+
+            # metastasis
+
+            modified_i = (i | bit_setter)
+            if modified_i != i and modified_i in nonsync:
+                i_copy = i
+                theta = 0
+                for k in range(n):
+                    if i_copy & 2:
+                        theta += log_theta[j, k]
+                    i_copy >>= 2
+                y[np.where(translation == modified_i)[
+                    0][0]] += np.exp(theta + log_theta[j, -1] + log_theta[j, j]) * y[i_index]
+
+            bit_setter <<= 1
 
     return y
 
@@ -56,13 +260,13 @@ def gradient(log_theta: np.array, p_D: np.array, lam1: float, lam2: float, state
     p_0 = np.zeros(2**n_ss)
     p_0[0] = 1
     lam = (lam1 * lam2 / (lam1 - lam2))
-    R_1_inv_p_0 = R_inv_vec(
+    R_1_inv_p_0 = R_i_jacobian_vec(
         log_theta=log_theta,
         x=p_0,
         lam=lam1,
         state=state)
 
-    R_2_inv_p_0 = R_inv_vec(
+    R_2_inv_p_0 = R_i_jacobian_vec(
         log_theta=log_theta,
         x=p_0,
         lam=lam2,
@@ -74,10 +278,10 @@ def gradient(log_theta: np.array, p_D: np.array, lam1: float, lam2: float, state
     # some states are not reachable and therefore have zero probability density
     minuend = p_D * np.divide(lam, p_theta, where=reachable[restricted])
     subtrahend = minuend.copy()
-    minuend = R_inv_vec(log_theta=log_theta, x=minuend,
-                          lam=lam2, state=state, transpose=True)
-    subtrahend = R_inv_vec(log_theta=log_theta, x=minuend,
-                             lam=lam1, state=state, transpose=True)
+    minuend = R_i_jacobian_vec(log_theta=log_theta, x=minuend,
+                               lam=lam2, state=state, transpose=True)
+    subtrahend = R_i_jacobian_vec(log_theta=log_theta, x=minuend,
+                                  lam=lam1, state=state, transpose=True)
     minuend = x_partial_Q_y(log_theta=log_theta,
                             x=minuend, y=R_2_inv_p_0, state=state)
     subtrahend = x_partial_Q_y(
@@ -94,12 +298,12 @@ def log_likelihood(log_theta: np.array, p_D: np.array, lam1: float, lam2: float,
 
     p_0 = np.zeros(2 ** state.sum())
     p_0[0] = 1
-    p_th = R_inv_vec(
+    p_th = R_i_jacobian_vec(
         log_theta=log_theta,
         x=p_0,
         lam=lam2,
         state=state
-    ) - R_inv_vec(
+    ) - R_i_jacobian_vec(
         log_theta=log_theta,
         x=p_0,
         lam=lam1,
@@ -111,8 +315,3 @@ def log_likelihood(log_theta: np.array, p_D: np.array, lam1: float, lam2: float,
         p_D[utils.ssr_to_fss(state) & reachable],
         np.log(p_th[reachable[utils.ssr_to_fss(state)]])
     )
-
-
-if __name__ == "__main__":
-
-    pass
