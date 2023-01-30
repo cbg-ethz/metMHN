@@ -29,7 +29,7 @@ class KroneckerTestCase(unittest.TestCase):
                 ssr_kv.kron_diag(
                     log_theta=self.log_theta, n=self.n, state=self.state),
                 ssr_kv_jx.kron_diag(log_theta=jnp.array(
-                    self.log_theta), n=self.n, state=jnp.array(self.state), state_size=sum(self.state))
+                    self.log_theta), state=jnp.array(self.state), p_in=jnp.zeros(2**self.state_size))
             )
         )
 
@@ -40,7 +40,7 @@ class KroneckerTestCase(unittest.TestCase):
                 p[j] = 1
                 self.assertTrue(np.allclose(
                     ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
-                        p), n=self.n, state=jnp.array(self.state), state_size=self.state_size),
+                        p), state=jnp.array(self.state), state_size=self.state_size),
                     ssr_kv.kronvec(log_theta=self.log_theta, p=p,
                                    n=self.n, state=self.state)
                 ))
@@ -53,7 +53,7 @@ class KroneckerTestCase(unittest.TestCase):
                 p[j] = 1
                 self.assertTrue(np.allclose(
                     ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
-                        p), n=self.n, state=jnp.array(self.state), state_size=self.state_size, diag=False),
+                        p), state=jnp.array(self.state), state_size=self.state_size, diag=False),
                     ssr_kv.kronvec(log_theta=self.log_theta, p=p,
                                    n=self.n, state=self.state, diag=False)
                 ))
@@ -66,7 +66,7 @@ class KroneckerTestCase(unittest.TestCase):
                 p[j] = 1
                 self.assertTrue(np.allclose(
                     ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
-                        p), n=self.n, state=jnp.array(self.state), state_size=self.state_size, transpose=True),
+                        p), state=jnp.array(self.state), state_size=self.state_size, transpose=True),
                     ssr_kv.kronvec(log_theta=self.log_theta, p=p,
                                    n=self.n, state=self.state, transpose=True)
                 ))
@@ -79,7 +79,7 @@ class KroneckerTestCase(unittest.TestCase):
                 p[j] = 1
                 self.assertTrue(np.allclose(
                     ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
-                        p), n=self.n, state=jnp.array(self.state), state_size=self.state_size, diag=False, transpose=True),
+                        p), state=jnp.array(self.state), state_size=self.state_size, diag=False, transpose=True),
                     ssr_kv.kronvec(log_theta=self.log_theta, p=p,
                                    n=self.n, state=self.state, diag=False, transpose=True)
                 ))
@@ -98,7 +98,7 @@ class KroneckerTestCase(unittest.TestCase):
                         ssr.R_i_jacobian_vec(log_theta=self.log_theta,
                                              x=p, lam=self.lam1, state=self.state),
                         ssr_jx.R_i_inv_vec(log_theta=self.log_theta,
-                                           x=p, lam=self.lam1, state=self.state, state_size=self.state_size)
+                                           x=p, lam=self.lam1, state=self.state)
                     ))
 
     def test_ssr_q_grad_p(self):
@@ -116,7 +116,7 @@ class KroneckerTestCase(unittest.TestCase):
                             ssr.x_partial_Q_y(log_theta=self.log_theta,
                                               x=p, y=q, state=self.state),
                             np.array(ssr_jx.x_partial_Q_y(log_theta=jnp.array(self.log_theta),
-                                                          x=jnp.array(p), y=jnp.array(q), state=jnp.array(self.state), n=self.n))
+                                                          x=jnp.array(p), y=jnp.array(q), state=jnp.array(self.state)))
                         )
                     )
 
@@ -135,7 +135,7 @@ class KroneckerTestCase(unittest.TestCase):
                     p_D=p_D, lam1=self.lam1, lam2=self.lam2, state=self.state),
                 ssr_jx.gradient(
                     log_theta=jnp.array(self.log_theta),
-                    p_D=jnp.array(p_D), lam1=self.lam1, lam2=self.lam2, state=jnp.array(self.state), state_size=self.state_size, n=self.n),
+                    p_D=jnp.array(p_D), lam1=self.lam1, lam2=self.lam2, state=jnp.array(self.state), state_size=self.state_size),
             )
         )
 
