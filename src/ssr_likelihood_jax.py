@@ -7,6 +7,7 @@ from jax import jit, lax, vmap
 from functools import partial
 import vanilla as mhn
 
+
 @jit
 def f1(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, jnp.array, float]:
     s = s.reshape((-1, 2), order="C")
@@ -170,8 +171,9 @@ def x_partial_Q_y(log_theta: jnp.array, x: jnp.array, y: jnp.array, state: jnp.a
         )
 
         return val
-    
-    z = z.at[:-1,:].set(vmap(body_fun, in_axes=(0,0), out_axes=0)(jnp.arange(n, dtype=int), z[:-1,:]))
+
+    z = z.at[:-1, :].set(vmap(body_fun, in_axes=(0, 0),
+                         out_axes=0)(jnp.arange(n, dtype=int), z[:-1, :]))
 
     z_seed = x * kronvec_seed(log_theta=log_theta, p=y, state=state)
 
@@ -219,7 +221,7 @@ def R_i_inv_vec(log_theta: jnp.array, x: jnp.array, lam: float,  state: jnp.arra
     """
     n = log_theta.shape[0] - 1
     state_size = np.log2(x.shape[0]).astype(int)
-    lidg = -1 / (kron_diag(log_theta=log_theta, state= state, p_in=x) - lam)
+    lidg = -1 / (kron_diag(log_theta=log_theta, state=state, p_in=x) - lam)
     y = lidg * x
 
     y = lax.fori_loop(
@@ -256,8 +258,6 @@ def gradient(log_theta: jnp.array, p_D: jnp.array, lam1: float, lam2: float, sta
     # if np.any(p_D[~reachable[restricted]] != 0):
     #     raise ValueError("The data vector contains unreachable states.")
 
-    n = log_theta.shape[0] - 1
-
     p_0 = jnp.zeros(2**state_size, dtype=float)
     p_0 = p_0.at[0].set(1.)
     lam = (lam1 * lam2 / (lam1 - lam2))
@@ -265,15 +265,13 @@ def gradient(log_theta: jnp.array, p_D: jnp.array, lam1: float, lam2: float, sta
         log_theta=log_theta,
         x=p_0,
         lam=lam1,
-        state=state,
-        state_size=state_size)
+        state=state,)
 
     R_2_inv_p_0 = R_i_inv_vec(
         log_theta=log_theta,
         x=p_0,
         lam=lam2,
         state=state,
-        state_size=state_size
     )
 
     p_theta = lam * (R_1_inv_p_0 - R_2_inv_p_0)
@@ -284,9 +282,9 @@ def gradient(log_theta: jnp.array, p_D: jnp.array, lam1: float, lam2: float, sta
     minuend = jnp.nan_to_num(minuend, posinf=0., neginf=0.)
     subtrahend = minuend.copy()
     minuend = R_i_inv_vec(log_theta=log_theta, x=minuend,
-                          lam=lam2, state=state, state_size=state_size, transpose=True)
+                          lam=lam2, state=state, transpose=True)
     subtrahend = R_i_inv_vec(log_theta=log_theta, x=minuend,
-                             lam=lam1, state=state, state_size=state_size, transpose=True)
+                             lam=lam1, state=state, transpose=True)
     minuend = x_partial_Q_y(log_theta=log_theta,
                             x=minuend, y=R_2_inv_p_0, state=state)
     subtrahend = x_partial_Q_y(
@@ -294,9 +292,10 @@ def gradient(log_theta: jnp.array, p_D: jnp.array, lam1: float, lam2: float, sta
 
     return minuend - subtrahend
 
+
 @partial(jit, static_argnames=["prim_first"])
-def _log_prob_coupled(log_theta: jnp.array, lam1: float, lam2: float, state: jnp.array, p0: jnp.array, 
-                    latent_dist: jnp.array, latent_state: jnp.array, prim_first: bool) -> float:
+def _log_prob_coupled(log_theta: jnp.array, lam1: float, lam2: float, state: jnp.array, p0: jnp.array,
+                      latent_dist: jnp.array, latent_state: jnp.array, prim_first: bool) -> float:
     """
     Evaluates the log probability of seeing coupled genotype data in state "state"
     Args:
@@ -314,9 +313,9 @@ def _log_prob_coupled(log_theta: jnp.array, lam1: float, lam2: float, state: jnp
     pTh1 = obs_dist(pTh1, state, latent_dist, prim_first)
     obs_sum = pTh1.sum()
     log_theta = lax.cond(prim_first,
-        lambda x: x.at[0:n, -1].set(0.0),
-        lambda x: x,
-        operand = log_theta)
+                         lambda x: x.at[0:n, -1].set(0.0),
+                         lambda x: x,
+                         operand=log_theta)
     pTh2 = lam2 * mhn.R_inv_vec(log_theta, pTh1/obs_sum, lam2, latent_state)
     return jnp.log(obs_sum) + jnp.log(pTh2.at[-1].get())
 
@@ -327,15 +326,17 @@ def log_prob_coupled(dat: jnp.array, log_theta: jnp.array, lam1: float, lam2: fl
     for i in range(dat.shape[0]):
         prim_first = bool(dat.at[i, -1].get())
         if prim_first:
-            latent_state = jnp.append(dat.at[i, 1:2*n+1:2].get(), dat.at[i,-2].get())
-        else:    
+            latent_state = jnp.append(
+                dat.at[i, 1:2*n+1:2].get(), dat.at[i, -2].get())
+        else:
             latent_state = dat.at[i, 0:2*n+1:2].get()
         latent_dist = jnp.zeros(2**int(latent_state.sum()))
-        p0 = jnp.zeros(2**int(dat.at[i,0:2*n+1].get().sum()))
+        p0 = jnp.zeros(2**int(dat.at[i, 0:2*n+1].get().sum()))
         p0 = p0.at[0].set(1.0)
-        score += _log_prob_coupled(log_theta, lam1, lam2, dat.at[i, 0:2*n+1].get(), p0, 
-        latent_dist, latent_state, prim_first)
+        score += _log_prob_coupled(log_theta, lam1, lam2, dat.at[i, 0:2*n+1].get(), p0,
+                                   latent_dist, latent_state, prim_first)
     return score/dat.shape[0]
+
 
 @jit
 def _log_prob_single(log_theta: jnp.array, lam1: float, state: jnp.array, p0: jnp.array) -> float:
@@ -352,45 +353,47 @@ def log_prob_single(dat: jnp.array, log_theta: jnp.array, lam1: float):
             state_obs = dat.at[i, 0:2*n+1:2].get()
             log_theta = log_theta.at[0:n, -1].set(0.0)
         else:
-            state_obs = jnp.append(dat.at[i, 1:2*n+1:2].get(), dat.at[i, -2].get())
+            state_obs = jnp.append(
+                dat.at[i, 1:2*n+1:2].get(), dat.at[i, -2].get())
         p0 = jnp.zeros(2**int(state_obs.sum()))
         p0 = p0.at[0].set(1.0)
         score += _log_prob_single(log_theta, lam1, state_obs, p0)
     return score/dat.shape[0]
 
 
-def grad_single(dat: jnp.array, log_theta: jnp.array, lam1:float):
+def grad_single(dat: jnp.array, log_theta: jnp.array, lam1: float):
     n = log_theta.shape[0] - 1
-    g = jnp.zeros((n+1,n+1))
+    g = jnp.zeros((n+1, n+1))
     for i in range(dat.shape[0]):
         marg_met = bool(dat.at[i, -1].get())
         if marg_met:
             state_obs = dat.at[i, 0:2*n+1:2].get()
             log_theta = log_theta.at[0:n, -1].set(0.0)
         else:
-            state_obs = jnp.append(dat.at[i, 1:2*n+1:2].get(), dat.at[i, -2].get())
+            state_obs = jnp.append(
+                dat.at[i, 1:2*n+1:2].get(), dat.at[i, -2].get())
         p0 = jnp.zeros(2**int(state_obs.sum()))
         p0 = p0.at[0].set(1.0)
         g += mhn.gradient(log_theta, lam1, state_obs, p0)
     return g/dat.shape[0]
 
 
-#@partial(jit, static_argnames=["prim_first"])
-#def _grad_coupled(log_theta: jnp.array, lam1: float, lam2: float, state: jnp.array, p0: jnp.array, 
-#latent_dist: jnp.array, latent_state: jnp.array, prim_first: bool) -> jnp.array:
-#    
+# @partial(jit, static_argnames=["prim_first"])
+# def _grad_coupled(log_theta: jnp.array, lam1: float, lam2: float, state: jnp.array, p0: jnp.array,
+# latent_dist: jnp.array, latent_state: jnp.array, prim_first: bool) -> jnp.array:
+#
 #    n = log_theta.shape[0] - 1
 #    m = np.log2(p0.shape[0]).astype(int)
 #    lm = np.log2(latent_dist.shape[0]).astype(int)
-#    
+#
 #    # Calculate joint distributiom at first sampling
 #    pTh1 = R_i_inv_vec(log_theta, p0, lam1, state)
 #    pTh1_obs = obs_dist(pTh1, state, latent_dist, prim_first)
-#    
+#
 #    # Perform marginalization over latent states
 #    nk = pTh1_obs.sum()
 #    q = jnp.zeros_like(p0)
-#    pos = 2**(m - lm - 1) + 2**(m - 1) - 1 
+#    pos = 2**(m - lm - 1) + 2**(m - 1) - 1
 #    q = q.at[pos].set(1/nk)
 
     # Actual gradient
@@ -417,6 +420,6 @@ if __name__ == "__main__":
         1 << state_size)
     p[i], q[j] = 1, 1
     a = ssr.x_partial_Q_y(log_theta=log_theta,
-                                x=p, y=q, state=state),
+                          x=p, y=q, state=state),
     b = np.array(x_partial_Q_y(log_theta=jnp.array(log_theta),
-                                            x=jnp.array(p), y=jnp.array(q), state=jnp.array(state), n=n))
+                               x=jnp.array(p), y=jnp.array(q), state=jnp.array(state), n=n))

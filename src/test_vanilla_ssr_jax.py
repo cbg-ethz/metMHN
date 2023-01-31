@@ -1,13 +1,10 @@
-import ssr_kronecker_vector as ssr_kv
 import ssr_kronvec_jax as ssr_kv_jx
-import ssr_likelihood_jax as ssr_jx
 import ssr_likelihood as ssr
 import vanilla
 import Utilityfunctions as utils
 import numpy as np
 import unittest
 import jax.numpy as jnp
-import jax
 import explicit_statetespace as essp
 
 

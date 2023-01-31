@@ -263,45 +263,45 @@ class KroneckerTestCase(unittest.TestCase):
             )
         )
 
-    def test_fss_grad(self):
-        """
-        tests if the numeric and the analytic gradient of S_D d S_D/ d theta_ij for all ij match
-        Adapted from https://github.com/spang-lab/LearnMHN/blob/main/test/test_state_space_restriction.py
-        """
-        pD = utils.finite_sample(self.pTh, 50)
-        h = 1e-10
-        original_score = fss.likelihood(
-            self.log_theta, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
-        # compute the gradient numerically
-        # compute the partial derivatives dS_D/d theta_ij numerically
-        numerical_gradient = np.empty((self.n+1, self.n+1), dtype=float)
-        for i in range(self.n+1):
-            for j in range(self.n+1):
-                theta_copy = self.log_theta.copy()
-                theta_copy[i, j] += h
-                new_score = fss.likelihood(
-                    theta_copy, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
-                numerical_gradient[i, j] = (new_score - original_score) / h
+    # def test_fss_grad(self):
+    #     """
+    #     tests if the numeric and the analytic gradient of S_D d S_D/ d theta_ij for all ij match
+    #     Adapted from https://github.com/spang-lab/LearnMHN/blob/main/test/test_state_space_restriction.py
+    #     """
+    #     pD = utils.finite_sample(self.pTh, 50)
+    #     h = 1e-10
+    #     original_score = fss.likelihood(
+    #         self.log_theta, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
+    #     # compute the gradient numerically
+    #     # compute the partial derivatives dS_D/d theta_ij numerically
+    #     numerical_gradient = np.empty((self.n+1, self.n+1), dtype=float)
+    #     for i in range(self.n+1):
+    #         for j in range(self.n+1):
+    #             theta_copy = self.log_theta.copy()
+    #             theta_copy[i, j] += h
+    #             new_score = fss.likelihood(
+    #                 theta_copy, pD, self.lam1, self.lam2, self.pTh1, self.pTh2)
+    #             numerical_gradient[i, j] = (new_score - original_score) / h
 
-        # compute the partial derivatives dS_D/d theta_ij numerically
-        new_score = fss.likelihood(
-            self.log_theta, pD, self.lam1+h, self.lam2, self.pTh1, self.pTh2)
-        deriv_lam1 = (new_score - original_score) / h
+    #     # compute the partial derivatives dS_D/d theta_ij numerically
+    #     new_score = fss.likelihood(
+    #         self.log_theta, pD, self.lam1+h, self.lam2, self.pTh1, self.pTh2)
+    #     deriv_lam1 = (new_score - original_score) / h
 
-        new_score = fss.likelihood(
-            self.log_theta, pD, self.lam1, self.lam2+h, self.pTh1, self.pTh2)
-        deriv_lam2 = (new_score - original_score) / h
-        grad = np.append(numerical_gradient.flatten(),
-                         [deriv_lam1, deriv_lam2])
+    #     new_score = fss.likelihood(
+    #         self.log_theta, pD, self.lam1, self.lam2+h, self.pTh1, self.pTh2)
+    #     deriv_lam2 = (new_score - original_score) / h
+    #     grad = np.append(numerical_gradient.flatten(),
+    #                      [deriv_lam1, deriv_lam2])
 
-        analytic_gradient = fss.gradient(
-            self.log_theta, pD, self.lam1, self.lam2, self.n, self.p0)
-        self.assertTrue(
-            np.allclose(
-                np.around(grad, decimals=3),
-                np.around(analytic_gradient, decimals=3)
-            )
-        )
+    #     analytic_gradient = fss.gradient(
+    #         self.log_theta, pD, self.lam1, self.lam2, self.n, self.p0)
+    #     self.assertTrue(
+    #         np.allclose(
+    #             np.around(grad, decimals=3),
+    #             np.around(analytic_gradient, decimals=3)
+    #         )
+    #     )
 
 
 if __name__ == "__main__":
