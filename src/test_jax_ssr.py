@@ -21,7 +21,6 @@ class KroneckerTestCase(unittest.TestCase):
         self.state_size = 4
         self.state = np.random.choice(
             [1] * self.state_size + [0] * (2 * self.n + 1 - self.state_size), size=2*self.n+1, replace=False)
-        self.state = np.array([1, 1, 0, 0, 0, 0, 1, 1, 0])
 
     def test_kron_diag(self):
         self.assertTrue(

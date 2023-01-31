@@ -127,7 +127,7 @@ def marginalize(p_in: np.array, n: int, marg_met: bool=True) -> np.array:
     p = p_in.copy()
     for _ in range(n):
         p = p.reshape((-1, 4), order="C")
-        if not marg_met:
+        if marg_met:
             y = np.column_stack((p[:, 0] + p[:, 2], p[:, 1] + p[:, 3]))
         else:
             y = np.column_stack((p[:, 0] + p[:, 1], p[:, 2] + p[:, 3]))
