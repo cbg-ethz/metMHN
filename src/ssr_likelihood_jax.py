@@ -401,25 +401,3 @@ def grad_single(dat: jnp.array, log_theta: jnp.array, lam1: float):
 #    q = R_i_inv_vec(log_theta, q, lam1, state, transpose = True)
 #    g_1 = x_partial_Q_y(log_theta, q, pTh1, state)
 #    return g_1
-
-if __name__ == "__main__":
-
-    import ssr_likelihood as ssr
-
-    n = 4
-    log_theta = utils.random_theta(n, 0.4)
-    lam1 = np.random.exponential(10, 1)
-    lam2 = np.random.exponential(10, 1)
-    state_size = 2
-    state = np.random.choice(
-        [1] * state_size + [0] * (2 * n + 1 - state_size), size=2*n+1, replace=False)
-    state = np.array([0, 0, 0, 0, 1, 0, 0, 0, 1])
-    i = 3
-    j = 2
-    p, q = np.zeros(1 << state_size), np.zeros(
-        1 << state_size)
-    p[i], q[j] = 1, 1
-    a = ssr.x_partial_Q_y(log_theta=log_theta,
-                          x=p, y=q, state=state),
-    b = np.array(x_partial_Q_y(log_theta=jnp.array(log_theta),
-                               x=jnp.array(p), y=jnp.array(q), state=jnp.array(state), n=n))

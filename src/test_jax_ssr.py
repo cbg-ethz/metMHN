@@ -6,6 +6,7 @@ import Utilityfunctions as utils
 import numpy as np
 import unittest
 import jax.numpy as jnp
+import warnings
 
 
 class KroneckerTestCase(unittest.TestCase):
@@ -97,11 +98,12 @@ class KroneckerTestCase(unittest.TestCase):
                                            x=p, lam=self.lam1, state=self.state)
                     ))
 
-    @unittest.skip("This is weird on r30 GPU")
     def test_ssr_q_grad_p(self):
         """
         Tests restricted version of q (d Q/d theta) p
         """
+        rtol = 1.e-2 # to change tolerance, comment out this and the following line
+        warnings.warn("Rel. tolerance of this test is set very low to test despite the weird miscalculation on spang lab's r30 GPU. Please change when on other device.")
         for i in range(1 << self.state_size):
             for j in range(1 << self.state_size):
                 with self.subTest(i=i, j=j):
@@ -112,12 +114,12 @@ class KroneckerTestCase(unittest.TestCase):
                         np.allclose(
                             ssr.x_partial_Q_y(log_theta=self.log_theta,
                                               x=p, y=q, state=self.state),
-                            np.array(ssr_jx.x_partial_Q_y(log_theta=jnp.array(self.log_theta),
-                                                          x=jnp.array(p), y=jnp.array(q), state=jnp.array(self.state)))
+                            np.array(ssr_jx.x_partial_Q_y(log_theta=self.log_theta,
+                                                          x=p, y=q, state=self.state)),
+                        rtol=rtol
                         )
                     )
 
-    @unittest.skip("This is weird on r30 GPU")
     def test_ssr_gradient(self):
         """
         Tests restricted version of q (d Q/d theta) p
@@ -126,14 +128,17 @@ class KroneckerTestCase(unittest.TestCase):
         p0[0] = 1
         p_D = ssr.R_i_jacobian_vec(log_theta=self.log_theta, x=p0,
                                    lam=self.lam1, state=self.state)
+        rtol = 1.e-2 # to change tolerance, comment out this and the following line
+        warnings.warn("Rel. tolerance of this test is set very low to test despite the weird miscalculation on spang lab's r30 GPU. Please change when on other device.")
         self.assertTrue(
             np.allclose(
                 ssr.gradient(
                     log_theta=self.log_theta,
                     p_D=p_D, lam1=self.lam1, lam2=self.lam2, state=self.state),
                 ssr_jx.gradient(
-                    log_theta=jnp.array(self.log_theta),
-                    p_D=jnp.array(p_D), lam1=self.lam1, lam2=self.lam2, state=jnp.array(self.state), state_size=self.state_size),
+                    log_theta=self.log_theta,
+                    p_D=p_D, lam1=self.lam1, lam2=self.lam2, state=self.state, state_size=self.state_size),
+                rtol=rtol
             )
         )
 

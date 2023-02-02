@@ -45,7 +45,7 @@ def _kronvec(
     n = log_theta.shape[0]
     # Diagonal Kronecker factors
     p = lax.fori_loop(lower=0, upper=i,
-                        body_fun=loop_body_diag, init_val=p)
+                      body_fun=loop_body_diag, init_val=p)
 
     # Non-diagonal Kronecker factor
     p = lax.switch(
@@ -60,9 +60,10 @@ def _kronvec(
 
     # Diagonal Kronecker factors
     p = lax.fori_loop(lower=i+1, upper=n,
-                        body_fun=loop_body_diag, init_val=p)
+                      body_fun=loop_body_diag, init_val=p)
 
     return p
+
 
 @partial(jit, static_argnames=["diag", "transpose"])
 def kronvec_i(
@@ -119,6 +120,7 @@ def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array, diag: bool = T
         init_val=jnp.zeros(shape=2**state_size)
     )
 
+
 @jit
 def kron_diag_i(
         log_theta: jnp.array,
@@ -169,7 +171,7 @@ def kron_diag_i(
 def kron_diag(
         log_theta: jnp.array,
         state: jnp.array,
-        diag:jnp.array) -> jnp.array:
+        diag: jnp.array) -> jnp.array:
 
     def body_fun(i, val):
         val += kron_diag_i(log_theta=log_theta, i=i, state=state, diag=diag)
@@ -200,10 +202,10 @@ def R_inv_vec(log_theta: jnp.array, x: jnp.array, lam: float,  state: jnp.array,
     Returns:
         np.array: R_i^{-1} x
     """
-    n = log_theta.shape[0]
     state_size = jnp.log2(x.shape[0]).astype(int)
 
-    lidg = -1 / (kron_diag(log_theta=log_theta, state=state, diag=jnp.ones_like(x)) - lam)
+    lidg = -1 / (kron_diag(log_theta=log_theta,
+                 state=state, diag=jnp.ones_like(x)) - lam)
     y = lidg * x
 
     y = lax.fori_loop(

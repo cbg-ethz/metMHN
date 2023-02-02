@@ -3,8 +3,9 @@ from functools import partial
 from jax import jit, lax
 import jax.numpy as jnp
 import jax
-# Kronecker factors
 
+
+# Kronecker factors
 
 @jit
 def k2dt0(p: jnp.array, theta: float) -> jnp.array:
@@ -1054,7 +1055,7 @@ def obs_inds(p_in: jnp.array, state: jnp.array, latent_dist: jnp.array, obs_prim
             index=ind,
             branches=[
                 lambda p: p,                        # 00 obs_prim=1
-                lambda p: keep_col2(p),             # 10 obs_primt=1
+                lambda p: keep_col2(p),             # 10 obs_prim=1
                 lambda p: shuffle_stride2(p),       # 01 obs_prim=1
                 lambda p: keep_col1_3(p),           # 11 obs_prim=1
                 lambda p: p,                        # 00 obs_prim=0
