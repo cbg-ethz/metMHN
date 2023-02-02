@@ -1070,9 +1070,13 @@ def obs_inds(p_in: jnp.array, state: jnp.array, latent_dist: jnp.array, obs_prim
     n = int((state.shape[0] - 1)/2)
     p = lax.fori_loop(0, n, loop_body, jnp.ones_like(p_in))
     latent_size = latent_dist.shape[0]
+    p = lax.cond(state.at[-1].get() == 0,
+                lambda p: p,
+                lambda p: shuffle_stride2(p),
+                operand = p)
     # Jax makes us jump through a lot of hoops here, in order to jit this function
-    inds = jnp.where(shuffle_stride2(p) == 1, size=latent_size)
-    return inds[0]  # Output of where is a tuple
+    inds = jnp.where(p == 1, size = latent_size)
+    return inds[0] #Output of jnp.where is a tuple
 
 # def keep_col1(p: jnp.array) -> jnp.array:
 #    p = p.reshape((-1, 2), order="C")

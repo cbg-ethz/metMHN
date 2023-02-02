@@ -173,8 +173,8 @@ def ssr_marginalize(p_in: np.array, n: int, state: np.array, marg_met: bool=True
         # Prim[i] = 0 and Met[i] = 1 and marg. over mets
         # Or Prim[i] =1 and Met[i] = 0 and marg. over prims
         else: 
-            p = p.reshape((-1, 2), order = "C")
             p = p[:, 0] + p[:, 1]
+            p = p.reshape((-1, 2), order = "C")
             p = p.ravel(order="F")
 
     if state[-1] == 1 and marg_seeding:
@@ -216,5 +216,9 @@ def ssr_obs_dist(p_in: np.array, state: np.array, n: int, obs_prim: bool=True) -
             else:
                 p = np.column_stack([p[:,2], p[:,3]])
             p = p.ravel(order="F")
-    p = p.reshape((-1, 2), order="C")
-    return p.ravel(order="F")
+    if state[-1] == 1:
+        p = p.reshape((-1, 2), order="C")
+        p = p.ravel(order="F")
+    else:
+        pass
+    return p
