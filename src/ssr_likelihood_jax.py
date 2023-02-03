@@ -7,7 +7,6 @@ from jax import jit, lax, vmap
 from functools import partial
 import vanilla as mhn
 
-
 @jit
 def f1(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, jnp.array, float]:
     s = s.reshape((-1, 2), order="C")
@@ -171,9 +170,8 @@ def x_partial_Q_y(log_theta: jnp.array, x: jnp.array, y: jnp.array, state: jnp.a
         )
 
         return val
-
-    z = z.at[:-1, :].set(vmap(body_fun, in_axes=(0, 0),
-                         out_axes=0)(jnp.arange(n, dtype=int), z[:-1, :]))
+    
+    z = z.at[:-1,:].set(vmap(body_fun, in_axes=(0,0), out_axes=0)(jnp.arange(n, dtype=int), z[:-1,:]))
 
     z_seed = x * kronvec_seed(log_theta=log_theta, p=y, state=state)
 
@@ -221,7 +219,7 @@ def R_i_inv_vec(log_theta: jnp.array, x: jnp.array, lam: float,  state: jnp.arra
     """
     n = log_theta.shape[0] - 1
     state_size = np.log2(x.shape[0]).astype(int)
-    lidg = -1 / (kron_diag(log_theta=log_theta, state=state, p_in=x) - lam)
+    lidg = -1 / (kron_diag(log_theta=log_theta, state= state, p_in=x) - lam)
     y = lidg * x
 
     y = lax.fori_loop(
@@ -258,6 +256,8 @@ def gradient(log_theta: jnp.array, p_D: jnp.array, lam1: float, lam2: float, sta
     # if np.any(p_D[~reachable[restricted]] != 0):
     #     raise ValueError("The data vector contains unreachable states.")
 
+    n = log_theta.shape[0] - 1
+
     p_0 = jnp.zeros(2**state_size, dtype=float)
     p_0 = p_0.at[0].set(1.)
     lam = (lam1 * lam2 / (lam1 - lam2))
@@ -265,13 +265,15 @@ def gradient(log_theta: jnp.array, p_D: jnp.array, lam1: float, lam2: float, sta
         log_theta=log_theta,
         x=p_0,
         lam=lam1,
-        state=state,)
+        state=state,
+        state_size=state_size)
 
     R_2_inv_p_0 = R_i_inv_vec(
         log_theta=log_theta,
         x=p_0,
         lam=lam2,
         state=state,
+        state_size=state_size
     )
 
     p_theta = lam * (R_1_inv_p_0 - R_2_inv_p_0)
@@ -282,9 +284,9 @@ def gradient(log_theta: jnp.array, p_D: jnp.array, lam1: float, lam2: float, sta
     minuend = jnp.nan_to_num(minuend, posinf=0., neginf=0.)
     subtrahend = minuend.copy()
     minuend = R_i_inv_vec(log_theta=log_theta, x=minuend,
-                          lam=lam2, state=state, transpose=True)
+                          lam=lam2, state=state, state_size=state_size, transpose=True)
     subtrahend = R_i_inv_vec(log_theta=log_theta, x=minuend,
-                             lam=lam1, state=state, transpose=True)
+                             lam=lam1, state=state, state_size=state_size, transpose=True)
     minuend = x_partial_Q_y(log_theta=log_theta,
                             x=minuend, y=R_2_inv_p_0, state=state)
     subtrahend = x_partial_Q_y(
@@ -292,10 +294,9 @@ def gradient(log_theta: jnp.array, p_D: jnp.array, lam1: float, lam2: float, sta
 
     return minuend - subtrahend
 
-
 @partial(jit, static_argnames=["prim_first"])
-def _log_prob_coupled(log_theta: jnp.array, lam1: float, lam2: float, state: jnp.array, p0: jnp.array,
-                      latent_dist: jnp.array, latent_state: jnp.array, prim_first: bool) -> float:
+def _log_prob_coupled(log_theta: jnp.array, lam1: float, lam2: float, state: jnp.array, p0: jnp.array, 
+                    latent_dist: jnp.array, latent_state: jnp.array, prim_first: bool) -> jnp.array:
     """
     Evaluates the log probability of seeing coupled genotype data in state "state"
     Args:
@@ -303,48 +304,81 @@ def _log_prob_coupled(log_theta: jnp.array, lam1: float, lam2: float, state: jnp
         lam1 (float): Rate of first diagnosis
         lam2 (float): Rate of second diagnosis
         state (jnp.array): Bitstring state of prim at t1 and met at t2 if prim_first else vice versa
-        m (int): Number of muations in state that happened
+        p0 (jnp.array): Starting distribution
+        latent_dist (jnp.array): distribution of latent states (initially 0)
+        latent_state: bitstring, tumor observed at t2
         prim_first (bool): If true: the primary tumor was first observed, else the met was first observed
     Returns:
-        float: log(P(state))
+        jnp.array: log(P(state))
     """
     n = log_theta.shape[0] - 1
     pTh1 = R_i_inv_vec(log_theta, p0, lam1,  state)
-    pTh1 = obs_dist(pTh1, state, latent_dist, prim_first)
+    inds = obs_inds(pTh1, state, latent_dist, prim_first)
+    pTh1_obs = pTh1.at[inds].get()
     obs_sum = pTh1.sum()
     log_theta = lax.cond(prim_first,
-                         lambda x: x.at[0:n, -1].set(0.0),
-                         lambda x: x,
-                         operand=log_theta)
-    pTh2 = lam2 * mhn.R_inv_vec(log_theta, pTh1/obs_sum, lam2, latent_state)
+        lambda x: x.at[0:n, -1].set(0.0),
+        lambda x: x,
+        operand = log_theta)
+    pTh2 = lam2 * mhn.R_inv_vec(log_theta, pTh1_obs/obs_sum, lam2, latent_state)
     return jnp.log(obs_sum) + jnp.log(pTh2.at[-1].get())
 
 
-def log_prob_coupled(dat: jnp.array, log_theta: jnp.array, lam1: float, lam2: float):
+def log_prob_coupled(dat: jnp.array, log_theta: jnp.array, lam1: float, lam2: float) -> jnp.array:
+    """
+    Calulates the likelihood of dat
+    Args:
+        dat (jnp.array): dataset
+        log_theta (jnp.array): logarithmic theta
+        lam1 (float): Rate of first sampling
+        lam2 (float): rate of second sampling
+
+    Returns:
+        jnp.array: likelihood
+    """
     n = log_theta.shape[0]-1
     score = 0.0
     for i in range(dat.shape[0]):
         prim_first = bool(dat.at[i, -1].get())
         if prim_first:
-            latent_state = jnp.append(
-                dat.at[i, 1:2*n+1:2].get(), dat.at[i, -2].get())
-        else:
+            latent_state = jnp.append(dat.at[i, 1:2*n+1:2].get(), dat.at[i,-2].get())
+        else:    
             latent_state = dat.at[i, 0:2*n+1:2].get()
         latent_dist = jnp.zeros(2**int(latent_state.sum()))
-        p0 = jnp.zeros(2**int(dat.at[i, 0:2*n+1].get().sum()))
+        p0 = jnp.zeros(2**int(dat.at[i,0:2*n+1].get().sum()))
         p0 = p0.at[0].set(1.0)
-        score += _log_prob_coupled(log_theta, lam1, lam2, dat.at[i, 0:2*n+1].get(), p0,
-                                   latent_dist, latent_state, prim_first)
+        score += _log_prob_coupled(log_theta, lam1, lam2, dat.at[i, 0:2*n+1].get(), p0, 
+        latent_dist, latent_state, prim_first)
     return score/dat.shape[0]
 
-
 @jit
-def _log_prob_single(log_theta: jnp.array, lam1: float, state: jnp.array, p0: jnp.array) -> float:
+def _log_prob_single(log_theta: jnp.array, lam1: float, state: jnp.array, p0: jnp.array) -> jnp.array:
+    """
+    Calculates the likelihood of seeing a tumor with genotype state
+    Args:
+        log_theta (jnp.array): theta matrix with logarithmic entries
+        lam1 (float): rate of first sampling
+        state (jnp.array): bitstring of length sum(state), genotype of tumor
+        p0 (jnp.array): starting distribution of size 2**sum(state)
+
+    Returns:
+        jnp.array: log probability to see a tumor
+    """
     pTh = lam1 * mhn.R_inv_vec(log_theta, p0, lam1,  state, False)
     return jnp.log(pTh.at[-1].get())
 
 
-def log_prob_single(dat: jnp.array, log_theta: jnp.array, lam1: float):
+def log_prob_single(dat: jnp.array, log_theta: jnp.array, lam1: float) -> jnp.array:
+    """
+    calculates the likelihood to see all single tumors in dat
+    Args:
+        dat (jnp.array): dataset containiong all single tumors
+        log_theta (jnp.array): theta matrix with logarithmic entries
+        lam1 (float): Rate of first sampling
+
+    Returns:
+        jnp.array: Likelihood
+    """
     n = log_theta.shape[0] - 1
     score = 0.0
     for i in range(dat.shape[0]):
@@ -353,51 +387,159 @@ def log_prob_single(dat: jnp.array, log_theta: jnp.array, lam1: float):
             state_obs = dat.at[i, 0:2*n+1:2].get()
             log_theta = log_theta.at[0:n, -1].set(0.0)
         else:
-            state_obs = jnp.append(
-                dat.at[i, 1:2*n+1:2].get(), dat.at[i, -2].get())
+            state_obs = jnp.append(dat.at[i, 1:2*n+1:2].get(), dat.at[i, -2].get())
         p0 = jnp.zeros(2**int(state_obs.sum()))
         p0 = p0.at[0].set(1.0)
         score += _log_prob_single(log_theta, lam1, state_obs, p0)
     return score/dat.shape[0]
 
 
-def grad_single(dat: jnp.array, log_theta: jnp.array, lam1: float):
+def grad_single(dat: jnp.array, log_theta: jnp.array, lam1:float) -> jnp.array:
+    """
+    returns gradient of the likelihood for all single datapoints 
+    Args:
+        dat (jnp.array): dataset, containing only single tumors
+        log_theta (jnp.array): theta matrix with logarithmic entries
+        lam1 (float): Rate of first sampling
+
+    Returns:
+        jnp.array: Gradient
+    """
     n = log_theta.shape[0] - 1
-    g = jnp.zeros((n+1, n+1))
+    g = jnp.zeros((n+1,n+1))
     for i in range(dat.shape[0]):
         marg_met = bool(dat.at[i, -1].get())
         if marg_met:
             state_obs = dat.at[i, 0:2*n+1:2].get()
             log_theta = log_theta.at[0:n, -1].set(0.0)
         else:
-            state_obs = jnp.append(
-                dat.at[i, 1:2*n+1:2].get(), dat.at[i, -2].get())
+            state_obs = jnp.append(dat.at[i, 1:2*n+1:2].get(), dat.at[i, -2].get())
         p0 = jnp.zeros(2**int(state_obs.sum()))
         p0 = p0.at[0].set(1.0)
         g += mhn.gradient(log_theta, lam1, state_obs, p0)
     return g/dat.shape[0]
 
 
-# @partial(jit, static_argnames=["prim_first"])
-# def _grad_coupled(log_theta: jnp.array, lam1: float, lam2: float, state: jnp.array, p0: jnp.array,
-# latent_dist: jnp.array, latent_state: jnp.array, prim_first: bool) -> jnp.array:
-#
-#    n = log_theta.shape[0] - 1
-#    m = np.log2(p0.shape[0]).astype(int)
-#    lm = np.log2(latent_dist.shape[0]).astype(int)
-#
-#    # Calculate joint distributiom at first sampling
-#    pTh1 = R_i_inv_vec(log_theta, p0, lam1, state)
-#    pTh1_obs = obs_dist(pTh1, state, latent_dist, prim_first)
-#
-#    # Perform marginalization over latent states
-#    nk = pTh1_obs.sum()
-#    q = jnp.zeros_like(p0)
-#    pos = 2**(m - lm - 1) + 2**(m - 1) - 1
-#    q = q.at[pos].set(1/nk)
+@partial(jit, static_argnames=["prim_first"])
+def _grad_coupled(log_theta: jnp.array, lam1: float, lam2: float, state: jnp.array, p0: jnp.array, 
+                latent_dist: jnp.array, latent_state: jnp.array, prim_first: bool) -> jnp.array:
+    """
+        calculates the gradient for a single coupled datapoint
+    Args:
+        log_theta (jnp.array): theta matrix with logarithmic entries
+        lam1 (float): rate of first sampling
+        lam2 (float): reste of second sampling
+        state (jnp.array): bitstring 2*n+1, genotypes of tumors 
+        p0 (jnp.array): starting distribution of size 2**(sum(state))
+        latent_dist (jnp.array): distribution of size 2**(sum(latent_state))
+        latent_state (jnp.array): bitstring of length n+1, genotype of datapoint observed at second sampling
+        prim_first (bool): flag indicating which tumor was observed at first
 
-    # Actual gradient
-#    q = marg_transp(q, state, prim_first, False)
-#    q = R_i_inv_vec(log_theta, q, lam1, state, transpose = True)
-#    g_1 = x_partial_Q_y(log_theta, q, pTh1, state)
-#    return g_1
+    Returns:
+        jnp.array: gradient
+    """
+    n = log_theta.shape[0] - 1
+    # Calculate joint distributiom at first sampling
+    pTh1 = lam1*R_i_inv_vec(log_theta, p0, lam1, state)
+    inds_o = obs_inds(pTh1, state, latent_dist, prim_first)
+    pTh1_obs = pTh1.at[inds_o].get()
+
+    # calculate q = (pD/pTh_1)^T M
+    nk = pTh1_obs.sum()
+    inds_o_t = inds_o.at[inds_o.shape[0]//2:].get()
+    q = jnp.zeros_like(p0)
+    q = q.at[inds_o_t].set(1/nk)
+
+    # gradient of first summand of the likelihood score
+    q = R_i_inv_vec(log_theta, q, lam1, state, transpose = True)
+    g_1 = x_partial_Q_y(log_theta, q, pTh1, state)
+
+    # gradients of second term of score
+    # gradient of pTh_2
+    pTh1_obs /= nk
+    # If we marginalize over mets at t2, then we the effect of the seeding on mutations is constantly 1.0
+    log_theta_2 = lax.cond(prim_first,
+        lambda th: th,
+        lambda th: th.at[:n, -1].set(0.0),
+        operand = log_theta)
+    g_2 = mhn.gradient(log_theta_2, lam2, latent_state, pTh1_obs)
+    
+    # Derivative of constant is 0.
+    g_2 = lax.cond(prim_first,
+        lambda g: g,
+        lambda g: g.at[:n, -1].set(0.0),
+        operand = g_2)
+
+    # gradient of the starting distribution used for calc. pth_2
+    pTh2 = lam2*mhn.R_inv_vec(log_theta, pTh1_obs, lam2,  latent_state, False)
+    q_2 = jnp.zeros_like(latent_dist)
+    q_2 = q_2.at[-1].set(1/pTh2.at[-1].get())
+    q_2 = mhn.R_inv_vec(log_theta, q_2, lam2,  latent_state, True)
+    q *= 0.0
+    q = q.at[inds_o].set(q_2)
+    pTh1_obs_big = jnp.zeros_like(p0)
+    pTh1_obs_big = pTh1_obs_big.at[inds_o].set(pTh1_obs)*nk
+    g_3 = x_partial_Q_y(log_theta, q, pTh1_obs_big, state)
+    g_3 /= nk
+
+    # gradient of the normalizing sum of the starting distribution used for calc. pth_2
+    scal = jnp.dot(q_2, pTh1_obs)
+    lhs = jnp.zeros_like(p0)
+    lhs = lhs.at[inds_o].set(1.)
+    lhs = lam1*R_i_inv_vec(log_theta, lhs, lam1, state, transpose = True)
+    g_4 = x_partial_Q_y(log_theta, lhs, pTh1_obs_big, state)
+    g_4 *= scal
+
+    return g_1 + g_2 + g_3 + g_4
+
+
+def grad_coupled(dat: jnp.array, log_theta: jnp.array, lam1:float, lam2: float) -> jnp.array:
+    """
+    Calculates the gradient for all coupled datapoints in a dataset
+    Args:
+        dat (jnp.array): dataset containing the tumor genotypes as rows
+        log_theta (jnp.array): theta matrix with logarithmic entries
+        lam1 (float): Rate of first sampling
+        lam2 (float): rate of second sampling
+
+    Returns:
+        jnp.array: gradient
+    """
+    n = log_theta.shape[0] - 1
+    g = jnp.zeros((n+1,n+1))
+    for i in range(dat.shape[0]):
+        prim_first = bool(dat.at[i, -1].get())
+        if prim_first:
+            latent_state = jnp.append(dat.at[i, 1:2*n+1:2].get(), dat.at[i,-2].get())
+        else:    
+            latent_state = dat.at[i, 0:2*n+1:2].get()
+        latent_dist = jnp.zeros(2**int(latent_state.sum()))
+        p0 = jnp.zeros(2**int(dat.at[i,0:2*n+1].get().sum()))
+        p0 = p0.at[0].set(1.0)
+        g += _grad_coupled(log_theta, lam1, lam2, dat.at[i, 0:2*n+1].get(), p0, 
+                latent_dist, latent_state, prim_first)
+    return g/dat.shape[0]
+
+
+
+if __name__ == "__main__":
+
+    import ssr_likelihood as ssr
+
+    n = 4
+    log_theta = utils.random_theta(n, 0.4)
+    lam1 = np.random.exponential(10, 1)
+    lam2 = np.random.exponential(10, 1)
+    state_size = 2
+    state = np.random.choice(
+        [1] * state_size + [0] * (2 * n + 1 - state_size), size=2*n+1, replace=False)
+    state = np.array([0, 0, 0, 0, 1, 0, 0, 0, 1])
+    i = 3
+    j = 2
+    p, q = np.zeros(1 << state_size), np.zeros(
+        1 << state_size)
+    p[i], q[j] = 1, 1
+    a = ssr.x_partial_Q_y(log_theta=log_theta,
+                                x=p, y=q, state=state),
+    b = np.array(x_partial_Q_y(log_theta=jnp.array(log_theta),
+                                            x=jnp.array(p), y=jnp.array(q), state=jnp.array(state), n=n))
