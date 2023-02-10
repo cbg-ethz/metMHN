@@ -944,77 +944,9 @@ def kron_diag(log_theta: jnp.array, state: jnp.array, p_in: jnp.array) -> jnp.ar
     return y
 
 
-@jit
-def marg0not1(p: jnp.array) -> jnp.array:
-    p = p.reshape((-1, 2), order="C")
-    p = p @ jnp.array([[1, 1], [0, 0]])
-    return p.ravel(order="F")
-
-
-@jit
-def marg_met_1and1(p: jnp.array) -> jnp.array:
-    p = p.reshape((-1, 4), order="C")
-    p = p @ jnp.array([[1, 0, 1, 0], [0, 1, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0]])
-    return p.ravel(order="F")
-
-
-@jit
-def marg_prim_1and1(p: jnp.array) -> jnp.array:
-    p = p.reshape((-1, 4), order="C")
-    p = p @ jnp.array([[1, 1, 0, 0], [0, 0, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]])
-    return p.ravel(order="F")
-
-
-@jit
 def shuffle_stride2(p: jnp.array) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     return p.ravel(order="F")
-
-
-@partial(jit, static_argnames=["marg_met", "marg_seeding"])
-def marg_transp(p_in: jnp.array, state: jnp.array, marg_met: bool = True, marg_seeding: bool = False) -> jnp.array:
-    """
-    Calculates (p_in)^T M, where M is a 2^n x 2^(2*n) marginalization matrix implicitely  
-    Args:
-        p_in (jnp.array): probability distribution to marginalise
-        n (int): total number of mutations
-        state (jnp.array): bitsring, tumor sample of a single patient
-        marg_met (bool): if true: marginalise over mets, else: marginalise over prims
-        marg_seeding (bool): if true: marginalise over the seeding event as well 
-    Returns:
-        p: marginal distribution
-    """
-    def loop_body(i, p):
-        ind = state.at[2*i].get() + 2*state.at[2*i+1].get() + (1 - marg_met)*4
-        p = lax.switch(
-            index=ind,
-            branches=[
-                lambda p: p,                        # 00 marg_met=1
-                lambda p: shuffle_stride2(p),       # 10 marg_met=1
-                lambda p: marg0not1(p),             # 01 marg_met=1
-                lambda p: marg_met_1and1(p),        # 11 marg_met=1
-                lambda p: p,                        # 00 marg_met=0
-                lambda p: marg0not1(p),             # 10 marg_met=0
-                lambda p: shuffle_stride2(p),       # 01 marg_met=0
-                lambda p: marg_prim_1and1(p),       # 11 marg_met=0
-            ],
-            operand=p
-        )
-        return p
-
-    n = int((state.shape[0] - 1)/2)
-
-    # The shape of the carry_over argument in a for_i loop has to remain constant
-    p = lax.fori_loop(0, n, loop_body, p_in)
-    p = lax.cond(
-        (marg_seeding and state[-1] == 1),
-        lambda x: marg0not1(x),
-        lambda x: x.reshape((-1, 2), order="C").ravel(order="F"),
-        operand=p
-    )
-    # JAX makes us jump through a lot of hoops here in order to jit this function
-    #out_inds = marg_indices(jnp.ones_like(p), state, n, size_marg)
-    return p
 
 
 def keep_col2(p: jnp.array) -> jnp.array:
@@ -1075,9 +1007,72 @@ def obs_inds(p_in: jnp.array, state: jnp.array, latent_dist: jnp.array, obs_prim
                 lambda p: shuffle_stride2(p),
                 operand = p)
     # Jax makes us jump through a lot of hoops here, in order to jit this function
-    inds = jnp.where(p == 1, size = latent_size)
-    return inds[0] #Output of jnp.where is a tuple
+    latent_dist = jnp.where(p == 1, size = latent_size)[0]
+    return latent_dist #Output of jnp.where is a tuple
 
+
+@partial(jit, static_argnames=["obs_prim"])
+def obs_inds_2(p_in: jnp.array, state: jnp.array, obs_prim: bool = True) -> jnp.array:
+    """
+    Returns P(Prim = prim_obs, Met) or P(Prim, Met = met_obs), the joint distribution evaluated at either
+    the observed metastasis state or the observed primary tumor state
+    Args:
+        p_in (jnp.array): Joint probability distribution of prims and mets
+        state (jnp.array): bitstring, mutational state of prim and met of a patient
+        n (int): total number of genomic events
+
+        obs_prim (bool): If true return P(Prim = prim_obs, Met) else return P(Prim, Met = met_obs)
+    Returns:
+        jnp.array
+    """
+    def loop_body(i, p):
+        ind = state.at[2*i].get() + 2*state.at[2*i+1].get() + (1 - obs_prim)*4
+        p = lax.switch(
+            index=ind,
+            branches=[
+                lambda p: p,                        # 00 obs_prim=1
+                lambda p: keep_col2(p),             # 10 obs_prim=1
+                lambda p: shuffle_stride2(p),       # 01 obs_prim=1
+                lambda p: keep_col1_3(p),           # 11 obs_prim=1
+                lambda p: p,                        # 00 obs_prim=0
+                lambda p: shuffle_stride2(p),       # 10 obs_prim=0
+                lambda p: keep_col2(p),             # 01 obs_prim=0
+                lambda p: keep_col2_3(p),           # 11 obs_prim=0
+            ],
+            operand=p
+        )
+        return p
+
+    n = int((state.shape[0] - 1)/2)
+    p = lax.fori_loop(0, n, loop_body, jnp.ones_like(p_in))
+    p = lax.cond(state.at[-1].get() == 0,
+                lambda p: p,
+                lambda p: shuffle_stride2(p),
+                operand = p)
+    return p.astype(jnp.int32)
+
+# Most likelzy useless functions, that can be removed later
+#@jit
+#def marg0not1(p: jnp.array) -> jnp.array:
+#    p = p.reshape((-1, 2), order="C")
+#    p = p @ jnp.array([[1, 1], [0, 0]])
+#    return p.ravel(order="F")
+#
+#
+#@jit
+#def marg_met_1and1(p: jnp.array) -> jnp.array:
+#    p = p.reshape((-1, 4), order="C")
+#    p = p @ jnp.array([[1, 0, 1, 0], [0, 1, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0]])
+#    return p.ravel(order="F")
+#
+#
+#@jit
+#def marg_prim_1and1(p: jnp.array) -> jnp.array:
+#    p = p.reshape((-1, 4), order="C")
+#    p = p @ jnp.array([[1, 1, 0, 0], [0, 0, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]])
+#    return p.ravel(order="F")
+#
+#
 # def keep_col1(p: jnp.array) -> jnp.array:
 #    p = p.reshape((-1, 2), order="C")
 #    p = p.at[:,1].set(0.)
@@ -1136,3 +1131,50 @@ def obs_inds(p_in: jnp.array, state: jnp.array, latent_dist: jnp.array, obs_prim
 #    p = lax.fori_loop(0, n, loop_body, p_in)
 #
 #    return jnp.where(copy_col0(p) == 1, size = size_marg)
+
+#@partial(jit, static_argnames=["marg_met", "marg_seeding"])
+#def marg_transp(p_in: jnp.array, state: jnp.array, marg_met: bool = True, marg_seeding: bool = False) -> jnp.array:
+#    """
+#    Calculates (p_in)^T M, where M is a 2^n x 2^(2*n) marginalization matrix implicitely  
+#    Args:
+#       p_in (jnp.array): probability distribution to marginalise
+#        n (int): total number of mutations
+#        state (jnp.array): bitsring, tumor sample of a single patient
+#        marg_met (bool): if true: marginalise over mets, else: marginalise over prims
+#        marg_seeding (bool): if true: marginalise over the seeding event as well 
+#    Returns:
+#        p: marginal distribution
+#    """
+#    def loop_body(i, p):
+#        ind = state.at[2*i].get() + 2*state.at[2*i+1].get() + (1 - marg_met)*4
+#        p = lax.switch(
+#            index=ind,
+#            branches=[
+#                lambda p: p,                        # 00 marg_met=1
+#                lambda p: shuffle_stride2(p),       # 10 marg_met=1
+#                lambda p: marg0not1(p),             # 01 marg_met=1
+#                lambda p: marg_met_1and1(p),        # 11 marg_met=1
+#                lambda p: p,                        # 00 marg_met=0
+#                lambda p: marg0not1(p),             # 10 marg_met=0
+#                lambda p: shuffle_stride2(p),       # 01 marg_met=0
+#                lambda p: marg_prim_1and1(p),       # 11 marg_met=0
+#            ],
+#            operand=p
+#        )
+#        return p
+#
+#    n = int((state.shape[0] - 1)/2)
+#
+#    # The shape of the carry_over argument in a for_i loop has to remain constant
+#    p = lax.fori_loop(0, n, loop_body, p_in)
+#    p = lax.cond(
+#        (marg_seeding and state[-1] == 1),
+#        lambda x: marg0not1(x),
+#        lambda x: x.reshape((-1, 2), order="C").ravel(order="F"),
+#        operand=p
+#    )
+#    # JAX makes us jump through a lot of hoops here in order to jit this function
+#    #out_inds = marg_indices(jnp.ones_like(p), state, n, size_marg)
+#    return p
+
+

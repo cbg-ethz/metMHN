@@ -315,4 +315,4 @@ def gradient(log_theta: jnp.array, lam: float, state: jnp.array, p_0: jnp.array)
                   state=state, transpose=True)
 
     return x_partial_Q_y(log_theta=log_theta,
-                         x=x, y=p_theta, state=state)
+                         x=x, y=p_theta, state=state), p_theta

@@ -222,3 +222,20 @@ def ssr_obs_dist(p_in: np.array, state: np.array, n: int, obs_prim: bool=True) -
     else:
         pass
     return p
+
+
+def load_data(file_handle: str) -> np.array:
+    dat = np.genfromtxt(file_handle, delimiter=",", dtype="str")
+    na_inds = np.where(dat == "NA")
+    dat[na_inds] = "0"
+    met_missing = np.where(dat == "No metastasis included")
+    dat[met_missing] = "0"
+    prim_missing = np.where(dat == "No primary included")
+    dat[prim_missing] = "0"
+    dat = dat[1:,1:].astype(int)
+    dat[:, -2] = dat[:, -2] - dat[:, -1]
+    dat_first = np.where(dat[:, -2] <= 0)
+    dat[:, -2] = 0
+    dat[dat_first] = 1
+    return dat
+
