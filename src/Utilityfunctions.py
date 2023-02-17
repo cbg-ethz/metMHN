@@ -173,15 +173,129 @@ def ssr_marginalize(p_in: np.array, n: int, state: np.array, marg_met: bool=True
         # Prim[i] = 0 and Met[i] = 1 and marg. over mets
         # Or Prim[i] =1 and Met[i] = 0 and marg. over prims
         else: 
-            p = p[:, 0] + p[:, 1]
             p = p.reshape((-1, 2), order = "C")
+            p = p[:, 0] + p[:, 1]
             p = p.ravel(order="F")
 
     if state[-1] == 1 and marg_seeding:
         p = p.reshape((-1, 2), order="C")
         p = p[:, 0] + p[:, 1]
+        p = p.ravel(order="F")
     else:
         p =  p.reshape((-1,2)).ravel(order="F")
+    return p
+
+
+def ssr_marginalize_mat_vec(p_in: np.array, n: int, state: np.array, marg_met: bool=True, marg_seeding: bool=False) -> np.array:
+    """
+    Returns the marginal distribution of a joint distribution of primary tumors and metastases wrt. to the tumor type
+    Args:
+        p_in (np.array): Joint distribution to marginalise
+        n (int): number of genomic events
+        state (np.array): Binary state vector, representing the current sample's events
+        marg_met (bool): If true: marginalize over metastases, else: marginalize over primaries
+        marg_seeding (bool): If true marginalize over the status of the seeding event
+    Returns:
+         np.array: 2^m dimensional marginal distribution
+    """
+
+    met_mat = np.array([[1,0], [0,1],[1,0],[0,1]])
+    prim_mat = np.array([[1,0], [1,0],[0,1],[0,1]])
+    one_mat = np.array([[1], [1]])
+
+    p = p_in.copy()
+    for i in range(n):
+        mut = state[2 * i: 2 * i + 2]
+        muts = mut.sum()
+
+        if muts == 0:               
+            pass
+        # Prim[i] = 1 and Met[i] = 0 and marg. over mets
+        # Or Prim[i] = 0 and Met[i] = 1 and marg. over prims
+        elif (mut[0] == 0 and not marg_met) or (mut[1] == 0 and marg_met):
+            p = p.reshape((-1,2), order="C").ravel(order="F")
+    
+        # Prim[i] = Met[i] = 1
+        elif muts == 2:
+            p = p.reshape((-1, 4), order = "C")
+            if marg_met:
+                 # Marg. over mets
+                #y = np.column_stack((p[:, 0] + p[:, 2], p[:, 1] + p[:, 3]))
+                y = p @ met_mat
+            else:
+                # Marg. over prims
+                #y = np.column_stack((p[:, 0] + p[:, 1], p[:, 2] + p[:, 3]))
+                y = p @ prim_mat
+            p = y.ravel(order="F")
+        # Prim[i] = 0 and Met[i] = 1 and marg. over mets
+        # Or Prim[i] =1 and Met[i] = 0 and marg. over prims
+        else:
+            p = p.reshape((-1, 2), order = "C") 
+            p = p @ one_mat
+            p = p.ravel(order="F")
+
+    if state[-1] == 1 and marg_seeding:
+        p = p.reshape((-1, 2), order="C")
+        p = p @ one_mat
+        p = p.ravel(order="F")
+    else:
+        p = p.reshape((-1,2)).ravel(order="F")
+    return p
+
+def ssr_marginalize_mat_vec_transp(p_in: np.array, n: int, state: np.array, marg_met: bool=True, marg_seeding: bool=False) -> np.array:
+    """
+    Returns the marginal distribution of a joint distribution of primary tumors and metastases wrt. to the tumor type
+    Args:
+        p_in (np.array): Joint distribution to marginalise
+        n (int): number of genomic events
+        state (np.array): Binary state vector, representing the current sample's events
+        marg_met (bool): If true: marginalize over metastases, else: marginalize over primaries
+        marg_seeding (bool): If true marginalize over the status of the seeding event
+    Returns:
+         np.array: 2^m dimensional marginal distribution
+    """
+    
+    met_mat = np.array([[1, 0, 1, 0], [0, 1, 0, 1]])
+    prim_mat = np.array([[1, 1, 0, 0 ], [0, 0, 1, 1]])
+    one_mat = np.array([[1, 1]])
+
+    p = p_in.copy()
+    for i in range(n):
+        mut = state[2 * i: 2 * i + 2]
+        muts = mut.sum()
+
+        if muts == 0:               
+            pass
+        # Prim[i] = 1 and Met[i] = 0 and marg. over mets
+        # Or Prim[i] = 0 and Met[i] = 1 and marg. over prims
+        elif (mut[0] == 0 and not marg_met) or (mut[1] == 0 and marg_met):
+            p = p.reshape((-1,2), order="C").ravel(order="F")
+    
+        # Prim[i] = Met[i] = 1
+        elif muts == 2:
+            p = p.reshape((-1, 2), order = "C")
+            if marg_met:
+                 # Marg. over mets
+                #y = np.column_stack((p[:, 0] + p[:, 2], p[:, 1] + p[:, 3]))
+                y = p @ met_mat
+            else:
+                # Marg. over prims
+                #y = np.column_stack((p[:, 0] + p[:, 1], p[:, 2] + p[:, 3]))
+                y = p @ prim_mat
+            p = y.ravel(order="F")
+        # Prim[i] = 0 and Met[i] = 1 and marg. over mets
+        # Or Prim[i] =1 and Met[i] = 0 and marg. over prims
+        else:
+            p = p.reshape((-1, 1), order = "C") 
+            p = p @ one_mat
+            p = p.ravel(order="F")
+
+    if state[-1] == 1 and marg_seeding:
+        p = p.reshape((-1, 1), order="C")
+        p = p @ one_mat
+        p = p.ravel(order="F")
+    else:
+        p = p.reshape((-1,2)).ravel(order="F")
     return p
 
 def ssr_obs_dist(p_in: np.array, state: np.array, n: int, obs_prim: bool=True) -> np.array:
@@ -215,6 +329,88 @@ def ssr_obs_dist(p_in: np.array, state: np.array, n: int, obs_prim: bool=True) -
                 p = np.column_stack([p[:,1], p[:,3]])
             else:
                 p = np.column_stack([p[:,2], p[:,3]])
+            p = p.ravel(order="F")
+    if state[-1] == 1:
+        p = p.reshape((-1, 2), order="C")
+        p = p.ravel(order="F")
+    else:
+        pass
+    return p
+
+def ssr_obs_dist_mat_vec(p_in: np.array, state: np.array, n: int, obs_prim: bool=True) -> np.array:
+    """
+    Returns P(Prim = prim_obs, Met) or P(Prim, Met = met_obs), the joint distribution evaluated at either
+    the observed metastasis state or the observed primary tumor state
+    Args:
+        p_in (np.array): Joint probability distribution of prims and mets
+        state (np.array): bitstring, mutational state of prim and met of a patient
+        n (int): total number of genomic events
+        obs_prim (bool): If true return P(Prim = prim_obs, Met) else return P(Prim, Met = met_obs)
+    Returns:
+        np.array
+    """
+    p = p_in.copy()
+    for i in range(n):
+        mut = state[2*i] + 2 * state[2*i+1]
+        print(mut)
+        if mut == 0:
+            pass
+        elif (mut == 1 and obs_prim) or (mut == 2 and not obs_prim):
+            p = p.reshape((-1, 2), order="C")
+            p = p @ np.array([[0],[1]])
+            p = p.ravel(order="F")
+        elif (mut == 2 and obs_prim) or (mut == 1 and not obs_prim):
+            p = p.reshape((-1, 2), order="C")
+            p = p.ravel(order="F")
+        else:
+            p = p.reshape((-1, 4), order="C")
+            if obs_prim:
+                #p = np.column_stack([p[:,1], p[:,3]])
+                p = p @ np.array([[0,0], [1,0], [0,0], [0,1]])
+            else:
+                #p = np.column_stack([p[:,2], p[:,3]])
+                p = p @ np.array([[0,0], [0,0], [1,0], [0,1]])
+            p = p.ravel(order="F")
+    if state[-1] == 1:
+        p = p.reshape((-1, 2), order="C")
+        p = p.ravel(order="F")
+    else:
+        pass
+    return p
+
+def ssr_obs_dist_mat_vec_transp(p_in: np.array, state: np.array, n: int, obs_prim: bool=True) -> np.array:
+    """
+    Returns P(Prim = prim_obs, Met) or P(Prim, Met = met_obs), the joint distribution evaluated at either
+    the observed metastasis state or the observed primary tumor state
+    Args:
+        p_in (np.array): Joint probability distribution of prims and mets
+        state (np.array): bitstring, mutational state of prim and met of a patient
+        n (int): total number of genomic events
+        obs_prim (bool): If true return P(Prim = prim_obs, Met) else return P(Prim, Met = met_obs)
+    Returns:
+        np.array
+    """
+    p = p_in.copy()
+    for i in range(n):
+        mut = state[2*i] + 2 * state[2*i+1]
+        print(mut)
+        if mut == 0:
+            pass
+        elif (mut == 1 and obs_prim) or (mut == 2 and not obs_prim):
+            p = p.reshape((-1, 1), order="C")
+            p = p @ np.array([[0, 1]])
+            p = p.ravel(order="F")
+        elif (mut == 2 and obs_prim) or (mut == 1 and not obs_prim):
+            p = p.reshape((-1, 2), order="C")
+            p = p.ravel(order="F")
+        else:
+            p = p.reshape((-1, 2), order="C")
+            if obs_prim:
+                #p = np.column_stack([p[:,1], p[:,3]])
+                p = p @ np.array([[0, 1, 0, 0], [0, 0, 0, 1]])
+            else:
+                #p = np.column_stack([p[:,2], p[:,3]])
+                p = np.array([[0, 0, 1, 0], [0, 0, 0, 1]])
             p = p.ravel(order="F")
     if state[-1] == 1:
         p = p.reshape((-1, 2), order="C")
