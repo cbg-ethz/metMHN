@@ -7,7 +7,7 @@ import jax
 
 # Kronecker factors
 
-@jit
+#@jit
 def k2dt0(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     theta_slice = jnp.array([-theta, 0.])
@@ -15,7 +15,7 @@ def k2dt0(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-@jit
+#@jit
 def k2d0t(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     theta_slice = jnp.array([0., theta])
@@ -23,14 +23,14 @@ def k2d0t(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-@jit
+#@jit
 def k2dtt(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     p = jax.vmap(lambda x: -theta * x, 0, 0)(p)
     return p.flatten(order="F")
 
 
-@jit
+#@jit
 def k2d1t(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     theta_slice = jnp.array([1., theta])
@@ -38,7 +38,7 @@ def k2d1t(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-@jit
+#@jit
 def k2d10(p: jnp.array) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     theta_slice = jnp.array([1., 0.])
@@ -46,7 +46,7 @@ def k2d10(p: jnp.array) -> jnp.array:
     return p.flatten(order="F")
 
 
-@jit
+#@jit
 def k2d01(p: jnp.array) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     theta_slice = jnp.array([0., 1.])
@@ -54,13 +54,13 @@ def k2d01(p: jnp.array) -> jnp.array:
     return p.flatten(order="F")
 
 
-@jit
+#@jit
 def k2d11(p: jnp.array) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     return p.flatten(order="F")
 
 
-@jit
+#@jit
 def k2ntt(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     p = lax.cond(
@@ -82,7 +82,7 @@ def k2ntt(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False
     return p.flatten(order="F")
 
 
-@jit
+#@jit
 def k4ns(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     p = lax.cond(
@@ -107,7 +107,7 @@ def k4ns(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False)
     return p.flatten(order="F")
 
 
-@jit
+#@jit
 def k4np(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     p = lax.cond(
@@ -133,7 +133,7 @@ def k4np(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False)
     return p.flatten(order="F")
 
 
-@jit
+#@jit
 def k4nm(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     p = lax.cond(
@@ -159,7 +159,7 @@ def k4nm(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False)
     return p.flatten(order="F")
 
 
-@jit
+#@jit
 def k4d100t(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     # p = p.at[:, 3].multiply(theta).at[:, [1, 2]].set(0.)
@@ -168,7 +168,7 @@ def k4d100t(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-@jit
+#@jit
 def k4dt000(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     theta_slice = jnp.array([-theta, 0., 0., 0.])
@@ -176,7 +176,7 @@ def k4dt000(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-@jit
+#@jit
 def k4dtt00(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     theta_slice = jnp.array([-theta, -theta, 0., 0.])
@@ -184,7 +184,7 @@ def k4dtt00(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-@jit
+#@jit
 def k4dt0t0(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     theta_slice = jnp.array([-theta, 0., -theta, 0.])
@@ -192,7 +192,7 @@ def k4dt0t0(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-@jit
+#@jit
 def k4d1t1t(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     # p = p.at[:, [1, 3]].multiply(theta)
@@ -201,7 +201,7 @@ def k4d1t1t(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-@jit
+#@jit
 def k4d11tt(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     theta_slice = jnp.array([1., 1., theta, theta])
@@ -210,7 +210,7 @@ def k4d11tt(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-@partial(jit, static_argnames=["diag", "transpose"])
+#@partial(jit, static_argnames=["diag", "transpose"])
 def _kronvec_sync(
     log_theta: jnp.array,
     p: jnp.array,
@@ -303,7 +303,7 @@ def kronvec_sync(
     )
 
 
-@partial(jit, static_argnames=["diag", "transpose"])
+#@partial(jit, static_argnames=["diag", "transpose"])
 def _kronvec_prim(
     log_theta: jnp.array,
     p: jnp.array,
@@ -398,7 +398,7 @@ def kronvec_prim(
     )
 
 
-@ partial(jit, static_argnames=["diag", "transpose"])
+#@partial(jit, static_argnames=["diag", "transpose"])
 def _kronvec_met(
     log_theta: jnp.array,
     p: jnp.array,
@@ -496,7 +496,7 @@ def kronvec_met(
     )
 
 
-@ partial(jit, static_argnames=["diag", "transpose"])
+#@partial(jit, static_argnames=["diag", "transpose"])
 def _kronvec_seed(
     log_theta: jnp.array,
     p: jnp.array,
@@ -571,11 +571,11 @@ def kronvec_seed(
     )
 
 
-@ partial(jit, static_argnames=["diag", "transpose"])
+@partial(jit, static_argnames=["diag", "transpose"])
 def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array,
             diag: bool = True, transpose: bool = False) -> jnp.array:
     """
-    This computes the restricted version of the product of the rate matrix Q with a vector Q p.
+    This computes the restricted version of the product of the rate matrix Q with a vector p.
 
     Args:
         log_theta (jnp.array): Log values of the theta matrix
@@ -685,7 +685,7 @@ def kron_sync_diag(
     return diag
 
 
-@jit
+#@jit
 def _kron_prim_diag(
         log_theta: jnp.array,
         i: int,
@@ -770,7 +770,7 @@ def kron_prim_diag(
     )
 
 
-@jit
+#@jit
 def _kron_met_diag(
         log_theta: jnp.array,
         i: int,
@@ -999,7 +999,7 @@ def obs_inds(p_in: jnp.array, state: jnp.array, latent_dist: jnp.array, obs_prim
         )
         return p
 
-    n = int((state.shape[0] - 1)/2)
+    n = (state.shape[0] - 1)//2
     p = lax.fori_loop(0, n, loop_body, jnp.ones_like(p_in))
     latent_size = latent_dist.shape[0]
     p = lax.cond(state.at[-1].get() == 0,
@@ -1043,7 +1043,7 @@ def obs_inds_2(p_in: jnp.array, state: jnp.array, obs_prim: bool = True) -> jnp.
         )
         return p
 
-    n = int((state.shape[0] - 1)/2)
+    n = (state.shape[0] - 1)//2
     p = lax.fori_loop(0, n, loop_body, jnp.ones_like(p_in))
     p = lax.cond(state.at[-1].get() == 0,
                 lambda p: p,
@@ -1051,130 +1051,125 @@ def obs_inds_2(p_in: jnp.array, state: jnp.array, obs_prim: bool = True) -> jnp.
                 operand = p)
     return p.astype(jnp.int32)
 
-# Most likelzy useless functions, that can be removed later
-#@jit
-#def marg0not1(p: jnp.array) -> jnp.array:
-#    p = p.reshape((-1, 2), order="C")
-#    p = p @ jnp.array([[1, 1], [0, 0]])
-#    return p.ravel(order="F")
-#
-#
-#@jit
-#def marg_met_1and1(p: jnp.array) -> jnp.array:
-#    p = p.reshape((-1, 4), order="C")
-#    p = p @ jnp.array([[1, 0, 1, 0], [0, 1, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0]])
-#    return p.ravel(order="F")
-#
-#
-#@jit
-#def marg_prim_1and1(p: jnp.array) -> jnp.array:
-#    p = p.reshape((-1, 4), order="C")
-#    p = p @ jnp.array([[1, 1, 0, 0], [0, 0, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]])
-#    return p.ravel(order="F")
-#
-#
-# def keep_col1(p: jnp.array) -> jnp.array:
-#    p = p.reshape((-1, 2), order="C")
-#    p = p.at[:,1].set(0.)
-#    return p.ravel(order="F")
+# Most likely useless functions, that can be removed later
+def marg0not1(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1, 2), order="C")
+    p = p @ jnp.array([[1, 0], [1, 0]])
+    return p.ravel(order="F")
 
-# def keep_col0(p: jnp.array) -> jnp.array:
-#    p = p.reshape((-1,4), order="C")
-#    p = p.at[:, 1:4].set(0.)
-#    return p.ravel(order="F")
+def marg_met_1and1(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1, 4), order="C")
+    p = p @ jnp.array([[1, 0, 0, 0], [0, 1, 0, 0], [1, 0, 0, 0], [0, 1, 0, 0]])
+    return p.ravel(order="F")
 
-# def keep_col0_1(p: jnp.array) -> jnp.array:
-#    p = p.reshape((-1,4), order="C")
-#    p = p.at[:, (2,3)].set(0.)
-#    return p.ravel(order="F")
-
-# def keep_col0_2(p: jnp.array) -> jnp.array:
-#    p = p.reshape((-1,4), order="C")
-#    p = p.at[:, (1,3)].set(0.)
-#    return p.ravel(order="F")
-
-# def copy_col0(p: jnp.array) -> jnp.array:
-#    p = p.reshape((-1, 2), order="C")
-#    p = p.at[:,1].set(p.at[:,0].get())
-#    return p.ravel(order="F")
+def marg_prim_1and1(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1, 4), order="C")
+    p = p @ jnp.array([[1, 0, 0, 0], [1, 0, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0]])
+    return p.ravel(order="F")
 
 
-# @partial(jit, static_argnames=["obs_prim"])
-# def marg_indices(p_in: jnp.array, state: jnp.array, size_marg: int, obs_prim: bool=True) -> jnp.array:
-#    """
-#    Returns indices of the states where the marginal probability is stored
-#    Args:
-#        p_in (jnp.array): Joint probability distribution of prims and mets
-#        state (jnp.array): bitstring, mutational state of prim and met of a patient
-#        n (int): total number of genomic events
-#        size_marg (int): number of latent states
-#        obs_prim (bool): If true return P(Prim = prim_obs, Met) else return P(Prim, Met = met_obs)
-#    Returns:
-#        jnp.array
-#    """
-#    def loop_body(i, p):
-#        ind = state.at[2*i].get()*obs_prim + (1-obs_prim)*(state.at[2*i+1].get())+2
-#        p = lax.switch(
-#            index = ind,
-#            branches = [
-#                lambda p: keep_col0(p),
-#                lambda p: keep_col0_1(p),           # 11 obs_prim=1
-#                lambda p: keep_col0(p),                   # 00 obs_prim=0
-#                lambda p: keep_col0_2(p),       # 10 obs_prim=0
-#            ],
-#            operand = p
-#        )
-#        return p
-#
-#    n = state.shape[0] - 1
-#
-#    p = lax.fori_loop(0, n, loop_body, p_in)
-#
-#    return jnp.where(copy_col0(p) == 1, size = size_marg)
+def keep_col1(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1, 2), order="C")
+    p = p.at[:,1].set(0.)
+    return p.ravel(order="F")
 
-#@partial(jit, static_argnames=["marg_met", "marg_seeding"])
-#def marg_transp(p_in: jnp.array, state: jnp.array, marg_met: bool = True, marg_seeding: bool = False) -> jnp.array:
-#    """
-#    Calculates (p_in)^T M, where M is a 2^n x 2^(2*n) marginalization matrix implicitely  
-#    Args:
-#       p_in (jnp.array): probability distribution to marginalise
-#        n (int): total number of mutations
-#        state (jnp.array): bitsring, tumor sample of a single patient
-#        marg_met (bool): if true: marginalise over mets, else: marginalise over prims
-#        marg_seeding (bool): if true: marginalise over the seeding event as well 
-#    Returns:
-#        p: marginal distribution
-#    """
-#    def loop_body(i, p):
-#        ind = state.at[2*i].get() + 2*state.at[2*i+1].get() + (1 - marg_met)*4
-#        p = lax.switch(
-#            index=ind,
-#            branches=[
-#                lambda p: p,                        # 00 marg_met=1
-#                lambda p: shuffle_stride2(p),       # 10 marg_met=1
-#                lambda p: marg0not1(p),             # 01 marg_met=1
-#                lambda p: marg_met_1and1(p),        # 11 marg_met=1
-#                lambda p: p,                        # 00 marg_met=0
-#                lambda p: marg0not1(p),             # 10 marg_met=0
-#                lambda p: shuffle_stride2(p),       # 01 marg_met=0
-#                lambda p: marg_prim_1and1(p),       # 11 marg_met=0
-#            ],
-#            operand=p
-#        )
-#        return p
-#
-#    n = int((state.shape[0] - 1)/2)
-#
-#    # The shape of the carry_over argument in a for_i loop has to remain constant
-#    p = lax.fori_loop(0, n, loop_body, p_in)
-#    p = lax.cond(
-#        (marg_seeding and state[-1] == 1),
-#        lambda x: marg0not1(x),
-#        lambda x: x.reshape((-1, 2), order="C").ravel(order="F"),
-#        operand=p
-#    )
+def keep_col0(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1,4), order="C")
+    p = p.at[:, 1:4].set(0.)
+    return p.ravel(order="F")
+
+def keep_col0_1(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1,4), order="C")
+    p = p.at[:, (2,3)].set(0.)
+    return p.ravel(order="F")
+
+def keep_col0_2(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1,4), order="C")
+    p = p.at[:, (1,3)].set(0.)
+    return p.ravel(order="F")
+
+def copy_col0(p: jnp.array) -> jnp.array:
+    p = p.reshape((-1, 2), order="C")
+    p = p.at[:,1].set(p.at[:,0].get())
+    return p.ravel(order="F")
+
+
+@partial(jit, static_argnames=["obs_prim", "size_marg"])
+def marg_indices(p_in: jnp.array, state: jnp.array, size_marg: int, obs_prim: bool=True) -> jnp.array:
+    """
+    Returns indices of the states where the marginal probability is stored
+    Args:
+        p_in (jnp.array): Joint probability distribution of prims and mets
+        state (jnp.array): bitstring, mutational state of prim and met of a patient
+        n (int): total number of genomic events
+        size_marg (int): number of latent states
+        obs_prim (bool): If true return P(Prim = prim_obs, Met) else return P(Prim, Met = met_obs)
+    Returns:
+        jnp.array
+    """
+    def loop_body(i, p):
+        ind = state.at[2*i].get()*obs_prim + (1-obs_prim)*(state.at[2*i+1].get())+2
+        p = lax.switch(
+            index = ind,
+            branches = [
+                lambda p: keep_col0(p),
+                lambda p: keep_col0_1(p),           # 11 obs_prim=1
+                lambda p: keep_col0(p),             # 00 obs_prim=0
+                lambda p: keep_col0_2(p),           # 10 obs_prim=0
+            ],
+            operand = p
+        )
+        return p
+
+    n = state.shape[0] - 1
+
+    p = lax.fori_loop(0, n, loop_body, p_in)
+
+    return jnp.where(copy_col0(p) == 1, size = size_marg)
+
+@partial(jit, static_argnames=["marg_met", "marg_seeding"])
+def marg_transp(p_in: jnp.array, state: jnp.array, marg_met: bool = True, marg_seeding: bool = False) -> jnp.array:
+    """
+    Calculates (p_in)^T M, where M is a 2^n x 2^(2*n) marginalization matrix implicitely  
+    Args:
+       p_in (jnp.array): probability distribution to marginalise
+        n (int): total number of mutations
+        state (jnp.array): bitsring, tumor sample of a single patient
+        marg_met (bool): if true: marginalise over mets, else: marginalise over prims
+        marg_seeding (bool): if true: marginalise over the seeding event as well 
+    Returns:
+        p: marginal distribution
+    """
+    def loop_body(i, p):
+        ind = state.at[2*i].get() + 2*state.at[2*i+1].get() + (1 - marg_met)*4
+        p = lax.switch(
+            index=ind,
+            branches=[
+                lambda p: p,                        # 00 marg_met=1
+                lambda p: shuffle_stride2(p),       # 10 marg_met=1
+                lambda p: marg0not1(p),             # 01 marg_met=1
+                lambda p: marg_met_1and1(p),        # 11 marg_met=1
+                lambda p: p,                        # 00 marg_met=0
+                lambda p: marg0not1(p),             # 10 marg_met=0
+                lambda p: shuffle_stride2(p),       # 01 marg_met=0
+                lambda p: marg_prim_1and1(p),       # 11 marg_met=0
+            ],
+            operand=p
+        )
+        return p
+
+    n = int((state.shape[0] - 1)/2)
+
+    # The shape of the carry_over argument in a for_i loop has to remain constant
+    p = lax.fori_loop(0, n, loop_body, p_in)
+    p = lax.cond(
+        (marg_seeding and state[-1] == 1),
+        lambda x: marg0not1(x),
+        lambda x: x.reshape((-1, 2), order="C").ravel(order="F"),
+        operand=p
+    )
 #    # JAX makes us jump through a lot of hoops here in order to jit this function
 #    #out_inds = marg_indices(jnp.ones_like(p), state, n, size_marg)
-#    return p
+    return p
 
 

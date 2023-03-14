@@ -1,6 +1,6 @@
 from itertools import compress, chain, combinations
 import numpy as np
-
+import jax.numpy as jnp
 import Utilityfunctions
 
 
@@ -435,3 +435,84 @@ def load_data(file_handle: str) -> np.array:
     dat[dat_first] = 1
     return dat
 
+
+def single_traject(theta, t_obs, prim, met, n, rng):
+    th = theta.copy()
+    b_rates = np.diag(th)
+    th[np.diag_indices(n)] = 0.0
+    th_prim = th.copy()
+    th_prim[0:-1, -1] = 0.0
+    t = 0.
+    while True:
+        # Seeding didn't happen yet
+        if prim[-1] == 0:
+            rates = np.exp(th @ prim + b_rates)
+            rates[prim == 1] = 0.
+            out_rate = np.sum(rates)
+            t += rng.exponential(scale = 1/out_rate, size = 1)
+            if (t >= t_obs): break
+            next_event = rng.choice(np.arange(0,n ), size = 1, p = rates/out_rate)
+            prim[int(next_event)] = 1
+            met[int(next_event)] = 1
+        # Seeding already happened
+        else:
+            prim_rates = np.exp(th_prim @ prim + b_rates)
+            prim_rates[prim == 1] = 0.
+            met_rates = np.exp(th @ met + b_rates)
+            met_rates[met == 1] = 0.
+            out_rate = np.sum(prim_rates) + np.sum(met_rates)
+            t += rng.exponential(scale = 1/out_rate, size = 1)
+            if(t >= t_obs): break
+            next_event =  rng.choice(np.arange(0, 2*n, 1),
+                                    size = 1,
+                                    p = np.concatenate((prim_rates, met_rates))/out_rate)
+            if next_event >= n:
+                met[int(next_event)-n] = 1
+            else:
+                prim[int(next_event)] = 1
+    return prim, met
+
+def sample_metmhn(theta, lam1, lam2, rng):
+    n = theta.shape[0]
+    t_1 = rng.exponential(scale = 1/lam1, size = 1) 
+    t_2 = rng.exponential(scale = 1/lam2, size = 1)
+    prim = np.zeros(n)
+    met = np.zeros(n)
+    # Simulate until 1st diagnosis
+    prim, met = single_traject(theta, t_1, prim, met, n, rng)
+    # Record the state of the primary at 1st diagnosis
+    prim_obs = prim.copy()
+    met_obs =  met.copy()
+    # Simulate until 2nd diagnosis, if the seeding happened
+    if prim[-1] != 0:
+        # Record only the state of the met at 2nd diagnosis 
+        prim, met_obs = single_traject(theta, t_2, prim, met, n, rng)
+
+    return np.vstack((prim_obs, met_obs)).flatten(order = "F")[:-1], t_2
+
+
+def simulate_dat(theta, n_dat, lam1, lam2, rng):
+    n = theta.shape[0]
+    dat = np.zeros((n_dat, 2*n-1))
+    ages = np.zeros(n_dat)
+    i = 0
+    while i < n_dat:
+        datum, age = sample_metmhn(theta, lam1, lam2, rng)
+        if datum.sum() > 0:
+            dat[i,:] = datum
+            ages[i] = age 
+            i += 1
+    dat = dat.astype(int)
+    return dat, ages
+
+def indep(dat):
+    n = (dat.shape[1] - 1)//2
+    theta = jnp.zeros((n + 1,n + 1))
+    for i in range(n):
+        occ = dat.at[:,i].get() + dat.at[:, i+1].get()
+        occ = jnp.where(occ > 0, 1, 0)
+        perc = jnp.sum(occ)
+        theta = theta.at[i,i].set(jnp.log(perc/(dat.shape[0] - perc)))
+    perc = jnp.sum(dat.at[:,-1].get())
+    theta = theta.at[n,n].set(jnp.log(perc/(dat.shape[0] - perc)))
+    return theta

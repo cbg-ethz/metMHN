@@ -252,7 +252,7 @@ def x_partial_Q_y(
             z, _val = lax.switch(
                 state.at[j].get(),
                 [
-                    lambda x: (x, x.sum()),
+                    lambda x: (x, 0.),
                     lambda x: f(x)
                 ],
                 val[0],
