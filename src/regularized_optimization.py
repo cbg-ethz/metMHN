@@ -255,5 +255,4 @@ def grad(params, dat_prim_met, dat_prim_no_met, dat_coupled, dat_met_only, penal
     g = g.at[:,2].set(grad_coupled(log_theta, dat_coupled, lam1, lam2, n))
     g = g.at[:,3].set(grad_met_only(log_theta, dat_met_only, lam1, lam2, n))
     ret =  jnp.dot(g, weights)
-    return -np.array(ret + penal * l1)
-
+    return np.array(-ret + penal * l1)

@@ -1,7 +1,7 @@
 from itertools import compress, chain, combinations
 import numpy as np
 import jax.numpy as jnp
-import Utilityfunctions
+import pandas as pd
 
 
 def state_space(n: int) -> np.array:
@@ -420,20 +420,31 @@ def ssr_obs_dist_mat_vec_transp(p_in: np.array, state: np.array, n: int, obs_pri
     return p
 
 
-def load_data(file_handle: str) -> np.array:
-    dat = np.genfromtxt(file_handle, delimiter=",", dtype="str")
-    na_inds = np.where(dat == "NA")
-    dat[na_inds] = "0"
-    met_missing = np.where(dat == "No metastasis included")
-    dat[met_missing] = "0"
-    prim_missing = np.where(dat == "No primary included")
-    dat[prim_missing] = "0"
-    dat = dat[1:,1:].astype(int)
-    dat[:, -2] = dat[:, -2] - dat[:, -1]
-    dat_first = np.where(dat[:, -2] <= 0)
-    dat[:, -2] = 0
-    dat[dat_first] = 1
-    return dat
+def split_data(dat: pd.DataFrame) -> tuple:
+    # Select coupled datapoints
+    dat_coupled =  dat.loc[dat.paired==True, 'P.Mut.KRAS':'M.Mut.KMT2D']
+    dat_coupled['Seeding'] = 1
+    dat_coupled = dat_coupled.to_numpy(dtype = int)
+    dat_coupled = jnp.array(dat_coupled)
+
+    # select prim only + no metastastasis generated 
+    dat_prim_nomet =  dat.loc[(dat.paired == False) & (dat.metaStatus == "absent"), 'P.Mut.KRAS':'M.Mut.KMT2D']
+    dat_prim_nomet['Seeding'] = 0
+    dat_prim_nomet = dat_prim_nomet.to_numpy(dtype = int)
+    dat_prim_nomet = jnp.array(dat_prim_nomet)
+
+    # select prim_only + no metastasis_sequenced
+    dat_prim_met =  dat.loc[(dat.paired == False) & (dat.metaStatus == "present"), 'P.Mut.KRAS':'M.Mut.KMT2D']
+    dat_prim_met['Seeding'] = 1
+    dat_prim_met = dat_prim_met.to_numpy(dtype = int)
+    dat_prim_met = jnp.array(dat_prim_met)
+
+    # select metastasis only
+    dat_met_only =  dat.loc[(dat.paired == False) & (dat.metaStatus == "isMetastasis"), 'P.Mut.KRAS':'M.Mut.KMT2D']
+    dat_met_only['Seeding'] = 1
+    dat_met_only = dat_met_only.to_numpy(dtype = int)
+    dat_met_only = jnp.array(dat_met_only)
+    return dat_prim_nomet, dat_prim_met, dat_met_only, dat_coupled 
 
 
 def single_traject(theta, t_obs, prim, met, n, rng):
