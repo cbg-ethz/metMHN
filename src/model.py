@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.linalg.blas import dcopy, dscal, daxpy
 from math import factorial
+import networkx as nx
+import itertools
 
 
 class bits_fixed_n:
@@ -176,3 +178,32 @@ class MetMHN:
                 break
             t += np.random.exponential(-1/self.get_restr_diag(state=state)[-1])
         return order, t_obs
+
+    def history_tree(self, orders) -> nx.Graph:
+        """For a list of given orders of observations visualize them
+        using a tree
+
+        Args:
+            orders (List[Tuple]): List of orders of observations in the 
+            form of tuples
+
+        Returns:
+            nx.Graph: Graph object with optional nodekey "terminal".
+
+        """
+        g = nx.Graph()
+
+        g.graph["observations"] = set(itertools.chain(*orders))
+
+        for order in orders:
+            for i in range(len(order)+1):
+                g.add_node(order[:i])
+            g.nodes[order]["terminal"] = True
+            g.nodes[order]["event"] = order[-1]
+            for i in range(len(order)):
+                if (order[:i], order[:i+1]) in list(g.edges):
+                    g.edges[(order[:i], order[:i+1])]["weight"] += 1
+                else:
+                    g.add_edge(order[:i], order[:i+1], weight=1)
+
+        return g
