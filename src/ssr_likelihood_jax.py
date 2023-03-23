@@ -252,6 +252,7 @@ def _lp_coupled(log_theta: jnp.array, lam1: jnp.array, lam2: jnp.array, state: j
     inds = obs_inds(pTh1, state, latent_dist, obs_prim = True)
     pTh1_obs = pTh1.at[inds].get()
     obs_sum = pTh1_obs.sum()
+    pTh1_obs = jnp.append(jnp.zeros_like(pTh1_obs), pTh1_obs)
     pTh2 = lam2 * mhn.R_inv_vec(log_theta, pTh1_obs/obs_sum, lam2, latent_state)
     return jnp.log(obs_sum) + jnp.log(pTh2.at[-1].get())
 
@@ -330,6 +331,7 @@ def _grad_met_obs(log_theta: jnp.array, state: jnp.array, p0: jnp.array, lam1: j
     dTh += mhn.x_partial_Q_y(log_theta, lhs, R_1_inv_p_0, state) 
     return dTh, dlam1 * lam1
 
+@jit
 def _grad_prim_obs(log_theta: jnp.array, state: jnp.array, p0: jnp.array, lam1: jnp.array) -> jnp.array:
     """ gradient of lp_prim_obs for a single sample
 
@@ -397,7 +399,7 @@ def _g_coupled(log_theta: jnp.array, state: jnp.array, g3_lhs: jnp.array, obs_in
     q = R_i_inv_vec(log_theta, q, lam1, state, transpose = True)
     g_4 = -1.0/nk * x_partial_Q_y(log_theta, q, pTh1, state)
     
-    return g_1 + g_3 + g_4, dlam1 * lam1
+    return g_1+ g_3 + g_4, dlam1 * lam1
 
 @jit
 def _g_3_lhs(log_theta: jnp.array, pTh1: jnp.array, pTh2: jnp.array, latent_inds: jnp.array, 
@@ -419,5 +421,5 @@ def _g_3_lhs(log_theta: jnp.array, pTh1: jnp.array, pTh2: jnp.array, latent_inds
     q = q.at[-1].set(1/pTh2.at[-1].get())
     q = mhn.R_inv_vec(log_theta, q, lam2, second_obs, transpose = True)
     q_big = jnp.zeros_like(pTh1)
-    q_big =  q_big.at[latent_inds].set(q)
+    q_big =  q_big.at[latent_inds].set(q.at[q.shape[0]//2:].get())
     return q_big

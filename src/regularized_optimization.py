@@ -42,7 +42,7 @@ def lp_prim_only(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, n: int) 
         p0 = jnp.zeros(2**m)
         p0 = p0.at[0].set(1.0)
         score += ssr._lp_prim_obs(log_theta, lam1, state_obs, p0)
-    return score/dat.shape[0]
+    return score
 
 
 def lp_coupled(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: jnp.array, n: int) -> np.array:
@@ -62,13 +62,13 @@ def lp_coupled(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: jnp.
     for i in range(dat.shape[0]):
         state = dat.at[i, 0:2*n+1].get()
         latent_state = jnp.append(state.at[1:2*n+1:2].get(), state.at[-1].get())
-        latent_dist = jnp.zeros(2**latent_state.sum().astype(int))
+        latent_dist = jnp.zeros(2**(latent_state.sum().astype(int) - 1))
         m = state.sum().astype(int)
         p0 = jnp.zeros(2**m)
         p0 = p0.at[0].set(1.0)
         score += ssr._lp_coupled(log_theta, lam1, lam2, state, p0, 
                                    latent_dist, latent_state)
-    return score/dat.shape[0]
+    return score
 
 
 def lp_met_only(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: jnp.array, n: int) -> jnp.array:
@@ -93,11 +93,11 @@ def lp_met_only(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: jnp
         p0 = jnp.zeros(2**m)
         p0 = p0.at[0].set(1.0)
         score += ssr._lp_met_obs(log_theta, lam1, lam2, state_obs, p0)
-    return score/dat.shape[0]
+    return score
 
 
-def log_lik(params: np.array, dat_prim_met: jnp.array, dat_prim_no_met: jnp.array, dat_coupled: jnp.array, 
-            dat_met_only: jnp.array, penal: float, weights=jnp.array([0.25, 0.25, 0.25, 0.25])) -> np.array:
+def log_lik(params: np.array, dat_prim_no_met: jnp.array, dat_prim_met: jnp.array, dat_coupled: jnp.array, 
+            dat_met_only: jnp.array, penal: float, weights=jnp.array([1., 1., 1., 1.])) -> np.array:
     """Calculates the negative log. likelihood 
 
     Args:
@@ -120,13 +120,16 @@ def log_lik(params: np.array, dat_prim_met: jnp.array, dat_prim_no_met: jnp.arra
     
     lam1 = jnp.exp(params[-2])
     lam2 = jnp.exp(params[-1])
-    
+
     scores = jnp.zeros(4)
     scores = scores.at[0].set(lp_prim_only(log_theta, dat_prim_no_met, lam1, n)) # Met seeded, not observed
     scores = scores.at[1].set(lp_prim_only(log_theta, dat_prim_met, lam1, n)) # No seeding
     scores = scores.at[2].set(lp_coupled(log_theta, dat_coupled, lam1, lam2, n))
     scores = scores.at[3].set(lp_met_only(log_theta, dat_met_only, lam1, lam2, n))
-    ret = jnp.dot(weights, scores)
+    
+    w = jnp.array([dat_prim_no_met.shape[0], dat_prim_met.shape[0], dat_coupled.shape[0], dat_met_only.shape[0]])
+    w = jnp.dot(w, weights)
+    ret = jnp.dot(scores/w, weights)
     return(-np.array(ret) + penal * l1)
 
 
@@ -157,22 +160,21 @@ def grad_coupled(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: jn
         
         # Get indices of latent_states at t1
         latent_states = obs_inds_2(pTh1, state, True)
-        latent_size = 2**jnp.sum(second_obs).astype(int)
+        latent_size = 2**(jnp.sum(second_obs).astype(int)-1)
         
         # Get observed dist at t1
         latent_inds = jnp.where(latent_states, size=latent_size)[0]
         pTh1_obs = pTh1.at[latent_inds].get()
+        pTh1_obs = jnp.append(jnp.zeros_like(pTh1_obs), pTh1_obs)
         nk = jnp.sum(pTh1_obs)
         pTh1_obs = pTh1_obs.at[:].multiply(1/nk)
-    
         g_2, pTh2 = mhn.gradient(log_theta, lam2, second_obs, pTh1_obs)
-        
         q_big = ssr._g_3_lhs(log_theta, pTh1, pTh2, latent_inds, second_obs, lam2)
         
         dtheta, dlam = ssr._g_coupled(log_theta, state, q_big, latent_states, pTh1, nk, lam1)
         g += dtheta + g_2 
         dlam1 += dlam
-    return jnp.append(g.flatten(), jnp.array([dlam1, 0.0]))/dat.shape[0]
+    return jnp.append(g.flatten(), jnp.array([dlam1, 0.0]))
 
 def grad_prim_only(log_theta:jnp.array, dat: jnp.array, lam1: jnp.array, n: int) -> jnp.array:
     """gradient of lp_prim
@@ -196,7 +198,7 @@ def grad_prim_only(log_theta:jnp.array, dat: jnp.array, lam1: jnp.array, n: int)
         g_, dlam = ssr._grad_prim_obs(log_theta, state_obs, p0, lam1)
         g += g_
         dlam1 += dlam
-    return jnp.append(g.flatten(), jnp.array([dlam1, 0.0]))/dat.shape[0]
+    return jnp.append(g.flatten(), jnp.array([dlam1, 0.0]))
 
 def grad_met_only(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: jnp.array, n: int) -> jnp.array:
     """ Gradient of lp_met_only
@@ -222,10 +224,10 @@ def grad_met_only(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: j
         g_, dlam = ssr._grad_met_obs(log_theta, state_obs, p0, lam1, lam2)
         g += g_
         dlam1 += dlam
-    return jnp.append(g.flatten(), jnp.array([dlam1, 0.0]))/dat.shape[0]
+    return jnp.append(g.flatten(), jnp.array([dlam1, 0.0]))
 
 
-def grad(params, dat_prim_met, dat_prim_no_met, dat_coupled, dat_met_only, penal, weights = jnp.array([0.25, 0.25, 0.25, 0.25])) -> jnp.array:
+def grad(params, dat_prim_no_met, dat_prim_met, dat_coupled, dat_met_only, penal, weights = jnp.array([0.25, 0.25, 0.25, 0.25])) -> jnp.array:
     """Calculates the gradient of log_lik wrt. to all log(\theta_ij) and wrt. \lambda_1
 
     Args:
@@ -250,9 +252,12 @@ def grad(params, dat_prim_met, dat_prim_no_met, dat_coupled, dat_met_only, penal
     # Transfer theta to the device
     log_theta = jnp.array(log_theta)
     g = jnp.zeros(((n+1)**2+2, 4))
+    nDat = dat_prim_no_met.shape[0] + dat_prim_met.shape[0] + dat_coupled.shape[0] + dat_met_only.shape[0]
     g = g.at[:,0].set(grad_prim_only(log_theta, dat_prim_no_met, lam1, n))
     g = g.at[:,1].set(grad_prim_only(log_theta, dat_prim_met, lam1, n))
     g = g.at[:,2].set(grad_coupled(log_theta, dat_coupled, lam1, lam2, n))
     g = g.at[:,3].set(grad_met_only(log_theta, dat_met_only, lam1, lam2, n))
-    ret =  jnp.dot(g, weights)
+    w = jnp.array([dat_prim_no_met.shape[0], dat_prim_met.shape[0], dat_coupled.shape[0], dat_met_only.shape[0]])
+    w = jnp.dot(w, weights)
+    ret =  jnp.dot(g/w, weights)
     return np.array(-ret + penal * l1)
