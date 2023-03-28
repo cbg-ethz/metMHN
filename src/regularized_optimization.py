@@ -97,7 +97,7 @@ def lp_met_only(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: jnp
 
 
 def log_lik(params: np.array, dat_prim_no_met: jnp.array, dat_prim_met: jnp.array, dat_coupled: jnp.array, 
-            dat_met_only: jnp.array, penal: float, weights=jnp.array([1., 1., 1., 1.])) -> np.array:
+            dat_met_only: jnp.array, penal: float, perc_met = 0.5) -> np.array:
     """Calculates the negative log. likelihood 
 
     Args:
@@ -121,16 +121,15 @@ def log_lik(params: np.array, dat_prim_no_met: jnp.array, dat_prim_met: jnp.arra
     lam1 = jnp.exp(params[-2])
     lam2 = jnp.exp(params[-1])
 
-    scores = jnp.zeros(4)
-    scores = scores.at[0].set(lp_prim_only(log_theta, dat_prim_no_met, lam1, n)) # Met seeded, not observed
-    scores = scores.at[1].set(lp_prim_only(log_theta, dat_prim_met, lam1, n)) # No seeding
-    scores = scores.at[2].set(lp_coupled(log_theta, dat_coupled, lam1, lam2, n))
-    scores = scores.at[3].set(lp_met_only(log_theta, dat_met_only, lam1, lam2, n))
-    
-    w = jnp.array([dat_prim_no_met.shape[0], dat_prim_met.shape[0], dat_coupled.shape[0], dat_met_only.shape[0]])
-    w = jnp.dot(w, weights)
-    ret = jnp.dot(scores/w, weights)
-    return(-np.array(ret) + penal * l1)
+    #nmet_corr = ratio_m_p * dat_prim_no_met.shape[0] / dat_coupled.shape[0] 
+    n_met = dat_coupled.shape[0] #+ dat_prim_met.shape[0] + dat_met_only.shape[0]
+    score_prim = lp_prim_only(log_theta, dat_prim_no_met, lam1, n) # Met seeded, not observed
+    score_met = 0.
+    #score_met += lp_prim_only(log_theta, dat_prim_met, lam1, n)
+    score_met += lp_coupled(log_theta, dat_coupled, lam1, lam2, n)
+    #score_met += lp_met_only(log_theta, dat_met_only, lam1, lam2, n)
+    score = (1 - perc_met) * score_prim/dat_prim_no_met.shape[0] + perc_met * score_met/n_met
+    return(-np.array(score) + penal * l1)
 
 
 def grad_coupled(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: jnp.array, n: int) -> jnp.array:
@@ -227,7 +226,7 @@ def grad_met_only(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: j
     return jnp.append(g.flatten(), jnp.array([dlam1, 0.0]))
 
 
-def grad(params, dat_prim_no_met, dat_prim_met, dat_coupled, dat_met_only, penal, weights = jnp.array([0.25, 0.25, 0.25, 0.25])) -> jnp.array:
+def grad(params, dat_prim_no_met, dat_prim_met, dat_coupled, dat_met_only, penal, perc_met = 0.5) -> jnp.array:
     """Calculates the gradient of log_lik wrt. to all log(\theta_ij) and wrt. \lambda_1
 
     Args:
@@ -251,13 +250,11 @@ def grad(params, dat_prim_no_met, dat_prim_met, dat_coupled, dat_met_only, penal
 
     # Transfer theta to the device
     log_theta = jnp.array(log_theta)
-    g = jnp.zeros(((n+1)**2+2, 4))
-    nDat = dat_prim_no_met.shape[0] + dat_prim_met.shape[0] + dat_coupled.shape[0] + dat_met_only.shape[0]
-    g = g.at[:,0].set(grad_prim_only(log_theta, dat_prim_no_met, lam1, n))
-    g = g.at[:,1].set(grad_prim_only(log_theta, dat_prim_met, lam1, n))
-    g = g.at[:,2].set(grad_coupled(log_theta, dat_coupled, lam1, lam2, n))
-    g = g.at[:,3].set(grad_met_only(log_theta, dat_met_only, lam1, lam2, n))
-    w = jnp.array([dat_prim_no_met.shape[0], dat_prim_met.shape[0], dat_coupled.shape[0], dat_met_only.shape[0]])
-    w = jnp.dot(w, weights)
-    ret =  jnp.dot(g/w, weights)
-    return np.array(-ret + penal * l1)
+    g_met = jnp.zeros((n+1)**2+2)
+    n_met = dat_coupled.shape[0] #+ dat_prim_met.shape[0] + dat_met_only.shape[0]
+    g_prim = grad_prim_only(log_theta, dat_prim_no_met, lam1, n)
+    #g_met += grad_prim_only(log_theta, dat_prim_met, lam1, n)
+    g_met += grad_coupled(log_theta, dat_coupled, lam1, lam2, n)
+    #g_met += grad_met_only(log_theta, dat_met_only, lam1, lam2, n)
+    g = (1 - perc_met) * g_prim/dat_prim_no_met.shape[0] + perc_met * g_met/n_met
+    return np.array(-g + penal * l1)

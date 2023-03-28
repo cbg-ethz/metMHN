@@ -948,11 +948,6 @@ def shuffle_stride2(p: jnp.array) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     return p.ravel(order="F")
 
-def shuffle_stride2_del(p: jnp.array) -> jnp.array:
-    p = p.reshape((-1, 2), order="C")
-    p = p.at[:, 0].set(0.)
-    return p.ravel(order="F")
-
 
 def keep_col2(p: jnp.array) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
@@ -1009,7 +1004,7 @@ def obs_inds(p_in: jnp.array, state: jnp.array, latent_dist: jnp.array, obs_prim
     latent_size = latent_dist.shape[0]
     p = lax.cond(state.at[-1].get() == 0,
                 lambda p: p,
-                lambda p: shuffle_stride2_del(p),
+                lambda p: keep_col2(p),
                 operand = p)
     # Jax makes us jump through a lot of hoops here, in order to jit this function
     latent_dist = jnp.where(p == 1, size = latent_size)[0]
@@ -1052,7 +1047,7 @@ def obs_inds_2(p_in: jnp.array, state: jnp.array, obs_prim: bool = True) -> jnp.
     p = lax.fori_loop(0, n, loop_body, jnp.ones_like(p_in))
     p = lax.cond(state.at[-1].get() == 0,
                 lambda p: p,
-                lambda p: shuffle_stride2_del(p),
+                lambda p: keep_col2(p),
                 operand = p)
     return p.astype(int)
 
