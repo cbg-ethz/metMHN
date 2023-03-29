@@ -523,9 +523,12 @@ def indep(dat):
     theta = jnp.zeros((n + 1,n + 1))
     for i in range(n):
         occ = dat.at[:,2*i].get() #+ dat.at[:, i+1].get()
-        occ = jnp.where(occ > 0, 1, 0)
+        #occ = jnp.where(occ > 0, 1, 0)
         perc = jnp.sum(occ)
-        theta = theta.at[i,i].set(jnp.log(perc/(dat.shape[0] - perc + 1e-10)))
+        if perc == 0:
+            theta = theta.at[i,i].set(-20.0)
+        else:
+            theta = theta.at[i,i].set(jnp.log(perc/(dat.shape[0] - perc + 1e-10)))
     perc = jnp.sum(dat.at[:,-1].get())
     theta = theta.at[n,n].set(jnp.log(perc/(dat.shape[0] - perc + 1e-10)))
     return theta
