@@ -450,9 +450,7 @@ def split_data(dat: pd.DataFrame) -> tuple:
 def single_traject(theta, t_obs, prim, met, n, rng):
     th = theta.copy()
     b_rates = np.diag(theta)
-    print(b_rates)
     th[np.diag_indices(n)] = 0.0
-    print(b_rates)
     th_prim = th.copy()
     th_prim[0:-1, -1] = 0.0
     t = 0.
