@@ -2,17 +2,20 @@ from itertools import compress, chain, combinations
 import numpy as np
 import jax.numpy as jnp
 import pandas as pd
-
+import regularized_optimization as reg_opt
+import scipy.optimize as opt 
 
 def state_space(n: int) -> np.array:
     """
-    Enumerates all possible states in lexicographic order
+    Generates all possible states of size n in lexicographic order
     Args:
         n (int): total number of events
     Returns:
          np.array: complete statespace
     """
-    return np.array([f'{i:0b}'.zfill(n)[::-1] for i in range(2**n)])
+    states = np.arange(2**n, dtype=np.uint8).reshape((2**n, 1))
+    ret = np.unpackbits(states, axis=1, count=n, bitorder="little")
+    return ret #np.array([f'{i:0b}'.zfill(n)[::-1] for i in range(2**n)])
 
 
 def trunk_states(state: np.array) -> np.array:
@@ -24,14 +27,14 @@ def trunk_states(state: np.array) -> np.array:
         np.array
     """
     n = state.size
-    inds = np.ones(2**n)
+    inds = np.ones(2**n, dtype=np.uint8)
     for i in range(n):
         if state[i] == 1:
             inds[0:2**(i+1)] = np.kron(np.array([1, 1]), inds[0:2**i])
         else:
             inds[0:2**(i+1)] = np.kron(np.array([1, 0]), inds[0:2**i])
-
-    return np.array([geno for geno in compress(state_space(n), inds)])
+    
+    return state_space(n)[inds.astype(bool), :]
 
 
 def ssr_to_fss(state: np.array) -> np.array:
@@ -419,114 +422,55 @@ def ssr_obs_dist_mat_vec_transp(p_in: np.array, state: np.array, n: int, obs_pri
         pass
     return p
 
-
-def split_data(dat: pd.DataFrame) -> tuple:
-    # Select coupled datapoints
-    dat_coupled =  dat.loc[dat.paired==True, 'P.Mut.KRAS':'M.Mut.KMT2D']
-    dat_coupled['Seeding'] = 1
-    dat_coupled = dat_coupled.to_numpy(dtype = int)
-    dat_coupled = jnp.array(dat_coupled)
-
-    # select prim only + no metastastasis generated 
-    dat_prim_nomet =  dat.loc[(dat.paired == False) & (dat.metaStatus == "absent"), 'P.Mut.KRAS':'M.Mut.KMT2D']
-    dat_prim_nomet['Seeding'] = 0
-    dat_prim_nomet = dat_prim_nomet.to_numpy(dtype = int)
-    dat_prim_nomet = jnp.array(dat_prim_nomet)
-
-    # select prim_only + no metastasis_sequenced
-    dat_prim_met =  dat.loc[(dat.paired == False) & (dat.metaStatus == "present"), 'P.Mut.KRAS':'M.Mut.KMT2D']
-    dat_prim_met['Seeding'] = 1
-    dat_prim_met = dat_prim_met.to_numpy(dtype = int)
-    dat_prim_met = jnp.array(dat_prim_met)
-
-    # select metastasis only
-    dat_met_only =  dat.loc[(dat.paired == False) & (dat.metaStatus == "isMetastasis"), 'P.Mut.KRAS':'M.Mut.KMT2D']
-    dat_met_only['Seeding'] = 1
-    dat_met_only = dat_met_only.to_numpy(dtype = int)
-    dat_met_only = jnp.array(dat_met_only)
-    return dat_prim_nomet, dat_prim_met, dat_met_only, dat_coupled 
+def split_data(dat: pd.DataFrame):
+    prim_only =  dat.loc[(0, "absent")].to_numpy(dtype=np.int8)
+    met_only = dat.loc[(0, "isMetastasis")].to_numpy(dtype=np.int8)
+    prim_met = dat.loc[(0, "present")].to_numpy(dtype=np.int8)
+    coupled = dat.loc[(1, "isPaired")].to_numpy(dtype=np.int8)
+    coupled = coupled[coupled.sum(axis=1) > 1, ]
+    return jnp.array(prim_only), jnp.array(met_only), jnp.array(prim_met), jnp.array(coupled)
 
 
-def single_traject(theta, t_obs, prim, met, n, rng):
-    th = theta.copy()
-    b_rates = np.diag(theta)
-    th[np.diag_indices(n)] = 0.0
-    th_prim = th.copy()
-    th_prim[0:-1, -1] = 0.0
-    t = 0.
-    while True:
-        # Seeding didn't happen yet
-        if prim[-1] == 0:
-            rates = np.exp(th @ prim + b_rates)
-            rates[prim == 1] = 0.
-            out_rate = np.sum(rates)
-            t += rng.exponential(scale = 1/out_rate, size = 1)
-            if (t >= t_obs): break
-            next_event = rng.choice(np.arange(0,n ), size = 1, p = rates/out_rate)
-            prim[int(next_event)] = 1
-            met[int(next_event)] = 1
-        # Seeding already happened
-        else:
-            prim_rates = np.exp(th_prim @ prim + b_rates)
-            prim_rates[prim == 1] = 0.
-            met_rates = np.exp(th @ met + b_rates)
-            met_rates[met == 1] = 0.
-            out_rate = np.sum(prim_rates) + np.sum(met_rates)
-            t += rng.exponential(scale = 1/out_rate, size = 1)
-            if(t >= t_obs): break
-            next_event =  rng.choice(np.arange(0, 2*n, 1),
-                                    size = 1,
-                                    p = np.concatenate((prim_rates, met_rates))/out_rate)
-            if next_event >= n:
-                met[int(next_event)-n] = 1
-            else:
-                prim[int(next_event)] = 1
-    return prim, met
+def cross_val(dat: pd.DataFrame, splits: jnp.array, nfolds: int, start_params: jnp.array, m_p_corr: float, n: int) -> float:
+    ndat = dat.shape[0]
+    dat = dat.reset_index()
+    shuffled = dat.sample(frac=1)
+    runs = np.zeros((nfolds, splits.shape[0]))
+    batch_size = np.ceil(ndat/nfolds)
+    for i in range(nfolds):
+        start = batch_size*i
+        stop = np.min((batch_size*(i+1), ndat))
 
-def sample_metmhn(theta, lam1, lam2, rng):
-    n = theta.shape[0]
-    t_1 = rng.exponential(scale = 1/lam1, size = 1) 
-    t_2 = rng.exponential(scale = 1/lam2, size = 1)
-    prim = np.zeros(n)
-    met = np.zeros(n)
-    # Simulate until 1st diagnosis
-    prim, met = single_traject(theta, t_1, prim, met, n, rng)
-    # Record the state of the primary at 1st diagnosis
-    prim_obs = prim.copy()
-    met_obs =  met.copy()
-    # Simulate until 2nd diagnosis, if the seeding happened
-    if prim[-1] != 0:
-        # Record only the state of the met at 2nd diagnosis 
-        prim, met_obs = single_traject(theta, t_2, prim, met, n, rng)
-
-    return np.vstack((prim_obs, met_obs)).flatten(order = "F")[:-1], t_2
+        train_inds = np.concatenate((np.arange(start), np.arange(stop, ndat)))
+        train = shuffled.iloc[train_inds,:]
+        train = train.set_index(["paired", "metaStatus"])
+        train_prim_only, train_met_only, train_prim_met, train_coupled = split_data(train)
+        
+        test_inds = np.arange(start, stop)
+        test = shuffled.iloc[test_inds, :]
+        test = test.set_index(["paired", "metaStatus"])
+        test_prim_only, test_met_only, test_prim_met, test_coupled = split_data(test)
+        for j in range(splits.size):
+            x = opt.minimize(reg_opt.value_grad, x0 = start_params, args = (train_prim_only, train_coupled, train_prim_met, train_met_only, n-1, splits[j], m_p_corr), 
+                method = "L-BFGS-B", jac = True, options={"maxiter":10000, "disp":True, "ftol":1e-04})
+            runs[i,j] = reg_opt.value_grad(x.x, test_prim_only, test_coupled, test_prim_met, test_met_only, n-1, splits[j], m_p_corr)[0]
+            print("split ", j, " fold: ", i)
+    res = runs.sum(axis=1)
+    return splits[np.argmax(res)]
 
 
-def simulate_dat(theta, n_dat, lam1, lam2, rng):
-    n = theta.shape[0]
-    dat = np.zeros((n_dat, 2*n-1))
-    ages = np.zeros(n_dat)
-    i = 0
-    while i < n_dat:
-        datum, age = sample_metmhn(theta, lam1, lam2, rng)
-        if datum.sum() > 0:
-            dat[i,:] = datum
-            ages[i] = age 
-            i += 1
-    dat = dat.astype(int)
-    return dat, ages
 
-def indep(dat):
+
+def indep(dat: jnp.array) -> jnp.array:
     n = (dat.shape[1] - 1)//2
     theta = jnp.zeros((n + 1,n + 1))
     for i in range(n):
-        occ = dat.at[:,2*i].get() #+ dat.at[:, i+1].get()
-        #occ = jnp.where(occ > 0, 1, 0)
+        occ = dat.at[:,2*i].get() + dat.at[:, 2*i+1].get()
         perc = jnp.sum(occ)
         if perc == 0:
-            theta = theta.at[i,i].set(-20.0)
+            theta = theta.at[i,i].set(-120.0)
         else:
-            theta = theta.at[i,i].set(jnp.log(perc/(dat.shape[0] - perc + 1e-10)))
+            theta = theta.at[i,i].set(jnp.log(perc/(2*dat.shape[0] - perc + 1e-10)))
     perc = jnp.sum(dat.at[:,-1].get())
     theta = theta.at[n,n].set(jnp.log(perc/(dat.shape[0] - perc + 1e-10)))
     return theta
