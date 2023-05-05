@@ -323,6 +323,8 @@ def _grad_met_obs(log_theta: jnp.array, state: jnp.array, p0: jnp.array, lam1: j
     )
 
     pTh = lam1 * lam2 * R_2_inv_p_1
+    score = jnp.log(pTh.at[-1].get())
+    
     lhs = jnp.zeros_like(p0)
     lhs = lhs.at[-1].set(lam1 * lam2 / pTh.at[-1].get())
     lhs = mhn.R_inv_vec(log_theta, lhs, lam2, state, True)
@@ -330,7 +332,7 @@ def _grad_met_obs(log_theta: jnp.array, state: jnp.array, p0: jnp.array, lam1: j
     lhs = mhn.R_inv_vec(log_theta, lhs, lam1, state, True)
     dlam1 = 1/lam1 - jnp.dot(lhs, R_1_inv_p_0)
     dTh += mhn.x_partial_Q_y(log_theta, lhs, R_1_inv_p_0, state) 
-    return dTh, dlam1 * lam1
+    return score, dTh, dlam1 * lam1
 
 @jit
 def _grad_prim_obs(log_theta: jnp.array, state: jnp.array, p0: jnp.array, lam1: jnp.array) -> jnp.array:
@@ -426,3 +428,17 @@ def _g_3_lhs(log_theta: jnp.array, pTh1: jnp.array, pTh2: jnp.array, latent_inds
     q_big = jnp.zeros_like(pTh1)
     q_big =  q_big.at[latent_inds].set(q.at[q.shape[0]//2:].get())
     return q_big
+
+def prob_seeded(log_theta: jnp.array, x_obs: jnp.array, lam1:jnp.array):
+    x_obs = x_obs.at[-1].set(1)
+    m = x_obs.sum()
+    p0 = jnp.zeros(2**m)
+    p0 = p0.at[0].set[1.]
+    pTh1 = lam1 * mhn.R_inv_vec(
+        log_theta=log_theta,
+        x=p0,
+        lam=lam1,
+        state=x_obs)
+    pTh1 = pTh1.reshape((-1,2), order="F")
+    pTh1 =  pTh1 @ jnp.array([[1,1], [0,1]])
+    return pTh1.at[:, 0].get()/pTh1.at[:,1].get()

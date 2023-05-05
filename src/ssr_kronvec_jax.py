@@ -6,8 +6,6 @@ import jax
 
 
 # Kronecker factors
-
-#@jit
 def k2dt0(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     theta_slice = jnp.array([-theta, 0.])
@@ -15,7 +13,6 @@ def k2dt0(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-#@jit
 def k2d0t(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     theta_slice = jnp.array([0., theta])
@@ -23,14 +20,12 @@ def k2d0t(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-#@jit
 def k2dtt(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     p = jax.vmap(lambda x: -theta * x, 0, 0)(p)
     return p.flatten(order="F")
 
 
-#@jit
 def k2d1t(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     theta_slice = jnp.array([1., theta])
@@ -38,7 +33,6 @@ def k2d1t(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-#@jit
 def k2d10(p: jnp.array) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     theta_slice = jnp.array([1., 0.])
@@ -46,7 +40,6 @@ def k2d10(p: jnp.array) -> jnp.array:
     return p.flatten(order="F")
 
 
-#@jit
 def k2d01(p: jnp.array) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     theta_slice = jnp.array([0., 1.])
@@ -54,13 +47,11 @@ def k2d01(p: jnp.array) -> jnp.array:
     return p.flatten(order="F")
 
 
-#@jit
 def k2d11(p: jnp.array) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     return p.flatten(order="F")
 
 
-#@jit
 def k2ntt(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     p = lax.cond(
@@ -82,7 +73,6 @@ def k2ntt(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False
     return p.flatten(order="F")
 
 
-#@jit
 def k4ns(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     p = lax.cond(
@@ -107,7 +97,6 @@ def k4ns(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False)
     return p.flatten(order="F")
 
 
-#@jit
 def k4np(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     p = lax.cond(
@@ -133,7 +122,6 @@ def k4np(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False)
     return p.flatten(order="F")
 
 
-#@jit
 def k4nm(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     p = lax.cond(
@@ -159,7 +147,6 @@ def k4nm(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False)
     return p.flatten(order="F")
 
 
-#@jit
 def k4d100t(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     # p = p.at[:, 3].multiply(theta).at[:, [1, 2]].set(0.)
@@ -168,7 +155,6 @@ def k4d100t(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-#@jit
 def k4dt000(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     theta_slice = jnp.array([-theta, 0., 0., 0.])
@@ -176,7 +162,6 @@ def k4dt000(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-#@jit
 def k4dtt00(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     theta_slice = jnp.array([-theta, -theta, 0., 0.])
@@ -184,7 +169,6 @@ def k4dtt00(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-#@jit
 def k4dt0t0(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     theta_slice = jnp.array([-theta, 0., -theta, 0.])
@@ -192,7 +176,6 @@ def k4dt0t0(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-#@jit
 def k4d1t1t(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     # p = p.at[:, [1, 3]].multiply(theta)
@@ -201,7 +184,6 @@ def k4d1t1t(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-#@jit
 def k4d11tt(p: jnp.array, theta: float) -> jnp.array:
     p = p.reshape((-1, 4), order="C")
     theta_slice = jnp.array([1., 1., theta, theta])

@@ -131,6 +131,8 @@ def log_lik(params: np.array, dat_prim: jnp.array, dat_coupled: jnp.array,
     return(-np.array(score) + penal * l1)
 
 
+
+
 def grad_coupled(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: jnp.array, n: int) -> tuple[jnp.array, jnp.array]:
     """_summary_
 
@@ -204,34 +206,36 @@ def grad_prim_only(log_theta:jnp.array, dat: jnp.array, lam1: jnp.array, n: int)
         score += s
     return score, jnp.append(g.flatten(), jnp.array([dlam1, 0.0]))
 
-#def grad_met_only(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: jnp.array, n: int) -> jnp.array:
-#    """ Gradient of lp_met_only
-#
-#      Args:
-#        log_theta (jnp.array): theta matrix with logarithmic entries
-#        dat (jnp.array): Dataset
-#        lam1 (jnp.array): Rate \lambda_1 of first sampling
-#        lam2 (jnp.array): rate \lambda_2 of seccond sampling
-#        n (int): Number of genomic events
-#
-#    Returns:
-#        jnp.array: d log(P(state))/ d theta_ij
-#    """
-#    # Unpack parameters
-#    g = jnp.zeros((n+1,n+1), dtype=float)
-#    dlam1 = 0.0
-#    for i in range(dat.shape[0]):
-#        state = dat.at[i, 0:2*n+1].get()
-#        state_obs = jnp.append(state.at[1:2*n+1:2].get(), state.at[-1].get())
-#        p0 = jnp.zeros(2**state_obs.sum())
-#        p0 = p0.at[0].set(1.0)
-#        g_, dlam = ssr._grad_met_obs(log_theta, state_obs, p0, lam1, lam2)
-#        g += g_
-#        dlam1 += dlam
-#    return jnp.append(g.flatten(), jnp.array([dlam1, 0.0]))
+def grad_met_only(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: jnp.array, n: int) -> jnp.array:
+    """ Gradient of lp_met_only
+
+      Args:
+        log_theta (jnp.array): theta matrix with logarithmic entries
+        dat (jnp.array): Dataset
+        lam1 (jnp.array): Rate \lambda_1 of first sampling
+        lam2 (jnp.array): rate \lambda_2 of seccond sampling
+        n (int): Number of genomic events
+
+    Returns:
+        jnp.array: d log(P(state))/ d theta_ij
+    """
+    # Unpack parameters
+    g = jnp.zeros((n+1,n+1), dtype=float)
+    score = 0.0
+    dlam1 = 0.0
+    for i in range(dat.shape[0]):
+        state = dat.at[i, 0:2*n+1].get()
+        state_obs = jnp.append(state.at[1:2*n+1:2].get(), state.at[-1].get())
+        p0 = jnp.zeros(2**state_obs.sum())
+        p0 = p0.at[0].set(1.0)
+        s, g_, dlam = ssr._grad_met_obs(log_theta, state_obs, p0, lam1, lam2)
+        g += g_
+        dlam1 += dlam
+        score += s
+    return score, jnp.append(g.flatten(), jnp.array([dlam1, 0.0]))
 
 
-def value_grad(params: np.array, dat_prim: jnp.array, dat_coupled: jnp.array, 
+def value_grad(params: np.array, dat_prim_only: jnp.array, dat_coupled: jnp.array, dat_prim_met: jnp.array, dat_met_only: jnp.array, 
                n: int, penal: float, perc_met:float = None) -> tuple[np.array, np.array]:
     """Calculates the gradient of log_lik wrt. to all log(\theta_ij) and wrt. \lambda_1
 
@@ -247,22 +251,28 @@ def value_grad(params: np.array, dat_prim: jnp.array, dat_coupled: jnp.array,
         tuple[np.array, np.array]: (likelihood, gradient)
     """
     # Unpack parameters
-    n_prim =  jnp.max(jnp.array([1., dat_prim.shape[0]]))
-    n_met = jnp.max(jnp.array([1., dat_coupled.shape[0]]))
+    n_prim_only =  jnp.max(jnp.array([1., dat_prim_only.shape[0]]))
+    n_coupled = jnp.max(jnp.array([1., dat_coupled.shape[0]]))
+    n_prim_met = jnp.max(jnp.array([1., dat_prim_met.shape[0]]))
+    n_met_only = jnp.max(jnp.array([1., dat_met_only.shape[0]]))
     log_theta = params[0:-2].reshape((n+1, n+1))
     l1 = L1(log_theta)
     l1_ = L1_(log_theta)
 
     if perc_met == None:
-        perc_met = n_met/(n_prim + n_met)
+        perc_met = 1 - n_prim_only/(n_prim_only + n_coupled + n_prim_met + n_met_only)
 
     # Transfer theta to the device
     log_theta = jnp.array(log_theta)
     lam1 = jnp.exp(params[-2])
     lam2 = jnp.exp(params[-1])
 
-    score_prim, g_prim = grad_prim_only(log_theta, dat_prim, lam1, n)
-    score_met, g_met = grad_coupled(log_theta, dat_coupled, lam1, lam2, n)
-    score = (1 - perc_met) * score_prim/n_prim + perc_met * score_met/n_met
-    g = (1 - perc_met) * g_prim/n_prim + perc_met * g_met/n_met
+    score_prim, g_prim = grad_prim_only(log_theta, dat_prim_only, lam1, n)
+    score_coupled, g_coupled = grad_coupled(log_theta, dat_coupled, lam1, lam2, n)
+    log_theta_mod = log_theta.copy()
+    log_theta_mod = log_theta_mod.at[:-1,-1].set(0.)
+    score_prim_met, g_prim_met = grad_prim_only(log_theta_mod, dat_prim_met, lam1, n)
+    score_met, g_met  = grad_met_only(log_theta, dat_met_only, lam1, lam2, n)
+    score = (1 - perc_met) * score_prim/n_prim_only + perc_met/3 * (score_coupled/n_coupled + score_prim_met/n_prim_met + score_met/n_met_only)
+    g = (1 - perc_met) * g_prim/n_prim_only + perc_met/3 * (g_coupled/n_coupled + g_prim_met/n_prim_met + g_met/n_met_only)
     return np.array(-score + penal * l1), np.array(-g + penal * l1_)
