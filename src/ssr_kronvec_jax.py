@@ -948,11 +948,6 @@ def shuffle_stride2(p: jnp.array) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
     return p.ravel(order="F")
 
-def shuffle_stride2_del(p: jnp.array) -> jnp.array:
-    p = p.reshape((-1, 2), order="C")
-    p = p.at[:, 0].set(0.)
-    return p.ravel(order="F")
-
 
 def keep_col2(p: jnp.array) -> jnp.array:
     p = p.reshape((-1, 2), order="C")
@@ -972,8 +967,52 @@ def keep_col2_3(p: jnp.array) -> jnp.array:
     return p.ravel(order="F")
 
 
+#@partial(jit, static_argnames=["obs_prim"])
+#def obs_inds(p_in: jnp.array, state: jnp.array, latent_dist: jnp.array, obs_prim: bool = True) -> jnp.array:
+#    """
+#    Returns P(Prim = prim_obs, Met) or P(Prim, Met = met_obs), the joint distribution evaluated at either
+#    the observed metastasis state or the observed primary tumor state
+#    Args:
+#        p_in (jnp.array): Joint probability distribution of prims and mets
+#        state (jnp.array): bitstring, mutational state of prim and met of a patient
+#        n (int): total number of genomic events
+#
+#        obs_prim (bool): If true return P(Prim = prim_obs, Met) else return P(Prim, Met = met_obs)
+#    Returns:
+#        jnp.array
+#    """
+#    def loop_body(i, p):
+#        ind = state.at[2*i].get() + 2*state.at[2*i+1].get() + (1 - obs_prim)*4
+#        p = lax.switch(
+#            index=ind,
+#            branches=[
+#                lambda p: p,                        # 00 obs_prim=1
+#                lambda p: keep_col2(p),             # 10 obs_prim=1
+#                lambda p: shuffle_stride2(p),       # 01 obs_prim=1
+#                lambda p: keep_col1_3(p),           # 11 obs_prim=1
+#                lambda p: p,                        # 00 obs_prim=0
+#                lambda p: shuffle_stride2(p),       # 10 obs_prim=0
+#                lambda p: keep_col2(p),             # 01 obs_prim=0
+#                lambda p: keep_col2_3(p),           # 11 obs_prim=0
+#            ],
+#            operand=p
+#        )
+#        return p
+#
+#    n = (state.shape[0] - 1)//2
+#    p = lax.fori_loop(0, n, loop_body, jnp.ones_like(p_in))
+#    latent_size = latent_dist.shape[0]
+#    p = lax.cond(state.at[-1].get() == 0,
+#                lambda p: p,
+#                lambda p: keep_col2(p),
+#                operand = p)
+#    # Jax makes us jump through a lot of hoops here, in order to jit this function
+#    latent_dist = jnp.where(p == 1, size = latent_size)[0]
+#    return latent_dist #Output of jnp.where is a tuple
+
+
 @partial(jit, static_argnames=["obs_prim"])
-def obs_inds(p_in: jnp.array, state: jnp.array, latent_dist: jnp.array, obs_prim: bool = True) -> jnp.array:
+def obs_states(p_in: jnp.array, state: jnp.array, obs_prim: bool = True) -> jnp.array:
     """
     Returns P(Prim = prim_obs, Met) or P(Prim, Met = met_obs), the joint distribution evaluated at either
     the observed metastasis state or the observed primary tumor state
@@ -1006,55 +1045,11 @@ def obs_inds(p_in: jnp.array, state: jnp.array, latent_dist: jnp.array, obs_prim
 
     n = (state.shape[0] - 1)//2
     p = lax.fori_loop(0, n, loop_body, jnp.ones_like(p_in))
-    latent_size = latent_dist.shape[0]
     p = lax.cond(state.at[-1].get() == 0,
                 lambda p: p,
-                lambda p: shuffle_stride2_del(p),
+                lambda p: keep_col2(p),
                 operand = p)
-    # Jax makes us jump through a lot of hoops here, in order to jit this function
-    latent_dist = jnp.where(p == 1, size = latent_size)[0]
-    return latent_dist #Output of jnp.where is a tuple
-
-
-@partial(jit, static_argnames=["obs_prim"])
-def obs_inds_2(p_in: jnp.array, state: jnp.array, obs_prim: bool = True) -> jnp.array:
-    """
-    Returns P(Prim = prim_obs, Met) or P(Prim, Met = met_obs), the joint distribution evaluated at either
-    the observed metastasis state or the observed primary tumor state
-    Args:
-        p_in (jnp.array): Joint probability distribution of prims and mets
-        state (jnp.array): bitstring, mutational state of prim and met of a patient
-        n (int): total number of genomic events
-
-        obs_prim (bool): If true return P(Prim = prim_obs, Met) else return P(Prim, Met = met_obs)
-    Returns:
-        jnp.array
-    """
-    def loop_body(i, p):
-        ind = state.at[2*i].get() + 2*state.at[2*i+1].get() + (1 - obs_prim)*4
-        p = lax.switch(
-            index=ind,
-            branches=[
-                lambda p: p,                        # 00 obs_prim=1
-                lambda p: keep_col2(p),             # 10 obs_prim=1
-                lambda p: shuffle_stride2(p),       # 01 obs_prim=1
-                lambda p: keep_col1_3(p),           # 11 obs_prim=1
-                lambda p: p,                        # 00 obs_prim=0
-                lambda p: shuffle_stride2(p),       # 10 obs_prim=0
-                lambda p: keep_col2(p),             # 01 obs_prim=0
-                lambda p: keep_col2_3(p),           # 11 obs_prim=0
-            ],
-            operand=p
-        )
-        return p
-
-    n = (state.shape[0] - 1)//2
-    p = lax.fori_loop(0, n, loop_body, jnp.ones_like(p_in))
-    p = lax.cond(state.at[-1].get() == 0,
-                lambda p: p,
-                lambda p: shuffle_stride2_del(p),
-                operand = p)
-    return p.astype(int)
+    return p.astype(jnp.int32)
 
 # Most likely useless functions, that can be removed later
 #def marg0not1(p: jnp.array) -> jnp.array:

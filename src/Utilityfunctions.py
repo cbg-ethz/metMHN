@@ -449,7 +449,7 @@ def split_data(dat: pd.DataFrame) -> tuple:
 
 def single_traject(theta, t_obs, prim, met, n, rng):
     th = theta.copy()
-    b_rates = np.diag(th)
+    b_rates = np.diag(theta)
     th[np.diag_indices(n)] = 0.0
     th_prim = th.copy()
     th_prim[0:-1, -1] = 0.0
@@ -521,9 +521,12 @@ def indep(dat):
     theta = jnp.zeros((n + 1,n + 1))
     for i in range(n):
         occ = dat.at[:,2*i].get() #+ dat.at[:, i+1].get()
-        occ = jnp.where(occ > 0, 1, 0)
+        #occ = jnp.where(occ > 0, 1, 0)
         perc = jnp.sum(occ)
-        theta = theta.at[i,i].set(jnp.log(perc/(dat.shape[0] - perc + 1e-10)))
+        if perc == 0:
+            theta = theta.at[i,i].set(-20.0)
+        else:
+            theta = theta.at[i,i].set(jnp.log(perc/(dat.shape[0] - perc + 1e-10)))
     perc = jnp.sum(dat.at[:,-1].get())
     theta = theta.at[n,n].set(jnp.log(perc/(dat.shape[0] - perc + 1e-10)))
     return theta

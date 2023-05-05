@@ -1,6 +1,6 @@
 import numpy as np
 
-from ssr_kronvec_jax import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed, kronvec, kron_diag, obs_inds
+from ssr_kronvec_jax import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed, kronvec, kron_diag, obs_states
 import Utilityfunctions as utils
 import jax.numpy as jnp
 from jax import jit, lax, vmap
@@ -234,7 +234,7 @@ def R_i_inv_vec(log_theta: jnp.array, x: jnp.array, lam: jnp.array,  state: jnp.
 
 @jit
 def _lp_coupled(log_theta: jnp.array, lam1: jnp.array, lam2: jnp.array, state: jnp.array, p0: jnp.array, 
-                    latent_dist: jnp.array, latent_state: jnp.array) -> jnp.array:
+                poss_inds: jnp.array, latent_state: jnp.array) -> jnp.array:
     """
     Evaluates the log probability of seeing coupled genotype data in state "state"
     Args:
@@ -249,8 +249,9 @@ def _lp_coupled(log_theta: jnp.array, lam1: jnp.array, lam2: jnp.array, state: j
         jnp.array: log(P(state))
     """
     pTh1 = lam1 * R_i_inv_vec(log_theta, p0, lam1,  state)
-    inds = obs_inds(pTh1, state, latent_dist, obs_prim = True)
-    pTh1_obs = pTh1.at[inds].get()
+    poss_states = obs_states(pTh1, state)
+    poss_inds = jnp.where(poss_states == 1, size = poss_inds.shape[0])[0]
+    pTh1_obs = pTh1.at[poss_inds].get()
     obs_sum = pTh1_obs.sum()
     pTh1_obs = jnp.append(jnp.zeros_like(pTh1_obs), pTh1_obs)
     pTh2 = lam2 * mhn.R_inv_vec(log_theta, pTh1_obs/obs_sum, lam2, latent_state)
@@ -353,13 +354,15 @@ def _grad_prim_obs(log_theta: jnp.array, state: jnp.array, p0: jnp.array, lam1: 
         state=state)
     
     p_theta = lam1 * R_1_inv_p_0
+    score = jnp.log(p_theta.at[-1].get())
+    
     lhs = jnp.zeros_like(p0)
     lhs = lhs.at[-1].set(1/p_theta.at[-1].get())
     lhs = mhn.R_inv_vec(log_theta_2, lhs, lam1, state, transpose = True)
     dlam1 = 1/lam1 - lam1*jnp.dot(lhs, R_1_inv_p_0)
     dth = lam1 * mhn.x_partial_Q_y(log_theta=log_theta_2, x=lhs, y=R_1_inv_p_0, state=state)
     dth = dth.at[:-1, -1].set(0.0)  # Derivative of constant is 0.
-    return dth, dlam1 * lam1
+    return score, dth, dlam1 * lam1
 
 @jit
 def _g_coupled(log_theta: jnp.array, state: jnp.array, g3_lhs: jnp.array, obs_inds: jnp.array, pTh1: jnp.array, 
