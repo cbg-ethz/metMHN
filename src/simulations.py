@@ -87,6 +87,81 @@ def single_traject(
     return prim, met, pre_seeding_events, full_prim, full_met
 
 
+def single_traject_timed(
+        log_theta: ArrayLike,
+        t_obs: float,
+        initial: ArrayLike = None,
+        rng: np.random.Generator = None
+) -> np.array:
+    """This function models the trajectory of a single tumor and metastasis starting from 
+    given states of the primary tumor and the metastasis until a given time.
+
+    Args:
+        log_theta (ArrayLike): Logarithmic values of the Theta matrix. 
+        t_obs (float): Time of observation. May be infinity.
+        state (ArrayLike, shape (n+1,)): Initial state of the primary tumor and metastasis. Binary.
+        rng (np.random.Generator, optional): Random number generator. Defaults to None.
+
+    Returns:
+        np.array, shape (2n+1,): Accumulation times of the events. -1 if there were present
+        at the start of the simulation already  
+    """
+    n = log_theta.shape[0]
+    b_rates = np.diag(log_theta)
+    log_theta_prim = log_theta.copy()
+    log_theta_prim[0:-1, -1] = 0.0
+    rng = rng or np.random.default_rng(42)
+
+    if initial is None:
+        initial = np.zeros(2*n-1)
+
+    prim_final = initial[::2].astype(float)
+    met_final = initial[list(range(1, 2 * n - 1, 2)) + [-1]].astype(float)
+
+    prim = prim_final.astype(int)
+    met = met_final.astype(int)
+
+    prim_final *= -1
+    met_final *= -1
+
+    t = 0.
+    inds = np.arange(0, 2*n, dtype=int)
+
+    while not prim.all() or not met.all():
+        # Seeding didn't happen yet
+        if prim[-1] == 0:
+            rates = np.exp(log_theta @ prim + b_rates)
+            rates[prim == 1] = 0.
+            out_rate = np.sum(rates)
+            t += rng.exponential(scale=1/out_rate, size=1)
+            if (t >= t_obs):
+                break
+            next_event = rng.choice(inds[:n], size=1, p=rates/out_rate)
+            prim[next_event], met[next_event] = 1, 1
+            prim_final[next_event], met_final[next_event] = t, t
+        # Seeding already happened
+        else:
+            prim_rates = np.exp(log_theta_prim @ prim + b_rates)
+            prim_rates[prim == 1] = 0.
+            met_rates = np.exp(log_theta @ met + b_rates)
+            met_rates[met == 1] = 0.
+            out_rate = np.sum(prim_rates) + np.sum(met_rates)
+            t += rng.exponential(scale=1/out_rate, size=1)
+            if(t >= t_obs):
+                break
+            next_event = rng.choice(inds,
+                                    size=1,
+                                    p=np.concatenate((prim_rates, met_rates))/out_rate)
+            if next_event >= n:
+                met[next_event - n] = 1
+                met_final[next_event - n] = t
+            else:
+                prim[next_event] = 1
+                prim_final[next_event] = t
+    state = np.concatenate((prim_final[:-1], met_final))
+    return np.concatenate((state[:-1].reshape(2, n-1).flatten(order="F"), state[[-1]]))
+
+
 def sample_metmhn(
         log_theta: ArrayLike,
         lam1: float,
