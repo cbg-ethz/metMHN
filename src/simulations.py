@@ -8,7 +8,7 @@ def single_traject(
         prim: ArrayLike = None,
         met: ArrayLike = None,
         rng: np.random.Generator = None
-) -> tuple[ArrayLike]:
+) -> tuple[np.array, np.array, np.array, np.array, np.array]:
     """This function models the trajectory of a single tumor and metastasis starting from 
     given states of the primary tumor and the metastasis until a given time.
 
