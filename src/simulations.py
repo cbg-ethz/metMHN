@@ -109,7 +109,7 @@ def single_traject_timed(
     n = log_theta.shape[0]
     b_rates = np.diag(log_theta)
     log_theta_prim = log_theta.copy()
-    log_theta_prim[0:-1, -1] = 0.0
+    log_theta_prim[0: -1, -1] = 0.0
     rng = rng or np.random.default_rng(42)
 
     if initial is None:
