@@ -430,10 +430,11 @@ def _g_3_lhs(log_theta: jnp.array, pTh1: jnp.array, pTh2: jnp.array, latent_inds
     return q_big
 
 def prob_seeded(log_theta: jnp.array, x_obs: jnp.array, lam1:jnp.array):
+    x_obs = x_obs.at[::2].get()
     x_obs = x_obs.at[-1].set(1)
     m = x_obs.sum()
     p0 = jnp.zeros(2**m)
-    p0 = p0.at[0].set[1.]
+    p0 = p0.at[0].set(1.)
     pTh1 = lam1 * mhn.R_inv_vec(
         log_theta=log_theta,
         x=p0,
@@ -441,4 +442,4 @@ def prob_seeded(log_theta: jnp.array, x_obs: jnp.array, lam1:jnp.array):
         state=x_obs)
     pTh1 = pTh1.reshape((-1,2), order="F")
     pTh1 =  pTh1 @ jnp.array([[1,1], [0,1]])
-    return pTh1.at[:, 0].get()/pTh1.at[:,1].get()
+    return pTh1.at[-1, 0].get()/pTh1.at[-1,1].get()
