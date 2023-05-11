@@ -262,7 +262,7 @@ def p_mut_pre_seed(theta_in, n_dat, lam1, lam2, rng):
             theta, th_prim, b_rates, lam1, lam2, n, rng)
         if datum[-1] == 1:
             pre_seeded_muts += psp
-            total_muts += np.append(datum[1::2], [1])
+            total_muts += datum[::2]
             i += 1
     return pre_seeded_muts/total_muts
 

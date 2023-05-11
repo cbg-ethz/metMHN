@@ -461,16 +461,18 @@ def cross_val(dat: pd.DataFrame, splits: jnp.array, nfolds: int, start_params: j
 
 
 
-def indep(dat: jnp.array) -> jnp.array:
-    n = (dat.shape[1] - 1)//2
+def indep(dat_singles, dat_coupled) -> jnp.array:
+    n = (dat_singles.shape[1] - 1)//2
+    n_coupled = dat_coupled.shape[0]
+    n_singles = dat_singles.shape[0]
     theta = jnp.zeros((n + 1,n + 1))
     for i in range(n):
-        occ = dat.at[:,2*i].get() + dat.at[:, 2*i+1].get()
-        perc = jnp.sum(occ)
+        perc = jnp.sum(dat_singles.at[:,2*i].get() + dat_singles.at[:, 2*i+1].get())
+        perc += jnp.sum(dat_coupled.at[:,2*i].get() + dat_coupled.at[:, 2*i+1].get())
         if perc == 0:
-            theta = theta.at[i,i].set(-120.0)
+            theta = theta.at[i,i].set(-1e10)
         else:
-            theta = theta.at[i,i].set(jnp.log(perc/(2*dat.shape[0] - perc + 1e-10)))
-    perc = jnp.sum(dat.at[:,-1].get())
-    theta = theta.at[n,n].set(jnp.log(perc/(dat.shape[0] - perc + 1e-10)))
+            theta = theta.at[i,i].set(jnp.log(perc/(2 * n_coupled + n_singles - perc + 1e-10)))
+    perc = jnp.sum(dat_singles.at[:,-1].get()) + n_coupled
+    theta = theta.at[n,n].set(jnp.log(perc/(n_coupled + n_singles - perc + 1e-10)))
     return theta
