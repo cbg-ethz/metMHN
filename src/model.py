@@ -86,10 +86,12 @@ class MetMHN:
             daxpy(n=nx, a=1, x=subdiag, incx=1, y=diag, incy=1)
         return diag
 
-    def likeliest_order(self, state: np.array, met: bool):
+    def likeliest_order(self, state: np.array, tau: int):
         restr_diag = self.get_restr_diag(state=state)
         log_theta = self.log_theta[state.astype(bool)][:, state.astype(bool)]
-        tau = self.tau1 if not met else self.tau2
+        if tau not in [1, 2]:
+            raise ValueError("tau must be either 1 or 2.")
+        tau = self.tau1 if tau == 1 else self.tau2
 
         k = state.sum()
         # {state: highest path probability to this state}
@@ -117,16 +119,18 @@ class MetMHN:
         i = (1 << k) - 1
         return (A[i], np.arange(self.log_theta.shape[0])[state.astype(bool)][B[i]])
 
-    def m_likeliest_orders(self, state: np.array, met: bool, m: int):
+    def m_likeliest_orders(self, state: np.array, tau: int, m: int):
 
         restr_diag = self.get_restr_diag(state=state)
         log_theta = self.log_theta[state.astype(bool)][:, state.astype(bool)]
-        tau = self.tau1 if not met else self.tau2
+        if tau not in [1, 2]:
+            raise ValueError("tau must be either 1 or 2.")
+        tau = self.tau1 if tau == 1 else self.tau2
 
         k = state.sum()
 
         if k <= 1:
-            return self.likeliest_order(state=state, met=met)
+            return self.likeliest_order(state=state, tau=tau)
 
         # {state: highest path probability to this state}
         A = {0: np.array(tau / (tau - restr_diag[0]))}
