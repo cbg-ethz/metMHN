@@ -29,6 +29,7 @@ def kronvec_sync_jit(theta_i: jnp.array,
         p = vmap(lambda ti, p: ti*p, (None, 0), 1)(theta_slice, p)
         p = p.ravel()#flatten(order = "F")
         return p
+        
     return lax.fori_loop(start, stop, loop_body, p)
 
 
