@@ -192,7 +192,6 @@ def k4d11tt(p: jnp.array, theta: float) -> jnp.array:
     return p.flatten(order="F")
 
 
-#@partial(jit, static_argnames=["diag", "transpose"])
 def _kronvec_sync(
     log_theta: jnp.array,
     p: jnp.array,

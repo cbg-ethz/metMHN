@@ -3,7 +3,9 @@ import numpy as np
 import jax.numpy as jnp
 import pandas as pd
 import regularized_optimization as reg_opt
-import scipy.optimize as opt 
+import scipy.optimize as opt
+import matplotlib.pyplot as plt
+import logging
 
 def state_space(n: int) -> np.array:
     """
@@ -435,8 +437,12 @@ def cross_val(dat: pd.DataFrame, splits: jnp.array, nfolds: int, start_params: j
     ndat = dat.shape[0]
     dat = dat.reset_index()
     shuffled = dat.sample(frac=1)
-    runs = np.zeros((nfolds, splits.shape[0]))
+    runs_normal = np.zeros((nfolds, splits.shape[0]))
+    runs_constrained = np.zeros((nfolds, splits.shape[0]))
     batch_size = np.ceil(ndat/nfolds)
+    
+    logging.info(f"Crossvalidation started")
+    print(f"Crossvalidation started")
     for i in range(nfolds):
         start = batch_size*i
         stop = np.min((batch_size*(i+1), ndat))
@@ -451,15 +457,40 @@ def cross_val(dat: pd.DataFrame, splits: jnp.array, nfolds: int, start_params: j
         test = test.set_index(["paired", "metaStatus"])
         test_prim_only, test_met_only, test_prim_met, test_coupled = split_data(test)
         for j in range(splits.size):
-            x = opt.minimize(reg_opt.value_grad, x0 = start_params, args = (train_prim_only, train_coupled, train_prim_met, train_met_only, n-1, splits[j], m_p_corr), 
-                method = "L-BFGS-B", jac = True, options={"maxiter":10000, "disp":True, "ftol":1e-04})
-            runs[i,j] = reg_opt.value_grad(x.x, test_prim_only, test_coupled, test_prim_met, test_met_only, n-1, splits[j], m_p_corr)[0]
-            print("split ", j, " fold: ", i)
-    res = runs.sum(axis=1)
-    return splits[np.argmax(res)]
+            mhn_diag_con = opt.minimize(reg_opt.value_grad, x0 = start_params,#
+                             args = (train_prim_only, train_coupled, train_prim_met, train_met_only, n-1,#
+                                     splits[j], splits[j], m_p_corr), method = "L-BFGS-B", jac = True,#
+                             options={"maxiter":10000, "disp":False, "ftol":1e-04})
 
-
-
+            
+            runs_constrained[i,j] = reg_opt.value_grad(mhn_diag_con.x, test_prim_only, test_coupled, test_prim_met,#
+                                                       test_met_only, n-1, 0., 0., m_p_corr)[0]
+            
+            logging.info(f"Diag constrained, Split: {splits[j]}, Fold: {i}, Score: {runs_constrained[i,j]}")
+            print(f"Diag constrained, Split: {splits[j]}, Fold: {i}, Score: {runs_constrained[i,j]}")
+            mhn_no_con = opt.minimize(reg_opt.value_grad, x0 = start_params,#
+                             args = (train_prim_only, train_coupled, train_prim_met, train_met_only, n-1,#
+                                     splits[j], 0, m_p_corr), method = "L-BFGS-B", jac = True,#
+                             options={"maxiter":10000, "disp":False, "ftol":1e-04})
+            
+            runs_normal[i,j] = reg_opt.value_grad(mhn_no_con.x, test_prim_only, test_coupled, test_prim_met,#
+                                                  test_met_only, n-1, 0, 0, m_p_corr)[0]
+            
+            logging.info(f"Diag unconstrained, Split: {splits[j]}, Fold: {i}, Score: {runs_normal[i,j]}")
+            print(f"Diag unconstrained, Split: {splits[j]}, Fold: {i}, Score: {runs_normal[i,j]}")
+    diag_penal_scores = runs_constrained.mean(axis=1)
+    best_diag_score = np.min(diag_penal_scores)
+    best_diag_penal = splits[np.argmin(diag_penal_scores)]
+    
+    normal_penal_scores = runs_normal.mean(axis=1)
+    best_normal_score = np.min(normal_penal_scores)
+    best_normal_penal = splits[np.argmin(normal_penal_scores)]
+    
+    logging.info(f"Crossvalidation finished")
+    logging.info(f"Highest likelihood score: {best_diag_score} (Diag penalized), {best_normal_score} (Default penalization)")
+    logging.info(f"Best Lambda: {best_diag_penal} (Diag penalized), {best_normal_penal} (Default penalization)")
+    
+    return best_diag_penal, best_normal_penal
 
 def indep(dat_singles, dat_coupled) -> jnp.array:
     n = (dat_singles.shape[1] - 1)//2
@@ -476,3 +507,37 @@ def indep(dat_singles, dat_coupled) -> jnp.array:
     perc = jnp.sum(dat_singles.at[:,-1].get()) + n_coupled
     theta = theta.at[n,n].set(jnp.log(perc/(n_coupled + n_singles - perc + 1e-10)))
     return theta
+
+
+def plot_theta(theta_in:pd.DataFrame, alpha: float):
+    theta = theta_in.copy()
+    events = theta.columns
+    n = theta.shape[0]
+    
+    theta[(theta.round(2) == 0) | (theta.round(2) == -0)] = np.nan
+    theta_diag = np.diag(theta.copy()).reshape((-1,1))
+    theta[theta.abs() <= alpha] = np.nan
+    np.fill_diagonal(theta.values, np.nan)
+
+    plt.style.use("ggplot")
+    f, (ax, ax2) = plt.subplots(1, 2, figsize=(19,15), gridspec_kw={'width_ratios': [6, 1]})
+    f.tight_layout()
+    ax.matshow(theta[theta<0], cmap="Blues_r")
+    ax.matshow(theta[theta>0], cmap="Reds")
+    ax2.matshow(theta_diag, cmap="coolwarm")
+    ax.set_xticks(range(theta.shape[1]), events, fontsize=14, rotation=90)
+    ax.set_yticks(range(theta.shape[1]), events, fontsize=14)
+    ax2.set_yticks(range(theta.shape[1]), events, fontsize=14)
+    ax2.yaxis.tick_right()
+    ax2.yaxis.set_label_position("right")
+    ax2.set_xticks([])
+
+    for i in range(n):
+        for j in range(n):
+            if np.isnan(theta.iloc[i,j]) == False:
+                c = np.round(theta.iloc[i,j].round(2), 2)
+            else:
+                c = ""
+            ax.text(j, i, str(c), va='center', ha='center')
+        ax2.text(0, i, np.round(theta_diag[i,0],3), va='center', ha='center')
+    return (ax, ax2)

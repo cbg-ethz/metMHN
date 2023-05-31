@@ -10,6 +10,7 @@ def L1(theta: np.array, eps: float = 1e-05) -> float:
     """
     theta_ = theta.copy()
     theta_[np.diag_indices(theta.shape[0])] = 0.
+    #theta_[:, -1] = 0.
     return np.sum(np.sqrt(theta_**2 + eps))
 
 
@@ -19,18 +20,20 @@ def L1_(theta: np.ndarray, eps: float = 1e-05) -> jnp.ndarray:
     """
     theta_ = theta.copy()
     theta_[np.diag_indices(theta.shape[0])] = 0.
+    #theta_[:, -1] = 0.
     return np.append(theta_ / np.sqrt(theta_**2 + eps), [0., 0.]).flatten()
 
-def L2(theta: np.array) -> np.array:
-    diag = np.diagonal(theta.copy())
-    return np.sum((diag+5)**2)
+
+def L2(th_in: np.array, lam1: np.array) -> np.array:
+    th_diag = np.diagonal(th_in).copy()
+    ret = np.exp(2 * th_diag)
+    return np.sum(ret)
 
 
-def L2_(theta: np.array) -> np.array:
-    th_diag = np.diagonal(theta.copy()) +  5
-    diag_mat = np.diag(th_diag)
-    return np.append(2 * diag_mat.flatten(), [0., 0.])
-   
+def L2_(th_in: np.array, lam1: np.array) -> np.array:
+    th_diag = np.diagonal(th_in).copy()
+    theta_ = 2 * np.exp(2 * th_diag)
+    return np.append(np.diag(theta_).flatten(), [0., 0.])
 
 def lp_prim_only(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, n: int) -> jnp.array:
     """Calculates the marginal likelihood of observing an unpaired primary tumor at t_1
@@ -266,21 +269,22 @@ def value_grad(params: np.array, dat_prim_only: jnp.array, dat_coupled: jnp.arra
     n_coupled = jnp.max(jnp.array([1., dat_coupled.shape[0]]))
     n_prim_met = jnp.max(jnp.array([1., dat_prim_met.shape[0]]))
     n_met_only = jnp.max(jnp.array([1., dat_met_only.shape[0]]))
-    
+    n_met = n_coupled + n_prim_met + n_met_only
     log_theta = params[0:-2].reshape((n+1, n+1))
+       
+    # Penalties and their derivatives
     l1 = L1(log_theta)
     l1_ = L1_(log_theta)
-
-    l2 = L2(log_theta)
-    l2_ = L2_(log_theta)
-
-    if perc_met == None:
-        perc_met = 1 - n_prim_only/(n_prim_only + n_met)
+    l2 = L2(log_theta, params[-2])
+    l2_ = L2_(log_theta, params[-2])
 
     # Transfer theta to the device
     log_theta = jnp.array(log_theta)
     lam1 = jnp.exp(params[-2])
     lam2 = jnp.exp(params[-1])
+
+    if perc_met == None:
+        perc_met = 1 - n_prim_only/(n_prim_only + n_met)
 
     score_prim, g_prim = grad_prim_only(log_theta, dat_prim_only, lam1, n)
     score_coupled, g_coupled = grad_coupled(log_theta, dat_coupled, lam1, lam2, n)
