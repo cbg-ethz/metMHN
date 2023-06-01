@@ -5,7 +5,7 @@ import numpy as np
 # in the tracing process of jax.
 
 
-def small_Q(log_theta: np.array) -> np.array():
+def small_Q(log_theta: np.array) -> np.array:
 
     return np.array(
         [
