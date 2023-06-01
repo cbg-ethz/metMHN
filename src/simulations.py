@@ -248,8 +248,8 @@ def simulate_dat(
 
 def p_mut_pre_seed(theta_in, n_dat, lam1, lam2, rng):
     n = theta_in.shape[0]
-    pre_seeded_muts = np.zeros(n)
-    total_muts = np.zeros(n)
+    pre_seeded_muts = np.zeros(n-1)
+    total_muts = np.zeros(n-1)
 
     theta = theta_in.copy()
     b_rates = np.diag(theta_in)
@@ -258,13 +258,37 @@ def p_mut_pre_seed(theta_in, n_dat, lam1, lam2, rng):
     th_prim[0:-1, -1] = 0.0
     i = 0
     while i < n_dat:
-        datum, age, psp, full_prim, full_met = sample_metmhn(
-            theta, th_prim, b_rates, lam1, lam2, n, rng)
+        datum, age, psp, full_prim, full_met = sample_metmhn(theta, th_prim, b_rates, lam1, lam2, n, rng)
         if datum[-1] == 1:
-            pre_seeded_muts += psp
-            total_muts += datum[::2]
+            both =(datum[:-1:2]+datum[1::2]==2)
+            pre_seeded_muts += psp[:-1] * both
+            total_muts += both
             i += 1
-    return pre_seeded_muts/total_muts
+    return pre_seeded_muts, total_muts 
+
+
+
+def p_mut_pre_seed_2(theta_in, n_dat, lam1, lam2, rng):
+    n = theta_in.shape[0]
+    pre_seeded_muts = np.zeros(n-1)
+    total_muts_prim = np.zeros(n-1)
+    total_muts_met = np.zeros(n-1)
+
+    theta = theta_in.copy()
+    b_rates = np.diag(theta_in)
+    theta[np.diag_indices(n)] = 0.0
+    th_prim = theta.copy()
+    th_prim[0:-1, -1] = 0.0
+    i = 0
+    while i < n_dat:
+        datum, age, psp, full_prim, full_met = sample_metmhn(theta, th_prim, b_rates, lam1, lam2, n, rng)
+        if datum[-1] == 1:
+            pre_seeded_muts += psp[:-1]
+            total_muts_prim += datum[:-1:2]
+            total_muts_met +=  datum[1::2]
+            i += 1
+             
+    return pre_seeded_muts, total_muts_prim, total_muts_met
 
 
 def p_full_orders(theta_in, n_dat, lam1, lam2, rng):

@@ -2,7 +2,7 @@ import numpy as np
 from explicit_statetespace import *
 
 
-def kronvec_sync(theta: np.array, p: np.array, i: int, n: int, diag: bool = True, transp: bool = False) -> np.array:
+def kronvec_sync(theta: np.array, p: np.array, i: int, n: int, diag: bool = True, transpose: bool = False) -> np.array:
     """
     This function computes the synchroneous part of Q*p implicitly
     Args:
@@ -12,7 +12,6 @@ def kronvec_sync(theta: np.array, p: np.array, i: int, n: int, diag: bool = True
           n (int): number of genomic events
           diag (bool): Flag indicating wether to build the diagonal
           transp (bool): indicates wether to transpose Qp or not
-
     Returns:
           np.array: Q_sync p
     """
@@ -27,7 +26,7 @@ def kronvec_sync(theta: np.array, p: np.array, i: int, n: int, diag: bool = True
     # Non diagonal 4x4 Kronecker factors j=i
     p = p.reshape((2**(2*n-1), 4), order="C")
     p[:, (1, 2)] = 0
-    if not transp:
+    if not transpose:
         p[:, 3] = theta_i[i] * p[:, 0]
         if diag:
             p[:, 0] = -p[:, 3]
@@ -56,7 +55,7 @@ def kronvec_sync(theta: np.array, p: np.array, i: int, n: int, diag: bool = True
     return p
 
 
-def kronvec_met(theta: np.array, p: np.array, i: int, n: int, diag: bool = True, transp: bool = False) -> np.array:
+def kronvec_met(theta: np.array, p: np.array, i: int, n: int, diag: bool = True, transpose: bool = False) -> np.array:
     """
     This function computes asynchroneous part of metastatic transitions of Q*p implicitly
     Args:
@@ -79,7 +78,7 @@ def kronvec_met(theta: np.array, p: np.array, i: int, n: int, diag: bool = True,
 
     # Non diagonal 4x4 Kronecker factors j=i
     p = p.reshape((2**(2*n-1), 4), order="C")
-    if not transp:
+    if not transpose:
         p[:, 2] = theta_i[i] * p[:, 0]
         p[:, 3] = theta_i[i] * p[:, 1]
         if diag:
@@ -114,7 +113,7 @@ def kronvec_met(theta: np.array, p: np.array, i: int, n: int, diag: bool = True,
     return p
 
 
-def kronvec_prim(theta: np.array, p: np.array, i: int, n: int, diag: bool = True, transp: bool = False) -> np.array:
+def kronvec_prim(theta: np.array, p: np.array, i: int, n: int, diag: bool = True, transpose: bool = False) -> np.array:
     """
     This function computes asynchroneous part of primary transitions of Q*p implicitly
     Args:
@@ -137,7 +136,7 @@ def kronvec_prim(theta: np.array, p: np.array, i: int, n: int, diag: bool = True
 
     # Non diagonal 4x4 Kronecker factors j=i
     p = p.reshape((2**(2*n-1), 4), order="C")
-    if not transp:
+    if not transpose:
         p[:, 1] = theta_i[i] * p[:, 0]
         p[:, 3] = theta_i[i] * p[:, 2]
         if diag:
@@ -170,7 +169,7 @@ def kronvec_prim(theta: np.array, p: np.array, i: int, n: int, diag: bool = True
     return p
 
 
-def kronvec_seed(theta: np.array, p: np.array, n: int, diag: bool = True, transp: bool = False) -> np.array:
+def kronvec_seed(theta: np.array, p: np.array, n: int, diag: bool = True, transpose: bool = False) -> np.array:
     """
     This function computes the seeding part of metastatic transitions of Q*p implicitly
     Args:
@@ -192,7 +191,7 @@ def kronvec_seed(theta: np.array, p: np.array, n: int, diag: bool = True, transp
 
     # Non diagonal 2x2 Kronecker factor for j=n
     p = p.reshape((2 ** (2 * n), 2), order="C")
-    if not transp:
+    if not transpose:
         p[:, 1] = theta_n[n] * p[:, 0]
         if diag:
             p[:, 0] = -p[:, 1]
@@ -209,7 +208,7 @@ def kronvec_seed(theta: np.array, p: np.array, n: int, diag: bool = True, transp
     return p
 
 
-def qvec(log_theta: np.array, p: np.array, diag: bool, transp: bool=False) -> np.array:
+def qvec(log_theta: np.array, p: np.array, diag: bool, transpose: bool=False) -> np.array:
     """
     This function computes Q*p implicitly
     Args:
@@ -223,10 +222,10 @@ def qvec(log_theta: np.array, p: np.array, diag: bool, transp: bool=False) -> np
     n = log_theta.shape[0] - 1
     tmp = np.zeros(p.shape[0], dtype=float)
     for i in range(n):
-        tmp += kronvec_sync(log_theta, p.copy(), i, n, diag=diag, transp=transp) +\
-              kronvec_prim(log_theta, p.copy(), i, n, diag=diag, transp=transp) + \
-              kronvec_met(log_theta, p.copy(), i, n, diag=diag, transp=transp)
-    tmp += kronvec_seed(log_theta, p, n, diag=diag, transp=transp)
+        tmp += kronvec_sync(log_theta, p.copy(), i, n, diag=diag, transpose=transpose) +\
+              kronvec_prim(log_theta, p.copy(), i, n, diag=diag, transpose=transpose) + \
+              kronvec_met(log_theta, p.copy(), i, n, diag=diag, transpose=transpose)
+    tmp += kronvec_seed(log_theta, p, n, diag=diag, transpose=transpose)
     return tmp
 
 def dkronvec_sync(theta: np.array, p: np.array, i: int, n: int, k: int, diag: bool = True, transp: bool = False) -> np.array:
@@ -239,7 +238,6 @@ def dkronvec_sync(theta: np.array, p: np.array, i: int, n: int, k: int, diag: bo
           n (int): number of genomic events
           diag (bool): Flag indicating wether to build the diagonal
           transp (bool): indicates wether to transpose Qp or not
-
     Returns:
           np.array: Q_sync p
     """
@@ -480,7 +478,6 @@ def kronvec_sync_diag(theta: np.array, p: np.array, i: int, n: int) -> np.array:
           p (np.array): state vector
           i (int): index of the current summand
           n (int): number of genomic events
-
     Returns:
           np.array: diag(Q_sync) p
     """
@@ -520,7 +517,6 @@ def kronvec_met_diag(theta: np.array, p: np.array, i: int, n: int) -> np.array:
           p (np.array): state vector
           i (int): index of the current summand
           n (int): number of genomic events
-
     Returns:
           np.array: diag(Q_met) p
     """
@@ -562,7 +558,6 @@ def kronvec_prim_diag(theta: np.array, p: np.array, i: int, n: int) -> np.array:
           p (np.array): state vector
           i (int): index of the current summand
           n (int): number of genomic events
-
     Returns:
           np.array: diag(Q_prim) p
     """
@@ -602,7 +597,6 @@ def kronvec_seed_diag(theta: np.array, p: np.array, n: int) -> np.array:
           theta (np.array): Logarithmic theta matrix
           p (np.array): state vector
           n (int): number of genomic events
-
     Returns:
           np.array: diag(Q_seed) p
     """
@@ -627,7 +621,6 @@ def diag_q(log_theta: np.array) -> np.array:
     This function computes diag(Q) implicitly
     Args:
           log_theta (np.array): Logarithmic theta matrix
-
     Returns:
           np.array: diag(Q)
     """
@@ -663,7 +656,7 @@ def diag_diagnosis(n: int) -> np.array:
     return p
 
 
-def q_partialQ_pth(log_theta: np.array, q: np.array, pTh: np.array, n: int) -> np.array:
+def q_partialQ_pth(log_theta: np.array, q: np.array, p_th: np.array, n: int) -> np.array:
     """
     calculates q \partial Q \partial theta_ij p for all i,j
     Args:
@@ -671,15 +664,14 @@ def q_partialQ_pth(log_theta: np.array, q: np.array, pTh: np.array, n: int) -> n
         q (np.array): vector multiplied from the left to partial Q partial theta
         pTh (np.array): vector multiplied from the right to partial Q partial theta
         n (int): number of mutations
-
     Returns:
         np.array: g
     """
     g = np.zeros_like(log_theta)
     for i in range(n):
-        z_sync = q * kronvec_sync(log_theta, pTh.copy(), i, n)
-        z_prim = q * kronvec_prim(log_theta, pTh.copy(), i, n)
-        z_met = q * kronvec_met(log_theta, pTh.copy(), i, n)
+        z_sync = q * kronvec_sync(log_theta, p_th.copy(), i, n)
+        z_prim = q * kronvec_prim(log_theta, p_th.copy(), i, n)
+        z_met = q * kronvec_met(log_theta, p_th.copy(), i, n)
         for j in range(n):
             z_sync = z_sync.reshape((2**(2*n-1), 4), order="C")
             z_prim = z_prim.reshape((2**(2*n-1), 4), order="C")
@@ -696,7 +688,7 @@ def q_partialQ_pth(log_theta: np.array, q: np.array, pTh: np.array, n: int) -> n
             z_met = z_met.flatten(order="F")
         g[i, n] = np.sum(z_met)
 
-    z_seed = q * kronvec_seed(log_theta, pTh.copy(), n)
+    z_seed = q * kronvec_seed(log_theta, p_th.copy(), n)
     g[n, n] = np.sum(z_seed)
     for j in range(n):
         z_seed = z_seed.reshape((2**(2*n-1), 4), order="C")

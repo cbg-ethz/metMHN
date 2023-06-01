@@ -113,12 +113,12 @@ def R_i_jacobian_vec(log_theta: np.array, x: np.array, lam: float,  state: np.ar
         log_theta (np.array): Log values of the theta matrix
         x (np.array): Vector to multiply with from the right. Length must equal the number of
         nonzero entries in the state vector.
-        lam (float): Value of \lambda_i
+        lam (float): Value of \lambda
         state (np.array): Binary state vector, representing the current sample's events.
 
 
     Returns:
-        np.array: R_i^{-1} x
+        np.array: R^{-1} x
     """
     n = log_theta.shape[0] - 1
 
