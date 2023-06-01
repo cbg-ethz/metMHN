@@ -50,7 +50,17 @@ class MetMHN:
         self.tau1 = tau1
         self.tau2 = tau2
 
-    def get_restr_diag(self, state: np.array):
+    def get_restr_diag_unpaired(self, state: np.array) -> np.array:
+        """This returns the diagonal of the restricted rate matrix of the metMHN's Markov chain.
+
+        Args:
+            state (np.array): Binary unpaired state vector, dtype must be int32. This is the vector according
+            to which state space restriction will be performed. Shape (n,) with n the number of events including
+            seeding.
+
+        Returns:
+            np.array: Diagonal of the restricted rate matrix. Shape (2^k,) with k the number of 1s in state.
+        """
         k = state.sum()
         nx = 1 << k
         n = self.log_theta.shape[0]
@@ -86,8 +96,21 @@ class MetMHN:
             daxpy(n=nx, a=1, x=subdiag, incx=1, y=diag, incy=1)
         return diag
 
-    def likeliest_order(self, state: np.array, tau: int):
-        restr_diag = self.get_restr_diag(state=state)
+    def likeliest_order(self, state: np.array, tau: int) -> tuple[float, np.array]:
+        """For a given state, this returns the order in which the events were most likely to accumulate.
+        So far, this only works for an unpaired state which was observed at a timepoint that is an
+        exponentially distributed random variable with rate tau1 or tau2. 
+
+        Args:
+            state (np.array): Binary unpaired state vector. Shape (n,) with n the number of events including
+            seeding.
+            tau (int): Which rate parameter to use, tau1 or tau2. Must be either 1 or 2.
+
+        Returns:
+            float: likelihood of the order.
+            np.array likeliest order.
+        """
+        restr_diag = self.get_restr_diag_unpaired(state=state)
         log_theta = self.log_theta[state.astype(bool)][:, state.astype(bool)]
         if tau not in [1, 2]:
             raise ValueError("tau must be either 1 or 2.")
@@ -119,9 +142,22 @@ class MetMHN:
         i = (1 << k) - 1
         return (A[i], np.arange(self.log_theta.shape[0])[state.astype(bool)][B[i]])
 
-    def m_likeliest_orders(self, state: np.array, tau: int, m: int):
+    def m_likeliest_orders(self, state: np.array, tau: int, m: int) -> tuple[np.array, np.array]:
+        """For a given state, this returns the m orders in which the events were most likely to accumulate.
+        So far, this only works for an unpaired state which was observed at a timepoint that is an
+        exponentially distributed random variable with rate tau1 or tau2. 
 
-        restr_diag = self.get_restr_diag(state=state)
+        Args:
+            state (np.array): Binary unpaired state vector. Shape (n,) with n the number of events including
+            seeding.
+            tau (int): Which rate parameter to use, tau1 or tau2. Must be either 1 or 2.
+            m (int): Number of orders to compute the likelihoods for.
+
+        Returns:
+            np.array(float): likelihoods of the m likeliest orders.
+            np.array: m likeliest orders.
+        """
+        restr_diag = self.get_restr_diag_unpaired(state=state)
         log_theta = self.log_theta[state.astype(bool)][:, state.astype(bool)]
         if tau not in [1, 2]:
             raise ValueError("tau must be either 1 or 2.")
@@ -161,15 +197,27 @@ class MetMHN:
         i = (1 << k) - 1
         return (A[i], (np.arange(self.log_theta.shape[0])[state.astype(bool)])[B[i].flatten()].reshape(-1, k))
 
-    def simulate(self, met: bool):
+    def simulate(self, timepoint: int) -> tuple[np.array, float]:
+        """This function simulates one sample according to the metMHN.
 
+        Args:
+            timepoint (int): At which timepoint to stop the simulation, t_1 or t_2. Must be either 1 or 2.
+
+        Returns:
+            np.array: Binary state of the sample.
+            float: timepoint of observation. 
+        """
         n = self.log_theta.shape[0]
         events = np.arange(n, dtype=int)
         state = np.zeros(n, dtype=int)
         order = list()
-        tau = self.tau1 if not met else self.tau2
-        t_obs = np.random.exponential(1 / tau)
-        t = np.random.exponential(-1/self.get_restr_diag(state=state)[-1])
+        if timepoint not in [1, 2]:
+            raise ValueError("tau must be either 1 or 2.")
+        t_obs = np.random.exponential(1 / self.tau1)
+        if timepoint == 2:
+            t_obs += np.random.exponential(1 / self.tau2)
+        t = np.random.exponential(-1 /
+                                  self.get_restr_diag_unpaired(state=state)[-1])
         while t < t_obs:
             probs = [np.exp(self.log_theta[e, events[state.astype(bool)]].sum(
             ) + self.log_theta[e, e]) for e in events[~state.astype(bool)]]
@@ -180,7 +228,8 @@ class MetMHN:
             order.append(e)
             if state.sum() == n:
                 break
-            t += np.random.exponential(-1/self.get_restr_diag(state=state)[-1])
+            t += np.random.exponential(-1 /
+                                       self.get_restr_diag_unpaired(state=state)[-1])
         return order, t_obs
 
     def history_tree(self, orders) -> nx.Graph:
