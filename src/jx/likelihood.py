@@ -1,11 +1,11 @@
 import numpy as np
 
-from kronvec import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed, kronvec, kron_diag, obs_states
-import Utilityfunctions as utils
+from .kronvec import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed, kronvec, kron_diag, obs_states
+from .. import Utilityfunctions as utils
 import jax.numpy as jnp
 from jax import jit, lax, vmap
 from functools import partial
-import jx.vanilla as mhn
+from . import vanilla as mhn
 
 
 def f1(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, jnp.array, float]:

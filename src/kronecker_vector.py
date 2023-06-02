@@ -1,5 +1,5 @@
 import numpy as np
-from explicit_statetespace import *
+from .explicit_statetespace import *
 
 
 def kronvec_sync(theta: np.array, p: np.array, i: int, n: int, diag: bool = True, transpose: bool = False) -> np.array:
