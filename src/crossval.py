@@ -10,7 +10,7 @@ import jax.numpy as jnp
 import numpy as np
 import jax as jax
 import matplotlib.pyplot as plt
-import ssr_likelihood_jax as lik
+import jx.likelihood as lik
 jax.config.update("jax_enable_x64", True)
 
 #mut_handle = "../data/paad/G12_PAADPANET_PM_z10_EventsAEP.csv"

@@ -1,6 +1,6 @@
-import ssr_kronvec_jax as ssr_kv_jx
-import ssr_likelihood as ssr
-import vanilla
+import jx.kronvec as ssr_kv_jx
+import np.likelihood as ssr
+import jx.vanilla as vanilla
 import Utilityfunctions as utils
 import numpy as np
 import unittest

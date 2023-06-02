@@ -1,7 +1,7 @@
-import ssr_kronecker_vector as ssr_kv
-import ssr_kronvec_jax as ssr_kv_jx
-import ssr_likelihood_jax as ssr_jx
-import ssr_likelihood as ssr
+import np.kronvec as ssr_kv
+import jx.kronvec as ssr_kv_jx
+import np.likelihood as ssr
+import jx.likelihood as ssr_jx
 import Utilityfunctions as utils
 import numpy as np
 import unittest

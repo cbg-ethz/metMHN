@@ -1,6 +1,6 @@
 import numpy as np
 
-from ssr_kronecker_vector import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed, kronvec, kron_diag
+from kronvec import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed, kronvec, kron_diag
 import Utilityfunctions as utils
 
 
