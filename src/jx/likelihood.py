@@ -271,9 +271,9 @@ def _lp_prim_obs(log_theta: jnp.array, lam1: jnp.array, state: jnp.array, p0: jn
     Returns:
         jnp.array: log(P(state))
     """
-    log_theta_2 = log_theta.copy()
-    log_theta_2 = log_theta.at[0:-1, -1].set(0.0)
-    pTh = lam1 * mhn.R_inv_vec(log_theta_2, p0, lam1,  state, False)
+    log_theta_pt = log_theta.copy()
+    log_theta_pt = log_theta.at[0:-1, -1].set(0.0)   # set all influences from seeding to 0 as it does not affect the pt
+    pTh = lam1 * mhn.R_inv_vec(log_theta_pt, p0, lam1,  state, False)
     return jnp.log(pTh.at[-1].get())
 
 @jit
