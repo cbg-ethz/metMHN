@@ -1,2 +1,7 @@
 __pycache__
 src/crossval.log
+
+# package installation
+build
+dist
+MetaMHN.egg-info
