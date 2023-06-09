@@ -1,8 +1,8 @@
 import jax.numpy as jnp
 import numpy as np
-from .jx import likelihood as ssr
-from .jx import vanilla as mhn
-from .jx.kronvec import obs_states
+from jx import likelihood as ssr
+from jx import vanilla as mhn
+from jx.kronvec import obs_states
 
 def L1(theta: np.array, eps: float = 1e-05) -> float:
     """

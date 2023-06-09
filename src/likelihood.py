@@ -1,6 +1,6 @@
-from . import kronecker_vector as fss
+import kronecker_vector as fss
 import numpy as np
-from . import Utilityfunctions as utils
+import Utilityfunctions as utils
 
 def jacobi(log_theta: np.array, b: np.array, lam: float, transpose: bool = False, x_inp: np.array = None) -> np.array:
     """

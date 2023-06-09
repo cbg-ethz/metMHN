@@ -2,7 +2,7 @@ from itertools import compress, chain, combinations
 import numpy as np
 import jax.numpy as jnp
 import pandas as pd
-from . import regularized_optimization as reg_opt
+import regularized_optimization as reg_opt
 import scipy.optimize as opt
 import matplotlib.pyplot as plt
 import logging
