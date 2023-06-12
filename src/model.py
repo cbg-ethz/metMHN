@@ -7,7 +7,8 @@ import itertools
 
 class bits_fixed_n:
     """
-    Iterator over integers whose binary representation has a fixed number of 1s, in lexicographical order
+    Iterator over integers whose binary representation has a fixed number of 1s, in lexicographical order.
+    From https://graphics.stanford.edu/~seander/bithacks.html#NextBitPermutation
 
     :param n: How many 1s there should be
     :param k: How many bits the integer should have
