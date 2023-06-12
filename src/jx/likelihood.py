@@ -209,7 +209,7 @@ def R_i_inv_vec(log_theta: jnp.array, x: jnp.array, lam: jnp.array,  state: jnp.
 
     Args:
         log_theta (np.array): Log values of the theta matrix
-        x (np.array): Vector to multiply with from the right. Length must equal the number of
+        x (np.array): Vector to multiply with from the right. Length must equal the 2 to the number of
         nonzero entries in the state vector.
         lam (jnp.array): Rate \lambda_i of i-th sampling
         state (jnp.array): Binary state vector, representing the current sample's events.
