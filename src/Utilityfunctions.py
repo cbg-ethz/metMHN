@@ -6,6 +6,7 @@ import regularized_optimization as reg_opt
 import scipy.optimize as opt
 import matplotlib.pyplot as plt
 import logging
+import vanilla as mhn
 
 def state_space(n: int) -> np.array:
     """
@@ -511,6 +512,8 @@ def indep(dat_singles, dat_coupled) -> jnp.array:
         if perc == 0:
             theta = theta.at[i,i].set(-1e10)
         else:
+            print(perc, n_coupled, n_singles)
+            print(n_coupled, n_singles)
             theta = theta.at[i,i].set(jnp.log(perc/(2 * n_coupled + n_singles - perc + 1e-10)))
     perc = jnp.sum(dat_singles.at[:,-1].get()) + n_coupled
     theta = theta.at[n,n].set(jnp.log(perc/(n_coupled + n_singles - perc + 1e-10)))
@@ -549,3 +552,25 @@ def plot_theta(theta_in:pd.DataFrame, alpha: float):
             ax.text(j, i, str(c), va='center', ha='center')
         ax2.text(0, i, np.round(theta_diag[i,0],3), va='center', ha='center')
     return (ax, ax2)
+
+
+def p_unobs_seeding(log_theta: jnp.array, lam1: jnp.array,  dat_obs: jnp.array) -> jnp.array:
+    """
+        Returns the probability that tumor dat_obs has spawned an unobserved metastasis
+
+    Args:
+        log_theta (jnp.array): matrix of logarithmic entries of theta
+        lam1 (jnp.arry): Rate of first sampling (non logarithmic)
+        dat_obs (jnp.array): Primary tumor genotype as bitstring
+
+    Returns:
+        jnp.array: _description_
+    """
+    dat_mod = dat_obs.at[-1].set(1)
+    m =  dat_mod.sum()
+    p0 = jnp.zeros(2**m)
+    p0 = p0.at[0].set(1.0)
+    pth = lam1 * mhn.R_inv_vec(log_theta, p0, lam1,  dat_mod, False)
+    probs = pth.reshape((-1, 2), order="F").at[-1,:].get()
+    print(probs)
+    return probs.at[0].get() / probs.sum()

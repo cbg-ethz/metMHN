@@ -366,50 +366,71 @@ def _grad_prim_obs(log_theta: jnp.array, state: jnp.array, p0: jnp.array, lam1: 
     dth = dth.at[:-1, -1].set(0.0)  # Derivative of constant is 0.
     return score, dth, dlam1 * lam1
 
-@jit
-def _g_coupled(log_theta: jnp.array, state: jnp.array, g3_lhs: jnp.array, obs_inds: jnp.array, pTh1: jnp.array, 
-                nk: jnp.array, lam1: jnp.array) -> tuple:
-    """Calculates the first, third and fourth summand of the gradient of pTh for a single prim-met pair
+@partial(jit, static_argnames=["n_prim", "n_met"])
+def _g_coupled(log_theta: jnp.array, theta_prim: jnp.array, state_joint: jnp.array, n_prim: int, n_met: int, lam1: jnp.array, lam2: jnp.array) -> tuple:
+    """Calculates the likelihood and gradient for a datapoint state_joint
 
     Args:
         log_theta (jnp.array): theta matrix with logarithmic entries
-        state (jnp.array): bitstring, genotypes of coupled sequencing data
-        g3_lhs (jnp.array): lhs vector needed for calculating the third summand
-        obs_inds (jnp.array): vector of observed states
-        pTh1 (jnp.array): time marginal probility distribution at the point of first sampling
-        nk (jnp.array): total probability mass assigned to observed states
-        lam1 (jnp.array): Rate \lambda_1 of first sampling
+        state_joint (jnp.array): bitstring, genotypes of coupled sequencing data
+        n_prim (int): number of events, that occured in the primary tumor
+        n_met (int): number of events, that occured in the metastasis
+        lam1 (jnp.array): Rate \lambda_1 of the first sampling
+        lam2 (jnp.array): Rate \lambda_2 of the second sampling
 
     Returns:
-        tuple 
+        tuple: score, grad wrt. to theta, grad wrt. lam_1
     """
-    #obs_inds_t = obs_inds.at[0:obs_inds.shape[0]//2].set(0)
-    q = jnp.where(obs_inds == 1, 1/nk, 0.0)
+    prim = state_joint.at[0::2].get()
+    met = jnp.append(state_joint.at[1::2].get(), 1)
+    p0 = jnp.zeros(2**(n_prim + n_met - 1))
+    p0 = p0.at[0].set(1.)
     
-    # gradient of first summand of the likelihood score
-    q = R_i_inv_vec(log_theta, q, lam1, state, transpose = True)
-    g_1 = x_partial_Q_y(log_theta, q, pTh1, state)
+    # Joint and met-marginal distribution at first sampling
+    pTh1_joint = lam1 * R_i_inv_vec(log_theta, p0, lam1, state_joint, transpose = False)
+    p0 = jnp.zeros(2**n_prim)
+    p0 = p0.at[0].set(1.)
+    g_1, pTh1_marg = mhn.gradient(theta_prim, lam1, prim, p0)
+    nk = pTh1_marg.at[-1].get()
     
-    # Partial derivative wrt. lambda1
-    R1pth1 = R_i_inv_vec(log_theta, pTh1, lam1, state, transpose = False)/nk
-    R1pth1 = jnp.where(obs_inds, R1pth1, 0.0)
-    dlam1 = 1.0/lam1 - jnp.dot(q, pTh1) - jnp.dot(g3_lhs, R1pth1) + jnp.sum(R1pth1)    
+    # Select the states where x = prim and z are compatible with met 
+    poss_states = obs_states(pTh1_joint, state_joint, True)
+    poss_states_inds = jnp.where(poss_states, size=2**(n_met-1))[0]
+    # Prim conditional distribution at first sampling, to be used as starting dist for second sampling
+    pTh1_cond_obs = pTh1_joint.at[poss_states_inds].get()
+    # States where the Seeding didn't happen aren't compatible with met and get probability 0
+    pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_met-1)), pTh1_cond_obs)
+    pTh1_cond_obs *= 1/nk
     
-    # 3rd summand of gradient
-    q = R_i_inv_vec(log_theta, g3_lhs, lam1, state, transpose = True)
-    g_3 = x_partial_Q_y(log_theta, q, pTh1, state)/nk
+    # Derivative of pTh2 = M lam_2*(lam2*I-Q)^(-1)pth1_cond
+    g_2, pTh2_marg = mhn.gradient(log_theta, lam2, met, pTh1_cond_obs)
+    # lhs = (pD/pTh_2)^T M lam2*(lam2*I-Q)^(-1)
+    q = jnp.zeros(2**n_met)
+    q = q.at[-1].set(1/pTh2_marg.at[-1].get())
+    q = lam2 * mhn.R_inv_vec(log_theta, q, lam2, met, transpose = True)
+    lhs = jnp.zeros(2**(n_prim + n_met - 1))
+    lhs =  lhs.at[poss_states_inds].set(q.at[2**(n_met - 1):].get())
     
-    # 4th summand of gradient
-    q = obs_inds
-    q = R_i_inv_vec(log_theta, q, lam1, state, transpose = True)
-    g_4 = -1.0/nk * x_partial_Q_y(log_theta, q, pTh1, state)
-    
-    return g_1+ g_3 + g_4, dlam1 * lam1
+    # Derivative of pth1_cond
+    q = R_i_inv_vec(log_theta, lhs, lam1, state_joint, transpose = True)
+    g_3 = x_partial_Q_y(log_theta, q, pTh1_joint, state_joint)/nk
+    q = jnp.zeros(2**(n_prim))
+    q = q.at[-1].set(1/nk)
+    q = mhn.R_inv_vec(theta_prim, q, lam1, prim, transpose = True)
+    g_4 = -mhn.x_partial_Q_y(theta_prim, q, pTh1_marg, prim)
 
-@jit
+    # Partial derivative wrt. lambda1
+    R1pth1 = R_i_inv_vec(log_theta, pTh1_joint, lam1, state_joint, transpose = False)/nk
+    R1pth1 = R1pth1 * poss_states
+    dlam1 = 1/lam1 - jnp.dot(lhs, R1pth1) 
+    
+    score =  jnp.log(nk) + jnp.log(pTh2_marg.at[-1].get())
+    return score, g_1 + g_2 + g_3 + g_4, dlam1 * lam1
+
+
 def _g_3_lhs(log_theta: jnp.array, pTh1: jnp.array, pTh2: jnp.array, latent_inds: jnp.array, 
             second_obs: jnp.array, lam2:jnp.array) -> jnp.array:
-    """Calculate the lhs needed for the third summand of the gradient
+    """Calculates  (pD/pTh_2)^T M lam2*(lam2*I-Q)^(-1)
 
     Args:
         log_theta (jnp.array): theta matrix with logarithmic entries
@@ -424,7 +445,7 @@ def _g_3_lhs(log_theta: jnp.array, pTh1: jnp.array, pTh2: jnp.array, latent_inds
     """
     q = jnp.zeros_like(pTh2)
     q = q.at[-1].set(1/pTh2.at[-1].get())
-    q = mhn.R_inv_vec(log_theta, q, lam2, second_obs, transpose = True)
+    q = lam2*mhn.R_inv_vec(log_theta, q, lam2, second_obs, transpose = True)
     q_big = jnp.zeros_like(pTh1)
     q_big =  q_big.at[latent_inds].set(q.at[q.shape[0]//2:].get())
     return q_big

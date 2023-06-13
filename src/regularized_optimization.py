@@ -27,13 +27,13 @@ def L1_(theta: np.ndarray, eps: float = 1e-05) -> jnp.ndarray:
 def L2(th_in: np.array, lam1: np.array) -> np.array:
     th_diag = np.diagonal(th_in).copy()
     ret = np.exp(2 * th_diag)
-    return np.sum(ret)
+    return np.sum(ret) + np.exp(2*lam1)
 
 
 def L2_(th_in: np.array, lam1: np.array) -> np.array:
     th_diag = np.diagonal(th_in).copy()
     theta_ = 2 * np.exp(2 * th_diag)
-    return np.append(np.diag(theta_).flatten(), [0., 0.])
+    return np.append(np.diag(theta_).flatten(), [2 * np.exp(2 * lam1), 0.])
 
 def lp_prim_only(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, n: int) -> jnp.array:
     """Calculates the marginal likelihood of observing an unpaired primary tumor at t_1
@@ -146,7 +146,7 @@ def log_lik(params: np.array, dat_prim: jnp.array, dat_coupled: jnp.array,
 
 
 
-def grad_coupled(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: jnp.array, n: int) -> tuple[jnp.array, jnp.array]:
+def grad_coupled(log_theta: jnp.array, theta_prim: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: jnp.array, n: int) -> tuple[jnp.array, jnp.array]:
     """_summary_
 
     Args:
@@ -165,31 +165,12 @@ def grad_coupled(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: jn
     dlam1 = 0.0
     for i in range(dat.shape[0]):
         state = dat.at[i, 0:2*n+1].get()
-        second_obs = jnp.append(state.at[1:2*n+1:2].get(), state.at[-1].get())
-        
-        # Calculate joint dist at t1
-        p0 = jnp.zeros(2**state.sum())
-        p0 = p0.at[0].set(1.0)
-        pTh1 = lam1 * ssr.R_i_inv_vec(log_theta, p0, lam1,  state, transpose = False)
-        
-        # Get indices of all possible states at t1
-        poss_states = obs_states(pTh1, state, True)
-        poss_states_size = 2**(jnp.sum(second_obs)-1)
-        poss_states_inds = jnp.where(poss_states, size=poss_states_size)[0]
-        
-        # Get observed dist at t1 by selection of feasible events and renormalization
-        pTh1_obs = pTh1.at[poss_states_inds].get()
-        pTh1_obs = jnp.append(jnp.zeros_like(pTh1_obs), pTh1_obs)
-        nk = jnp.sum(pTh1_obs)
-        pTh1_obs *= 1/nk
-
-        g_2, pTh2 = mhn.gradient(log_theta, lam2, second_obs, pTh1_obs)
-        q_big = ssr._g_3_lhs(log_theta, pTh1, pTh2, poss_states_inds, second_obs, lam2)
-        
-        dtheta, dlam = ssr._g_coupled(log_theta, state, q_big, poss_states, pTh1, nk, lam1)
-        g += dtheta + g_2 
+        n_prim = int(state.at[::2].get().sum())
+        n_met = int(state.at[1::2].get().sum() + 1)      
+        lik, dtheta, dlam = ssr._g_coupled(log_theta, theta_prim, state, n_prim, n_met, lam1, lam2)
+        g += dtheta
         dlam1 += dlam
-        score += jnp.log(nk) + jnp.log(lam2 * pTh2.at[-1].get())
+        score += lik
     return score, jnp.append(g.flatten(), jnp.array([dlam1, 0.0]))
 
 
@@ -239,7 +220,7 @@ def grad_met_only(log_theta: jnp.array, dat: jnp.array, lam1: jnp.array, lam2: j
     dlam1 = 0.0
     for i in range(dat.shape[0]):
         state = dat.at[i, 0:2*n+1].get()
-        state_obs = jnp.append(state.at[1:2*n+1:2].get(), state.at[-1].get())
+        state_obs = jnp.append(state.at[1:2*n+1:2].get(), 1)
         p0 = jnp.zeros(2**state_obs.sum())
         p0 = p0.at[0].set(1.0)
         s, g_, dlam = ssr._grad_met_obs(log_theta, state_obs, p0, lam1, lam2)
@@ -265,10 +246,10 @@ def value_grad(params: np.array, dat_prim_only: jnp.array, dat_coupled: jnp.arra
         tuple[np.array, np.array]: (likelihood, gradient)
     """
     # Unpack parameters
-    n_prim_only =  jnp.max(jnp.array([1., dat_prim_only.shape[0]]))
-    n_coupled = jnp.max(jnp.array([1., dat_coupled.shape[0]]))
-    n_prim_met = jnp.max(jnp.array([1., dat_prim_met.shape[0]]))
-    n_met_only = jnp.max(jnp.array([1., dat_met_only.shape[0]]))
+    n_prim_only =  dat_prim_only.shape[0]
+    n_coupled = dat_coupled.shape[0]
+    n_prim_met = dat_prim_met.shape[0]
+    n_met_only = dat_met_only.shape[0]
     n_met = n_coupled + n_prim_met + n_met_only
     log_theta = params[0:-2].reshape((n+1, n+1))
        
@@ -286,14 +267,14 @@ def value_grad(params: np.array, dat_prim_only: jnp.array, dat_coupled: jnp.arra
     if perc_met == None:
         perc_met = 1 - n_prim_only/(n_prim_only + n_met)
 
+    log_theta_prim = log_theta.copy()
+    log_theta_prim = log_theta_prim.at[:-1,-1].set(0.)
     score_prim, g_prim = grad_prim_only(log_theta, dat_prim_only, lam1, n)
-    score_coupled, g_coupled = grad_coupled(log_theta, dat_coupled, lam1, lam2, n)
-    log_theta_mod = log_theta.copy()
-    log_theta_mod = log_theta_mod.at[:-1,-1].set(0.)
-    score_prim_met, g_prim_met = grad_prim_only(log_theta_mod, dat_prim_met, lam1, n)
-    score_met, g_met  = grad_met_only(log_theta, dat_met_only, lam1, lam2, n)
-    score = (1 - perc_met) * score_prim/n_prim_only + perc_met/3 *\
-        (score_coupled/n_coupled + score_prim_met/n_prim_met + score_met/n_met_only)
-    g = (1 - perc_met) * g_prim/n_prim_only + perc_met/3 *\
-        (g_coupled/n_coupled + g_prim_met/n_prim_met + g_met/n_met_only)
+    score_coupled, g_coupled = grad_coupled(log_theta, log_theta_prim, dat_coupled, lam1, lam2, n)
+    #score_prim_met, g_prim_met = grad_prim_only(log_theta_prim, dat_prim_met, lam1, n)
+    #score_met, g_met  = grad_met_only(log_theta, dat_met_only, lam1, lam2, n)
+    score = (1 - perc_met) * score_prim/n_prim_only + perc_met *\
+        (score_coupled/n_coupled) #+ score_prim_met + score_met)/n_met
+    g = (1 - perc_met) * g_prim/n_prim_only + perc_met *\
+        (g_coupled/n_coupled) #+ g_prim_met + g_met)/n_met
     return np.array(-score + penal1 * l1 + penal2 * l2), np.array(-g + penal1 * l1_ + penal2 * l2_)
