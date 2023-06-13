@@ -32,20 +32,16 @@ def single_traject(
     log_theta_prim = log_theta.copy()
     log_theta_prim[0:-1, -1] = 0.0
     rng = rng or np.random.default_rng(42)
-
     if prim is None and met is None:
-        prim = np.zeros(n+1)
-        met = np.zeros(n+1)
-    elif prim is not None and met is not None:
+        prim, met = np.zeros(n), np.zeros(n)
+    elif not (prim is not None and met is not None):
         raise ValueError("prim and met must be either both known or both None")
 
     pre_seeding_events = np.zeros_like(prim)
-    j_prim = int(prim.sum())
-    j_met = int(met.sum())
+    j_prim, j_met = int(prim.sum()), int(met.sum())
     t = 0.
     inds = np.arange(0, 2*n, dtype=int)
-    full_prim = np.zeros((n, n))
-    full_met = np.zeros((n, n))
+    full_prim, full_met = np.zeros((n, n)), np.zeros((n, n))
     while True:
         # Seeding didn't happen yet
         if prim[-1] == 0:
@@ -56,11 +52,9 @@ def single_traject(
             if (t >= t_obs):
                 break
             next_event = rng.choice(inds[:n], size=1, p=rates/out_rate)
-            prim[next_event] = 1
-            met[next_event] = 1
+            prim[next_event], met[next_event] = 1, 1
             pre_seeding_events[next_event] = 1
-            full_prim[j_prim, next_event] = 1
-            full_met[j_met, next_event] = 1
+            full_prim[j_prim, next_event], full_met[j_met, next_event] = 1, 1
             j_prim += 1
             j_met += 1
         # Seeding already happened
@@ -236,7 +230,7 @@ def simulate_dat(
     i = 0
     while i < n_dat:
         datum, age, psp, full_prim, full_met = sample_metmhn(
-            theta, th_prim, b_rates, lam1, lam2, n, rng)
+            theta, lam1, lam2, rng)
         if datum.sum() > 0:
             dat[i, :] = datum
             ages[i] = age
@@ -246,19 +240,13 @@ def simulate_dat(
     return dat, ages, pre_seeding_probs/n_dat
 
 
-def p_mut_pre_seed(theta_in, n_dat, lam1, lam2, rng):
-    n = theta_in.shape[0]
+def p_shared_mut_pre_seed(theta, n_dat, lam1, lam2, rng):
+    n = theta.shape[0]
     pre_seeded_muts = np.zeros(n-1)
     total_muts = np.zeros(n-1)
-
-    theta = theta_in.copy()
-    b_rates = np.diag(theta_in)
-    theta[np.diag_indices(n)] = 0.0
-    th_prim = theta.copy()
-    th_prim[0:-1, -1] = 0.0
     i = 0
     while i < n_dat:
-        datum, age, psp, full_prim, full_met = sample_metmhn(theta, th_prim, b_rates, lam1, lam2, n, rng)
+        datum, age, psp, full_prim, full_met = sample_metmhn(theta, lam1, lam2,rng)
         if datum[-1] == 1:
             both =(datum[:-1:2]+datum[1::2]==2)
             pre_seeded_muts += psp[:-1] * both
@@ -268,20 +256,14 @@ def p_mut_pre_seed(theta_in, n_dat, lam1, lam2, rng):
 
 
 
-def p_mut_pre_seed_2(theta_in, n_dat, lam1, lam2, rng):
-    n = theta_in.shape[0]
+def p_any_mut_pre_seed(theta, n_dat, lam1, lam2, rng):
+    n = theta.shape[0]
     pre_seeded_muts = np.zeros(n-1)
     total_muts_prim = np.zeros(n-1)
     total_muts_met = np.zeros(n-1)
-
-    theta = theta_in.copy()
-    b_rates = np.diag(theta_in)
-    theta[np.diag_indices(n)] = 0.0
-    th_prim = theta.copy()
-    th_prim[0:-1, -1] = 0.0
     i = 0
     while i < n_dat:
-        datum, age, psp, full_prim, full_met = sample_metmhn(theta, th_prim, b_rates, lam1, lam2, n, rng)
+        datum, age, psp, full_prim, full_met = sample_metmhn(theta,lam1, lam2,rng)
         if datum[-1] == 1:
             pre_seeded_muts += psp[:-1]
             total_muts_prim += datum[:-1:2]
@@ -291,21 +273,16 @@ def p_mut_pre_seed_2(theta_in, n_dat, lam1, lam2, rng):
     return pre_seeded_muts, total_muts_prim, total_muts_met
 
 
-def p_full_orders(theta_in, n_dat, lam1, lam2, rng):
-    n = theta_in.shape[0]
+def p_full_orders(theta, n_dat, lam1, lam2, rng):
+    n = theta.shape[0]
     prim_muts = np.zeros((n, n))
     total_prims = np.zeros(n)
     met_muts = np.zeros((n, n))
     total_mets = np.zeros(n)
-    theta = theta_in.copy()
-    b_rates = np.diag(theta_in)
-    theta[np.diag_indices(n)] = 0.0
-    th_prim = theta.copy()
-    th_prim[0:-1, -1] = 0.0
     i = 0
     while i < n_dat:
         datum, age, psp, full_prim, full_met = sample_metmhn(
-            theta, th_prim, b_rates, lam1, lam2, n, rng)
+            theta, lam1, lam2, rng)
         if datum[-1] == 1:
             prim_muts += full_prim
             met_muts += full_met
