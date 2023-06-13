@@ -394,7 +394,7 @@ def _g_coupled(log_theta: jnp.array, theta_prim: jnp.array, state_joint: jnp.arr
     nk = pTh1_marg.at[-1].get()
     
     # Select the states where x = prim and z are compatible with met 
-    poss_states = obs_states(pTh1_joint, state_joint, True)
+    poss_states = obs_states((n_prim + n_met -1), state_joint, True)
     poss_states_inds = jnp.where(poss_states, size=2**(n_met-1))[0]
     # Prim conditional distribution at first sampling, to be used as starting dist for second sampling
     pTh1_cond_obs = pTh1_joint.at[poss_states_inds].get()
@@ -426,41 +426,3 @@ def _g_coupled(log_theta: jnp.array, theta_prim: jnp.array, state_joint: jnp.arr
     
     score =  jnp.log(nk) + jnp.log(pTh2_marg.at[-1].get())
     return score, g_1 + g_2 + g_3 + g_4, dlam1 * lam1
-
-
-def _g_3_lhs(log_theta: jnp.array, pTh1: jnp.array, pTh2: jnp.array, latent_inds: jnp.array, 
-            second_obs: jnp.array, lam2:jnp.array) -> jnp.array:
-    """Calculates  (pD/pTh_2)^T M lam2*(lam2*I-Q)^(-1)
-
-    Args:
-        log_theta (jnp.array): theta matrix with logarithmic entries
-        pTh1 (jnp.array): Joint probability distribution at first sampling
-        pTh2 (jnp.array): Marginal probability distribution at second sampling
-        latent_inds (jnp.array): Vector holding indices of observed states
-        second_obs (jnp.array): Genotype of datapoint observed at second sampling
-        lam2 (jnp.array): Rate \lambda_2 of second sampling
-
-    Returns:
-        jnp.array
-    """
-    q = jnp.zeros_like(pTh2)
-    q = q.at[-1].set(1/pTh2.at[-1].get())
-    q = lam2*mhn.R_inv_vec(log_theta, q, lam2, second_obs, transpose = True)
-    q_big = jnp.zeros_like(pTh1)
-    q_big =  q_big.at[latent_inds].set(q.at[q.shape[0]//2:].get())
-    return q_big
-
-def prob_seeded(log_theta: jnp.array, x_obs: jnp.array, lam1:jnp.array):
-    x_obs = x_obs.at[::2].get()
-    x_obs = x_obs.at[-1].set(1)
-    m = x_obs.sum()
-    p0 = jnp.zeros(2**m)
-    p0 = p0.at[0].set(1.)
-    pTh1 = lam1 * mhn.R_inv_vec(
-        log_theta=log_theta,
-        x=p0,
-        lam=lam1,
-        state=x_obs)
-    pTh1 = pTh1.reshape((-1,2), order="F")
-    pTh1 =  pTh1 @ jnp.array([[1,1], [0,1]])
-    return pTh1.at[-1, 0].get()/pTh1.at[-1,1].get()

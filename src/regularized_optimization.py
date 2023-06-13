@@ -246,13 +246,11 @@ def value_grad(params: np.array, dat_prim_only: jnp.array, dat_coupled: jnp.arra
         tuple[np.array, np.array]: (likelihood, gradient)
     """
     # Unpack parameters
-    n_prim_only =  dat_prim_only.shape[0]
-    n_coupled = dat_coupled.shape[0]
-    n_prim_met = dat_prim_met.shape[0]
-    n_met_only = dat_met_only.shape[0]
-    n_met = n_coupled + n_prim_met + n_met_only
     log_theta = params[0:-2].reshape((n+1, n+1))
-       
+    score_prim = score_met = score_prim_met = score_coupled  = 0.
+    g_prim = g_met = g_prim_met = g_coupled = jnp.zeros((n+1, n+1)) 
+    n_prim_only, n_met_only, n_prim_met, n_coupled = 1, 0, 0, 0
+
     # Penalties and their derivatives
     l1 = L1(log_theta)
     l1_ = L1_(log_theta)
@@ -269,12 +267,22 @@ def value_grad(params: np.array, dat_prim_only: jnp.array, dat_coupled: jnp.arra
 
     log_theta_prim = log_theta.copy()
     log_theta_prim = log_theta_prim.at[:-1,-1].set(0.)
-    score_prim, g_prim = grad_prim_only(log_theta, dat_prim_only, lam1, n)
-    score_coupled, g_coupled = grad_coupled(log_theta, log_theta_prim, dat_coupled, lam1, lam2, n)
-    #score_prim_met, g_prim_met = grad_prim_only(log_theta_prim, dat_prim_met, lam1, n)
-    #score_met, g_met  = grad_met_only(log_theta, dat_met_only, lam1, lam2, n)
+    if dat_prim_only != None:
+        score_prim, g_prim = grad_prim_only(log_theta, dat_prim_only, lam1, n)
+        n_prim_only =  dat_prim_only.shape[0]
+    if dat_coupled != None:
+        score_coupled, g_coupled = grad_coupled(log_theta, log_theta_prim, dat_coupled, lam1, lam2, n)
+        n_coupled = dat_coupled.shape[0]
+    if dat_prim_met != None:
+        score_prim_met, g_prim_met = grad_prim_only(log_theta_prim, dat_prim_met, lam1, n)
+        n_prim_met = dat_prim_met.shape[0]
+    if dat_met_only != None:
+        score_met, g_met  = grad_met_only(log_theta, dat_met_only, lam1, lam2, n)
+        n_met_only = dat_met_only.shape[0]
+
+    n_met = n_coupled + n_prim_met + n_met_only
     score = (1 - perc_met) * score_prim/n_prim_only + perc_met *\
-        (score_coupled/n_coupled) #+ score_prim_met + score_met)/n_met
+        (score_coupled+ score_prim_met + score_met)/n_met
     g = (1 - perc_met) * g_prim/n_prim_only + perc_met *\
-        (g_coupled/n_coupled) #+ g_prim_met + g_met)/n_met
+        (g_coupled + g_prim_met + g_met)/n_met
     return np.array(-score + penal1 * l1 + penal2 * l2), np.array(-g + penal1 * l1_ + penal2 * l2_)
