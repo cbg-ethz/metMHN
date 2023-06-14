@@ -171,6 +171,7 @@ def grad_coupled(log_theta: jnp.array, theta_prim: jnp.array, dat: jnp.array, la
         g += dtheta
         dlam1 += dlam
         score += lik
+        print(i, state.sum())
     return score, jnp.append(g.flatten(), jnp.array([dlam1, 0.0]))
 
 
@@ -273,16 +274,16 @@ def value_grad(params: np.array, dat_prim_only: jnp.array, dat_coupled: jnp.arra
     if dat_coupled != None:
         score_coupled, g_coupled = grad_coupled(log_theta, log_theta_prim, dat_coupled, lam1, lam2, n)
         n_coupled = dat_coupled.shape[0]
-    if dat_prim_met != None:
-        score_prim_met, g_prim_met = grad_prim_only(log_theta_prim, dat_prim_met, lam1, n)
-        n_prim_met = dat_prim_met.shape[0]
-    if dat_met_only != None:
-        score_met, g_met  = grad_met_only(log_theta, dat_met_only, lam1, lam2, n)
-        n_met_only = dat_met_only.shape[0]
+    #if dat_prim_met != None:
+    #    score_prim_met, g_prim_met = grad_prim_only(log_theta_prim, dat_prim_met, lam1, n)
+    #    n_prim_met = dat_prim_met.shape[0]
+    #if dat_met_only != None:
+    #    score_met, g_met  = grad_met_only(log_theta, dat_met_only, lam1, lam2, n)
+    #    n_met_only = dat_met_only.shape[0]
 
     n_met = n_coupled + n_prim_met + n_met_only
     score = (1 - perc_met) * score_prim/n_prim_only + perc_met *\
-        (score_coupled+ score_prim_met + score_met)/n_met
+        (score_coupled/n_coupled) #+ score_prim_met + score_met)/n_met
     g = (1 - perc_met) * g_prim/n_prim_only + perc_met *\
-        (g_coupled + g_prim_met + g_met)/n_met
+        (g_coupled/n_coupled) #+ g_prim_met + g_met)/n_met
     return np.array(-score + penal1 * l1 + penal2 * l2), np.array(-g + penal1 * l1_ + penal2 * l2_)

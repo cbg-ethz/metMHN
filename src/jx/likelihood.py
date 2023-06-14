@@ -152,7 +152,7 @@ def deriv_no_seed(i, val, x, y, log_theta, state, n):
 
     return val
 
-
+@jit
 def x_partial_Q_y(log_theta: jnp.array, x: jnp.array, y: jnp.array, state: jnp.array) -> jnp.array:
     """This function computes x \partial Q y with \partial Q the Jacobian of Q w.r.t. all thetas
     efficiently using the shuffle trick (sic!).
@@ -366,7 +366,7 @@ def _grad_prim_obs(log_theta: jnp.array, state: jnp.array, p0: jnp.array, lam1: 
     dth = dth.at[:-1, -1].set(0.0)  # Derivative of constant is 0.
     return score, dth, dlam1 * lam1
 
-@partial(jit, static_argnames=["n_prim", "n_met"])
+#@partial(jit, static_argnames=["n_prim", "n_met"])
 def _g_coupled(log_theta: jnp.array, theta_prim: jnp.array, state_joint: jnp.array, n_prim: int, n_met: int, lam1: jnp.array, lam2: jnp.array) -> tuple:
     """Calculates the likelihood and gradient for a datapoint state_joint
 

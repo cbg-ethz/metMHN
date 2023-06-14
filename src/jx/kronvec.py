@@ -947,7 +947,7 @@ def keep_col2_3(p: jnp.array) -> jnp.array:
     p = p.at[:, (0, 1)].set(0.)
     return p.ravel(order="F")
 
-
+@partial(jit, static_argnames=["n_joint", "obs_prim"])
 def obs_states(n_joint: int, state: jnp.array, obs_prim: bool = True) -> jnp.array:
     """
     Selects all states that are compatible with state at first sampling. If obs_prim = true then primary part of state is
