@@ -224,7 +224,8 @@ def x_partial_Q_y(
         log_theta: jnp.array,
         x: jnp.array,
         y: jnp.array,
-        state: jnp.array) -> jnp.array:
+        state: jnp.array, 
+        diagnosis: True) -> jnp.array:
     """This function computes x \partial Q y with \partial Q the Jacobian of Q w.r.t. all thetas
     efficiently using the shuffle trick (sic!).
 
@@ -288,8 +289,12 @@ def x_partial_Q_y(
 
     val = vmap(body_fun, in_axes=(0, 0), out_axes=0)(
         jnp.arange(n, dtype=int), val)
-
-    return val
+    d_diag = lax.cond(diagnosis,
+                      lambda z: -1. * jnp.sum(z, axis=0) + jnp.diagonal(z),
+                      lambda z: jnp.zeros(z.shape[0]),
+                      val
+                    )
+    return val, d_diag
 
 
 @jit
@@ -305,7 +310,7 @@ def gradient(log_theta: jnp.array, lam: float, state: jnp.array, p_0: jnp.array)
 
 
     Returns:
-        np.array: \partial_theta (p_D^T log p_theta)
+        jnp.array: \partial_theta (p_D^T log p_theta)
     """
     p_theta = R_inv_vec(log_theta=log_theta, x=p_0, lam=lam,
                         state=state)

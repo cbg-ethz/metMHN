@@ -4,6 +4,21 @@ from jax import jit, lax
 import jax.numpy as jnp
 import jax
 
+def diagnosis_theta(log_theta: jnp.array, log_diag_rates: jnp.array) -> jnp.array:
+    """"Generate a log. theta that is used in the diagnosis formalism. scale all offdiagonals by their effect on the diagnosis
+
+    Args:
+        log_theta (jnp.array): theta matrix of size n+1 x n+1
+        log_diag_rates (jnp.arrays): logarithmic effects of muts on diagnosis of size n+1
+    Returns:
+        jnp.array: scaled theta matrix of size n+1 x n+1
+    """
+    diagonal = jnp.diagonal(log_theta)
+    scaled_theta = jnp.apply_along_axis(lambda x,y:(x-y), 1, log_theta, log_diag_rates)
+    d_i = jnp.arange(0, scaled_theta.shape[0])
+    scaled_theta = scaled_theta.at[d_i, d_i].set(diagonal)
+    return scaled_theta
+
 
 # Kronecker factors
 def k2dt0(p: jnp.array, theta: float) -> jnp.array:
@@ -570,7 +585,6 @@ def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array,
     Returns:
         jnp.array: Q p
     """
-
     def body_fun(i, val):
 
         val += kronvec_sync(log_theta=log_theta, p=p, i=i,
@@ -666,7 +680,6 @@ def kron_sync_diag(
     return diag
 
 
-#@jit
 def _kron_prim_diag(
         log_theta: jnp.array,
         i: int,
@@ -751,7 +764,6 @@ def kron_prim_diag(
     )
 
 
-#@jit
 def _kron_met_diag(
         log_theta: jnp.array,
         i: int,
@@ -897,16 +909,16 @@ def kron_diag(log_theta: jnp.array, state: jnp.array, p_in: jnp.array) -> jnp.ar
         jnp.array: diag(Q)
     """
     y = p_in * 0.0
-    diag = y + 1
+    diagonal = y + 1
 
     def body_fun(i, val):
 
         val += kron_sync_diag(log_theta=log_theta, i=i,
-                              state=state, diag=diag)
+                              state=state, diag=diagonal)
         val += kron_prim_diag(log_theta=log_theta, i=i,
-                              state=state, diag=diag)
+                              state=state, diag=diagonal)
         val += kron_met_diag(log_theta=log_theta, i=i,
-                             state=state, diag=diag)
+                             state=state, diag=diagonal)
 
         return val
 
@@ -920,7 +932,7 @@ def kron_diag(log_theta: jnp.array, state: jnp.array, p_in: jnp.array) -> jnp.ar
     )
 
     y += kron_seed_diag(log_theta=log_theta,
-                        state=state, diag=diag)
+                        state=state, diag=diagonal)
 
     return y
 

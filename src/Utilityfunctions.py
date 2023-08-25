@@ -5,8 +5,15 @@ import pandas as pd
 import regularized_optimization as reg_opt
 import scipy.optimize as opt
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 import logging
 import jx.vanilla as mhn
+
+my_gradient = LinearSegmentedColormap.from_list('my_gradient', (
+    # Generated with https://eltos.github.io/gradient/#E69F00-FFFFFF-009E73
+    (0.000, (0.902, 0.624, 0.000)),
+    (0.500, (1.000, 1.000, 1.000)),
+    (1.000, (0.000, 0.620, 0.451))))
 
 def state_space(n: int) -> np.array:
     """
@@ -174,12 +181,12 @@ def cross_val(dat: pd.DataFrame, splits: jnp.array, nfolds: int, start_params: j
         test_prim_only, test_met_only, test_prim_met, test_coupled = split_data(test)
         for j in range(splits.size):
             mhn_diag_con = opt.minimize(reg_opt.value_grad, x0 = start_params,#
-                             args = (train_prim_only, train_coupled, train_prim_met, train_met_only, n-1,#
-                                     splits[j], splits[j], m_p_corr), method = "L-BFGS-B", jac = True,#
+                             args = (train_prim_only, train_prim_met, train_met_only, train_coupled, n-1,#
+                                     splits[j], m_p_corr), method = "L-BFGS-B", jac = True,#
                              options={"maxiter":10000, "disp":False, "ftol":1e-04})
 
-            runs_constrained[i,j] = reg_opt.value_grad(mhn_diag_con.x, test_prim_only, test_coupled, test_prim_met,#
-                                                       test_met_only, n-1, 0., 0., m_p_corr)[0]
+            runs_constrained[i,j] = reg_opt.value_grad(mhn_diag_con.x, test_prim_only, test_prim_met, test_met_only,#
+                                                       test_coupled, n-1, 0., m_p_corr)[0]
             
             logging.info(f"Diag constrained, Split: {splits[j]}, Fold: {i}, Score: {runs_constrained[i,j]}")
 
@@ -219,7 +226,7 @@ def indep(dat_singles: jnp.array, dat_coupled: jnp.array) -> jnp.array:
     return theta
 
 
-def plot_theta(theta_in: pd.DataFrame, alpha: float) -> tuple:
+def plot_theta(theta_in: pd.DataFrame, alpha: float, verbose=True) -> tuple:
     """Plot theta matrix 
 
     Args:
@@ -238,28 +245,41 @@ def plot_theta(theta_in: pd.DataFrame, alpha: float) -> tuple:
     theta[theta.abs() <= alpha] = np.nan
     np.fill_diagonal(theta.values, np.nan)
 
-    plt.style.use("ggplot")
-    f, (ax, ax2) = plt.subplots(1, 2, figsize=(19,15), gridspec_kw={'width_ratios': [6, 1]})
-    f.tight_layout()
-    ax.matshow(theta[theta<0], cmap="Blues_r")
-    ax.matshow(theta[theta>0], cmap="Reds")
-    ax2.matshow(theta_diag, cmap="coolwarm")
+    f, (ax, ax2) = plt.subplots(1, 2, figsize=(19,15), gridspec_kw={'width_ratios': [n, 1], "top":1, "bottom": 0, "right":1, "left":0, 
+                                       "hspace":0, "wspace":-0.48})
+    #f.tight_layout()
+
+    # Plot off diagonals on one plot
+    im = ax.matshow(theta[theta!=0], cmap=my_gradient)
+    #im2 = ax.matshow(theta[theta>0], cmap="Greens")
     ax.set_xticks(range(theta.shape[1]), events, fontsize=14, rotation=90)
     ax.set_yticks(range(theta.shape[1]), events, fontsize=14)
-    ax2.set_yticks(range(theta.shape[1]), events, fontsize=14)
-    ax2.yaxis.tick_right()
-    ax2.yaxis.set_label_position("right")
+    
+    # Plot grid lines between cells
+    ax.set_xticks(np.arange(-.5, theta.shape[1], 1), minor=True)
+    ax.set_yticks(np.arange(-.5, theta.shape[1], 1), minor=True)
+    ax.grid(which="minor",color='grey', linestyle='-', linewidth=1)
+    ax.tick_params(which='minor', bottom=False, left=False) 
+    
+    f.colorbar(im, ax=ax, orientation="horizontal", shrink=4/n, pad=0.03, aspect=8)
+    # Plot diagonal entries separately
+    im2 = ax2.matshow(theta_diag, cmap="Blues")
+    ax2.set_yticks([])
+    #ax2.yaxis.tick_right()
+    #ax2.yaxis.set_label_position("right")
     ax2.set_xticks([])
-
-    for i in range(n):
-        for j in range(n):
-            if np.isnan(theta.iloc[i,j]) == False:
-                c = np.round(theta.iloc[i,j].round(2), 2)
-            else:
-                c = ""
-            ax.text(j, i, str(c), va='center', ha='center')
-        ax2.text(0, i, np.round(theta_diag[i,0],3), va='center', ha='center')
-    return (ax, ax2)
+    f.colorbar(im2, ax=ax2, orientation="horizontal", shrink=4, pad=0.03, aspect=8)
+    # Plot numerical values of theta 
+    if verbose:
+        for i in range(n):
+            for j in range(n):
+                if np.isnan(theta.iloc[i,j]) == False:
+                    c = np.round(theta.iloc[i,j].round(2), 2)
+                else:
+                    c = ""
+                ax.text(j, i, str(c), va='center', ha='center')
+            ax2.text(0, i, np.round(theta_diag[i,0],3), va='center', ha='center')
+    return f
 
 def p_unobs_seeding(log_theta: jnp.array, lam1: jnp.array,  dat_obs: jnp.array) -> jnp.array:
     """
@@ -273,10 +293,13 @@ def p_unobs_seeding(log_theta: jnp.array, lam1: jnp.array,  dat_obs: jnp.array) 
     Returns:
         jnp.array: _description_
     """
-    dat_mod = dat_obs.at[-1].set(1)
+    dat_mod = dat_obs.at[::2].get()
+    dat_mod = dat_mod.at[-1].set(1)
+    th_mod = log_theta.copy()
+    th_mod = th_mod.at[:-1, -1].set(0.)
     m =  dat_mod.sum()
     p0 = jnp.zeros(2**m)
     p0 = p0.at[0].set(1.0)
-    pth = lam1 * mhn.R_inv_vec(log_theta, p0, lam1,  dat_mod, False)
+    pth = lam1 * mhn.R_inv_vec(th_mod, p0, lam1,  dat_mod, False)
     probs = pth.reshape((-1, 2), order="F").at[-1,:].get()
-    return probs.at[0].get() / probs.sum()
+    return probs.at[1].get() / probs.sum()
