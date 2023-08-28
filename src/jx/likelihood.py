@@ -243,13 +243,14 @@ def R_i_inv_vec(log_theta: jnp.array, x: jnp.array, lam: jnp.array,  state: jnp.
     return y
 
 @partial(jit, static_argnames=["n_prim", "n_met"])
-def _lp_coupled(log_theta_fd: jnp.array, log_theta_sd: jnp.array, log_theta_fd_prim: jnp.array, state_joint: jnp.array, 
+def _lp_coupled(log_theta_fd: jnp.array, log_theta_fd_prim: jnp.array, log_theta_sd: jnp.array, state_joint: jnp.array, 
                 n_prim: int, n_met: int, ) -> jnp.array:
     """
     Evaluates the log probability of seeing coupled genotype data in state "state"
     Args:
-        log_theta (jnp.array):          theta_matrix with logarithmics entries, can be used with diagnosis formalism
-        log_theta_prim (jnp.array):     theta_matrix with logarithmic entries, with off-diagonal entries in the 
+        log_theta_fd (jnp.array):       Theta_matrix with logarithmics entries, scaled by effects on second diagnosis
+        log_theta_sd (jnp.array):       Theta_matrix with logarithmic entries, scaled by effects on first diagnosis
+        log_theta_prim (jnp.array):     Copy of log_theta_fd,but  with off-diagonal entries in the 
                                         last column set to 0 
         state_joint (jnp.array):        Bitstring, genotypes of PT and MT 
         n_prim (int):                   Number of active events in PT
@@ -304,10 +305,10 @@ def _lp_met_obs(log_theta_fd: jnp.array, log_theta_sd: jnp.array, state_met: jnp
     """Calculates the marginal likelihood of only observing a MT at second sampling with genotype state_met
     
     Args:
-        log_theta_fd (jnp.array): Theta matrix with logarithmic entries, scaled by fd_effects 
-        log_theta_sd (jnp.array): Theta matrix with logarithmic entries, scaled by sd_effects 
-        state_met (jnp.array): bitstring of length sum(state), genotype of tumor
-        n_prim (int): number of active events in the MT
+        log_theta_fd (jnp.array):   Theta matrix with logarithmic entries, scaled by fd_effects 
+        log_theta_sd (jnp.array):   Theta matrix with logarithmic entries, scaled by sd_effects 
+        state_met (jnp.array):      Bitstring, genotype of MT
+        n_met (int):                Number of active events in the MT
 
     Returns:
         jnp.array: log(P(state_met; theta))
@@ -318,92 +319,85 @@ def _lp_met_obs(log_theta_fd: jnp.array, log_theta_sd: jnp.array, state_met: jnp
     pTh2 = mhn.R_inv_vec(log_theta_sd, pTh1, 1., state_met, False)
     return jnp.log(pTh2.at[-1].get())
 
-@jit
-def _grad_met_obs(log_theta: jnp.array, state: jnp.array, p0: jnp.array, lam1: jnp.array, lam2: jnp.array) -> jnp.array:
-    """ gradient of lp_met_obs for a single sample
+
+@partial(jit, static_argnames=["n_met"])
+def _grad_met_obs(log_theta_fd: jnp.array, log_theta_sd: jnp.array, state_met: jnp.array, n_met: int) -> tuple:
+    """ Gradient of lp_met_obs for a single sample
 
     Args:
-        log_theta (jnp.array): Log values of the theta matrix.
-        state (jnp.array): Binary state vector, representing the current sample's events.
-        p_0 (jnp.array): Initial distribution
-        lam1 (jnp.array): Rate \lambda_1 of first sampling.
-        lam2 (jnp.array): Rate \lambda_2 of second sampling.
+        log_theta_fd (jnp.array):   Theta matrix with logarithmic entries, scaled by first diagnosis effects (fd)
+        log_theta_sd (jnp.array):   Theta matrix with logarithmic entries, scaled by second diagnosis effects (sd)
+        state_met (jnp.array):      Bitstring, representing the current sample's genotype
+        n_met (int):                Number of active events in current sample
 
     Returns:
-        jnp.array
+        tuple:                      Marginal likelihood, gradient wrt. theta, gradient wrt. fd, gradient wrt. sd
     """
+    p0 = jnp.zeros(2**n_met)
+    p0 = p0.at[0].set(1.)
     R_1_inv_p_0 = mhn.R_inv_vec(
-        log_theta=log_theta,
+        log_theta=log_theta_fd,
         x=p0,
-        lam=lam1,
-        state=state)
+        lam=1.,
+        state=state_met)
 
     R_2_inv_p_1 = mhn.R_inv_vec(
-        log_theta=log_theta,
+        log_theta=log_theta_sd,
         x=R_1_inv_p_0,
-        lam=lam2,
-        state=state,
+        lam=1.,
+        state=state_met,
     )
 
-    pTh = lam1 * lam2 * R_2_inv_p_1
-    score = jnp.log(pTh.at[-1].get())
+    score = jnp.log(R_2_inv_p_1.at[-1].get())
     
     lhs = jnp.zeros_like(p0)
-    lhs = lhs.at[-1].set(lam1 * lam2 / pTh.at[-1].get())
-    lhs = mhn.R_inv_vec(log_theta, lhs, lam2, state, True)
-    dTh = mhn.x_partial_Q_y(log_theta, lhs, R_2_inv_p_1, state)
-    lhs = mhn.R_inv_vec(log_theta, lhs, lam1, state, True)
-    dlam1 = 1/lam1 - jnp.dot(lhs, R_1_inv_p_0)
-    dTh += mhn.x_partial_Q_y(log_theta, lhs, R_1_inv_p_0, state) 
-    return score, dTh, dlam1 * lam1
+    lhs = lhs.at[-1].set(1. / R_2_inv_p_1.at[-1].get())
+    lhs = mhn.R_inv_vec(log_theta_sd, lhs, 1., state_met, True)
+    dTh_1, d_sd = mhn.x_partial_Q_y(log_theta_sd, lhs, R_2_inv_p_1, state_met)
+    
+    lhs = mhn.R_inv_vec(log_theta_fd, lhs, 1, state_met, True)
+    dTh_2, d_fd = mhn.x_partial_Q_y(log_theta_fd, lhs, R_1_inv_p_0, state_met) 
+    return score, dTh_1 + dTh_2, d_fd, d_sd
 
-@jit
-def _grad_prim_obs(log_theta: jnp.array, state: jnp.array, p0: jnp.array, lam1: jnp.array) -> jnp.array:
+@partial(jit, static_argnames=["n_prim"])
+def _grad_prim_obs(log_theta_prim_fd: jnp.array, state_prim: jnp.array, n_prim: int) -> tuple:
     """ gradient of lp_prim_obs for a single sample
 
     Args:
-        log_theta (jnp.array): Log values of the theta matrix.
-        state (jnp.array): Binary state vector, representing the current sample's events.
-        p_0 (jnp.array): Initial distribution
-        lam1 (jnp.array): Rate \lambda_1 of first sampling.
-
+        log_theta_prim_sd (jnp.array):  Log values of the theta matrix.
+        state_prim (jnp.array):         Binary state vector, representing the current sample's events.
+        n_prim (int):                   Number of active events in the PT
     Returns:
-        jnp.array
+        tuple:                          Marginal Likelihood, gradient wrt. theta, gradient wrt. diagnosis effects
     """
-    log_theta_2 = log_theta.copy()
-    log_theta_2 = log_theta.at[0:-1, -1].set(0.0)
-    R_1_inv_p_0 = mhn.R_inv_vec(
-        log_theta=log_theta_2,
-        x=p0,
-        lam=lam1,
-        state=state)
-    
-    p_theta = lam1 * R_1_inv_p_0
+    p0 = jnp.zeros(2**n_prim)
+    p0 = p0.at[0].set(1.)
+    p_theta= mhn.R_inv_vec(log_theta_prim_fd, p0, 1., state_prim)
     score = jnp.log(p_theta.at[-1].get())
     
     lhs = jnp.zeros_like(p0)
     lhs = lhs.at[-1].set(1/p_theta.at[-1].get())
-    lhs = mhn.R_inv_vec(log_theta_2, lhs, lam1, state, transpose = True)
-    dlam1 = 1/lam1 - lam1*jnp.dot(lhs, R_1_inv_p_0)
-    dth = lam1 * mhn.x_partial_Q_y(log_theta=log_theta_2, x=lhs, y=R_1_inv_p_0, state=state)
+    lhs = mhn.R_inv_vec(log_theta_prim_fd, lhs, 1., state_prim, transpose = True)
+    dth, d_diag_effects = mhn.x_partial_Q_y(log_theta_prim_fd, lhs, y=p_theta, state=state_prim)
     dth = dth.at[:-1, -1].set(0.0)  # Derivative of constant is 0.
-    return score, dth, dlam1 * lam1
+    return score, dth, d_diag_effects 
+
 
 @partial(jit, static_argnames=["n_prim", "n_met"])
-def _g_coupled(log_theta: jnp.array, log_theta_prim: jnp.array, state_joint: jnp.array, n_prim: int, n_met: int, lam1: jnp.array, lam2: jnp.array) -> tuple:
-    """Calculates the likelihood and gradient for a datapoint state_joint
+def _g_coupled(log_theta_fd: jnp.array, log_theta_fd_prim: jnp.array, log_theta_sd: jnp.array, 
+               state_joint: jnp.array, n_prim: int, n_met: int) -> tuple:
+    """Calculates the likelihood and gradients for a coupled datapoint (PT and MT genotype known)
 
     Args:
-        log_theta (jnp.array): theta matrix with logarithmic entries
-        log_theta_prim (jnp.array): theta matrix with logarithmic entries. The off diagonal entries of the last column are set to 0.
-        state_joint (jnp.array): bitstring, genotypes of coupled sequencing data
-        n_prim (int): number of events, that occured in the primary tumor
-        n_met (int): number of events, that occured in the metastasis
-        lam1 (jnp.array): Rate \lambda_1 of the first sampling
-        lam2 (jnp.array): Rate \lambda_2 of the second sampling
+        log_theta_fd (jnp.array):       Theta matrix with logarithmic entries, scaled by effects on first diagnosis
+        log_theta_fd_prim (jnp.array):  Copy of log_theta_fd, with off diagonal entries of the last column set to 0.
+        log_theta_sd (jnp.array):       Theta matrix with logarithmic entries, scaeld by effects on second diagnosis
+        state_joint (jnp.array):        Bitstring, genotypes of PT and MT of the same patient
+        n_prim (int):                   Number of active events in the PT
+        n_met (int):                    Number of active events in the MT
 
     Returns:
-        tuple: score, grad wrt. to theta, grad wrt. lam_1
+        tuple: score, grad wrt. to theta, grad wrt. fd_effects, grad wrt. sd_effects
     """
     prim = state_joint.at[0::2].get()
     met = jnp.append(state_joint.at[1::2].get(), 1)
@@ -411,14 +405,14 @@ def _g_coupled(log_theta: jnp.array, log_theta_prim: jnp.array, state_joint: jnp
     p0 = p0.at[0].set(1.)
     
     # Joint and met-marginal distribution at first sampling
-    pTh1_joint = lam1 * R_i_inv_vec(log_theta, p0, lam1, state_joint, transpose = False)
+    pTh1_joint = R_i_inv_vec(log_theta_fd, p0, 1., state_joint, transpose = False)
     p0 = jnp.zeros(2**n_prim)
     p0 = p0.at[0].set(1.)
-    g_1, pTh1_marg = mhn.gradient(log_theta_prim, lam1, prim, p0)
+    g_1, d_fd1, pTh1_marg = mhn.gradient(log_theta_fd_prim, 1., prim, p0)
     nk = pTh1_marg.at[-1].get()
     
     # Select the states where x = prim and z are compatible with met 
-    poss_states = obs_states((n_prim + n_met -1), state_joint, True)
+    poss_states = obs_states((n_prim + n_met - 1), state_joint, True)
     poss_states_inds = jnp.where(poss_states, size=2**(n_met-1))[0]
     # Prim conditional distribution at first sampling, to be used as starting dist for second sampling
     pTh1_cond_obs = pTh1_joint.at[poss_states_inds].get()
@@ -426,27 +420,25 @@ def _g_coupled(log_theta: jnp.array, log_theta_prim: jnp.array, state_joint: jnp
     pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_met-1)), pTh1_cond_obs)
     pTh1_cond_obs *= 1/nk
     
-    # Derivative of pTh2 = M lam_2*(lam2*I-Q)^(-1)pth1_cond
-    g_2, pTh2_marg = mhn.gradient(log_theta, lam2, met, pTh1_cond_obs)
-    # lhs = (pD/pTh_2)^T M lam2*(lam2*I-Q)^(-1)
+    # Derivative of pTh2 = M(I-Q_sd)^(-1)pth1_cond
+    g_2, d_sd1, pTh2_marg = mhn.gradient(log_theta_sd, 1., met, pTh1_cond_obs)
+    # lhs = (pD/pTh_2)^T M(I-Q_sd)^(-1)
     q = jnp.zeros(2**n_met)
     q = q.at[-1].set(1/pTh2_marg.at[-1].get())
-    q = lam2 * mhn.R_inv_vec(log_theta, q, lam2, met, transpose = True)
+    q = mhn.R_inv_vec(log_theta_sd, q, 1., met, transpose = True)
     lhs = jnp.zeros(2**(n_prim + n_met - 1))
     lhs = lhs.at[poss_states_inds].set(q.at[2**(n_met - 1):].get())
     
     # Derivative of pth1_cond
-    q = R_i_inv_vec(log_theta, lhs, lam1, state_joint, transpose = True)
-    g_3 = x_partial_Q_y(log_theta, q, pTh1_joint, state_joint)/nk
+    q = R_i_inv_vec(log_theta_fd, lhs, 1., state_joint, transpose = True)
+    g_3, d_fd2 = x_partial_Q_y(log_theta_fd, q, pTh1_joint, state_joint)
+    g_3 /= nk
+    d_fd2 /= nk
     q = jnp.zeros(2**(n_prim))
     q = q.at[-1].set(1/nk)
-    q = mhn.R_inv_vec(log_theta_prim, q, lam1, prim, transpose = True)
-    g_4 = -mhn.x_partial_Q_y(log_theta_prim, q, pTh1_marg, prim)
-
-    # Partial derivative wrt. lambda1
-    R1pth1 = R_i_inv_vec(log_theta, pTh1_joint, lam1, state_joint, transpose = False)/nk
-    R1pth1 = R1pth1 * poss_states
-    dlam1 = 1/lam1 - jnp.dot(lhs, R1pth1) 
-    
+    q = mhn.R_inv_vec(log_theta_fd_prim, q, 1., prim, transpose = True)
+    g_4, d_fd3 = mhn.x_partial_Q_y(log_theta_fd_prim, q, pTh1_marg, prim)
+    g_4 *= -1.
+    d_fd3 *= -1.
     score =  jnp.log(nk) + jnp.log(pTh2_marg.at[-1].get())
-    return score, g_1 + g_2 + g_3 + g_4, dlam1 * lam1
+    return score, g_1 + g_2 + g_3 + g_4, d_fd1 + d_fd2 + d_fd3, d_sd1

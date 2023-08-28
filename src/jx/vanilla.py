@@ -225,7 +225,7 @@ def x_partial_Q_y(
         x: jnp.array,
         y: jnp.array,
         state: jnp.array, 
-        diagnosis: True) -> jnp.array:
+        diagnosis:bool=True) -> jnp.array:
     """This function computes x \partial Q y with \partial Q the Jacobian of Q w.r.t. all thetas
     efficiently using the shuffle trick (sic!).
 
@@ -298,7 +298,7 @@ def x_partial_Q_y(
 
 
 @jit
-def gradient(log_theta: jnp.array, lam: float, state: jnp.array, p_0: jnp.array) -> jnp.array:
+def gradient(log_theta: jnp.array, lam: float, state: jnp.array, p_0: jnp.array, diagnosis: bool=True) -> jnp.array:
     """This computes the gradient of the score function, which is the log-likelihood of a data vector p_D
     with respect to the log_theta matrix
 
@@ -318,6 +318,5 @@ def gradient(log_theta: jnp.array, lam: float, state: jnp.array, p_0: jnp.array)
     x = x.at[-1].set(1/p_theta.at[-1].get())
     x = R_inv_vec(log_theta=log_theta, x=x, lam=lam,
                   state=state, transpose=True)
-
-    return x_partial_Q_y(log_theta=log_theta,
-                         x=x, y=p_theta, state=state), lam * p_theta
+    d_th, d_diag = x_partial_Q_y(log_theta=log_theta, x=x, y=p_theta, state=state, diagnosis=diagnosis)
+    return d_th, d_diag, lam * p_theta
