@@ -31,7 +31,6 @@ def single_traject(
     b_rates = np.diag(log_theta)
     log_theta_prim = log_theta.copy()
     log_theta_prim[0:-1, -1] = 0.0
-    rng = rng or np.random.default_rng(42)
     if prim is None and met is None:
         prim, met = np.zeros(n), np.zeros(n)
     elif not (prim is not None and met is not None):
@@ -221,16 +220,9 @@ def simulate_dat(
     ages = np.zeros(n_dat)
     pre_seeding_probs = np.zeros(n)
 
-    theta = theta_in.copy()
-    b_rates = np.diag(theta_in)
-    theta[np.diag_indices(n)] = 0.0
-    th_prim = theta.copy()
-    th_prim[0:-1, -1] = 0.0
-
     i = 0
     while i < n_dat:
-        datum, age, psp, full_prim, full_met = sample_metmhn(
-            theta, lam1, lam2, rng)
+        datum, age, psp, _, _= sample_metmhn(theta_in, lam1, lam2, rng)
         if datum.sum() > 0:
             dat[i, :] = datum
             ages[i] = age
