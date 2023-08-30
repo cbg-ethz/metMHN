@@ -1,5 +1,5 @@
 # MetaMHN
-This is a adaptation to MHN so that it works on metastasis cancer data
+This is an adaptation of the MHN-model such that it models the progression of primary tumors and metastases jointly.
 
 ## Setting up the Python environment
 
@@ -16,3 +16,7 @@ Install the required packages
 pip3 install -r requirements.txt
 ```
 Then install jaxlib cuda package from [here](https://github.com/google/jax#pip-installation-gpu-cuda-installed-via-pip-easier) choosing the installation where CUDA is installed via pip.
+Install the metMHN package locally 
+```bash
+pip -e .
+```
