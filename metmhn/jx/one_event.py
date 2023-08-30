@@ -6,7 +6,7 @@ import numpy as np
 
 
 def small_Q(log_theta: np.array) -> np.array:
-
+    n = log_theta.shape[0]
     return np.array(
         [
             sum(-np.exp(log_theta[i, i])

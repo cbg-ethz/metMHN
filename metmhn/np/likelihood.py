@@ -1,7 +1,12 @@
+from metmhn.np.kronvec import (kronvec_sync, 
+                               kronvec_met, 
+                               kronvec_prim, 
+                               kronvec_seed, 
+                               kronvec, 
+                               kron_diag
+                               )
+import metmhn.Utilityfunctions as utils
 import numpy as np
-
-from np.kronvec import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed, kronvec, kron_diag
-import Utilityfunctions as utils
 
 
 def x_partial_Q_y(log_theta: np.array, x: np.array, y: np.array, state: np.array) -> np.array:

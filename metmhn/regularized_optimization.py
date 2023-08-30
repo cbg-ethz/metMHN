@@ -1,8 +1,9 @@
+from metmhn.jx import likelihood as ssr
+from metmhn.jx.kronvec import diagnosis_theta
+
 import jax.numpy as jnp
 import numpy as np
-from jx import likelihood as ssr
-from jx import vanilla as mhn
-from jx.kronvec import obs_states, diagnosis_theta
+
 
 def L1(theta: jnp.array, eps: float = 1e-05) -> float:
     """
@@ -242,10 +243,10 @@ def grad_coupled(log_theta: jnp.array, fd_effects: jnp.array, sd_effects: jnp.ar
 
 def grad(params: np.array, dat_prim_only: jnp.array, dat_prim_met:jnp.array, dat_met: jnp.array, dat_coupled: jnp.array,
         penal: float, perc_met: float) -> np.array:
-    """Calculates the gradient of log_lik wrt. to all log(\theta_ij) and wrt. \lambda_1
+    """Calculates the gradient of log_lik wrt. to all log(\theta_ij)
 
     Args:
-        params (np.array):          Array of size n(n+2), holding all parameters of the model 
+        params (np.array):          Array of size n*(n+2), holding all parameters of the model 
         dat_prim_only (jnp.array):  Dataset containing only PT genotypes, that never spawned an MT
         dat_prim_met (jnp.array):   Dataset containing only PT genotypes, that spawned an MT
         dat_met (jnp.array):        Dataset containing only MT genotypes
@@ -263,7 +264,7 @@ def grad(params: np.array, dat_prim_only: jnp.array, dat_prim_met:jnp.array, dat
     fd_effects = jnp.array(params[n_total**2:n_total*(n_total + 1)])
     sd_effects = jnp.array(params[n_total*(n_total+1):])
     
-    # Penalties and their derivatives
+    # Derivatives of penalties
     l1_ = np.concatenate((L1_(log_theta), L1_(fd_effects), L1_(sd_effects)))
     
     g_prim, g_coupled = jnp.zeros(n_total*(n_total + 2)), jnp.zeros(n_total*(n_total + 2))
@@ -289,4 +290,5 @@ def grad(params: np.array, dat_prim_only: jnp.array, dat_prim_met:jnp.array, dat
     
     n_met = n_coupled + n_met_only + n_prim_met
     g = (1 - perc_met) * g_prim/n_prim_only + perc_met/n_met * (g_coupled + g_prim_met + g_met)
+    # Optimizer only takes np.arrays as input
     return np.array(-g + penal * l1_)

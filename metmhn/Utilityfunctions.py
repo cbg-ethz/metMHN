@@ -1,15 +1,17 @@
+import metmhn.jx.vanilla as mhn
+import metmhn.regularized_optimization as reg_opt
+
 from itertools import chain, combinations
 import numpy as np
 import jax.numpy as jnp
 import pandas as pd
-import regularized_optimization as reg_opt
 import scipy.optimize as opt
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import logging
-import jx.vanilla as mhn
 
-my_gradient = LinearSegmentedColormap.from_list('my_gradient', (
+
+my_color_gradient = LinearSegmentedColormap.from_list('my_gradient', (
     # Generated with https://eltos.github.io/gradient/#E69F00-FFFFFF-009E73
     (0.000, (0.902, 0.624, 0.000)),
     (0.500, (1.000, 1.000, 1.000)),
@@ -25,7 +27,7 @@ def state_space(n: int) -> np.array:
     """
     states = np.arange(2**n, dtype=np.uint8).reshape((2**n, 1))
     ret = np.unpackbits(states, axis=1, count=n, bitorder="little")
-    return ret #np.array([f'{i:0b}'.zfill(n)[::-1] for i in range(2**n)])
+    return ret
 
 
 def trunk_states(state: np.array) -> np.array:
@@ -250,7 +252,7 @@ def plot_theta(theta_in: pd.DataFrame, alpha: float, verbose=True) -> tuple:
     #f.tight_layout()
 
     # Plot off diagonals on one plot
-    im = ax.matshow(theta[theta!=0], cmap=my_gradient)
+    im = ax.matshow(theta[theta!=0], cmap=my_color_gradient)
     #im2 = ax.matshow(theta[theta>0], cmap="Greens")
     ax.set_xticks(range(theta.shape[1]), events, fontsize=14, rotation=90)
     ax.set_yticks(range(theta.shape[1]), events, fontsize=14)

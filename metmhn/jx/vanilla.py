@@ -1,8 +1,12 @@
+from metmhn.jx.kronvec import (k2d1t, 
+                               k2ntt, 
+                               k2dt0
+                               )
 import numpy as np
 import jax.numpy as jnp
 from jax import jit, lax, vmap
 from functools import partial
-from jx.kronvec import k2d1t, k2ntt, k2dt0
+
 
 
 @jit

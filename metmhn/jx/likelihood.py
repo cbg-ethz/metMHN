@@ -1,11 +1,18 @@
-import numpy as np
+from metmhn.jx.kronvec import (kronvec_sync, 
+                        kronvec_met, 
+                        kronvec_prim, 
+                        kronvec_seed, 
+                        kronvec, 
+                        kron_diag, 
+                        obs_states
+                        )
 
-from jx.kronvec import kronvec_sync, kronvec_met, kronvec_prim, kronvec_seed, kronvec, kron_diag, obs_states
-import Utilityfunctions as utils
+from metmhn.jx import vanilla as mhn
+import numpy as np
 import jax.numpy as jnp
 from jax import jit, lax, vmap
 from functools import partial
-from jx import vanilla as mhn
+
 
 
 def f1(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, jnp.array, float]:
@@ -151,7 +158,7 @@ def deriv_no_seed(i, val, x, y, log_theta, state, n):
 
     return val
 
-
+@partial(jit, static_argnames=["diagnosis"])
 def x_partial_Q_y(log_theta: jnp.array, x: jnp.array, y: jnp.array, state: jnp.array, diagnosis: bool=True) -> jnp.array:
     """This function computes x \partial Q y with \partial Q the Jacobian of Q w.r.t. all thetas
     efficiently using the shuffle trick (sic!).
