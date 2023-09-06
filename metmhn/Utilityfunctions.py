@@ -1,11 +1,9 @@
-import metmhn.jx.vanilla as mhn
-import metmhn.regularized_optimization as reg_opt
+from metmhn.regularized_optimization import learn_mhn, log_lik
 
 from itertools import chain, combinations
 import numpy as np
 import jax.numpy as jnp
 import pandas as pd
-import scipy.optimize as opt
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import logging
@@ -14,8 +12,9 @@ import logging
 my_color_gradient = LinearSegmentedColormap.from_list('my_gradient', (
     # Generated with https://eltos.github.io/gradient/#E69F00-FFFFFF-009E73
     (0.000, (0.902, 0.624, 0.000)),
-    (0.500, (1.000, 1.000, 1.000)),
-    (1.000, (0.000, 0.620, 0.451))))
+    (0.500, (0.937, 0.976, 0.965)),
+    (1.000, (0.000, 0.620, 0.451)))
+    )
 
 def state_space(n: int) -> np.array:
     """
@@ -147,32 +146,55 @@ def split_data(dat: pd.DataFrame) -> tuple:
     return prim_only, met_only, prim_met, coupled
 
 
-def cross_val(dat: pd.DataFrame, splits: jnp.array, nfolds: int, start_params: jnp.array, m_p_corr: float, n: int) -> float:
+def indep(dat: jnp.array, n_coupled: int) -> tuple[np.array, np.array, np.array]:
+    """Generates an initialization for theta, fd_effects and sd_effects
+
+    Args:
+        dat (jnp.array): 2d array wof observations
+        n_coupled (int): Number of coupled datapoints
+
+    Returns:
+        tuple[np.array, np.array, np.array]: independence model, init for fd_effects, init for sd_effects 
+    """
+    
+    n = (dat.shape[1] - 1)//2
+    n_single = dat.shape[0] - n_coupled
+    theta = np.zeros((n + 1, n + 1))
+    for i in range(n):
+        mut_count = np.sum(dat.at[:,2*i].get() + dat.at[:, 2*i+1].get())
+        if mut_count == 0:
+            theta[i, i] = -1e10
+        else:
+            theta[i,i] = np.log(mut_count/(2 * n_coupled + n_single - mut_count + 1e-10))
+    seed_count = np.sum(dat.at[:,-1].get())
+    theta[n,n] = np.log(seed_count/(n_coupled + n_single - seed_count + 1e-10))
+    return theta, np.zeros(n+1), np.zeros(n+1)
+
+
+def cross_val(dat: pd.DataFrame, splits: jnp.array, nfolds: int, m_p_corr: float) -> float:
     """Performs nfolds-crossvalidation across a parameter range in splits 
 
     Args:
-        dat (pd.DataFrame): Input data
-        splits (jnp.array): hyperparameter range to test
-        nfolds (int): number of folds (subgroups) to split dat into
-        start_params (jnp.array): parameters for the model
-        m_p_corr (float): correction factor to account for poverrepresentation of mets
-        n (int): number of mutation events
+        dat (pd.DataFrame):     Input data
+        splits (jnp.array):     Hyperparameter range to test
+        nfolds (int):           Number of folds (subgroups) to split dat into
+        m_p_corr (float):       Correction factor to account for poverrepresentation of mets
 
     Returns:
         float: best hyperparameter
     """
-    ndat = dat.shape[0]
+    n_dat = dat.shape[0]
     dat = dat.reset_index()
     shuffled = dat.sample(frac=1)
     runs_constrained = np.zeros((nfolds, splits.shape[0]))
-    batch_size = np.ceil(ndat/nfolds)
+    batch_size = np.ceil(n_dat/nfolds)
     
     logging.info(f"Crossvalidation started")
     for i in range(nfolds):
         start = batch_size*i
-        stop = np.min((batch_size*(i+1), ndat))
+        stop = np.min((batch_size*(i+1), n_dat))
 
-        train_inds = np.concatenate((np.arange(start), np.arange(stop, ndat)))
+        train_inds = np.concatenate((np.arange(start), np.arange(stop, n_dat)))
         train = shuffled.iloc[train_inds,:]
         train = train.set_index(["paired", "metaStatus"])
         train_prim_only, train_met_only, train_prim_met, train_coupled = split_data(train)
@@ -181,14 +203,15 @@ def cross_val(dat: pd.DataFrame, splits: jnp.array, nfolds: int, start_params: j
         test = shuffled.iloc[test_inds, :]
         test = test.set_index(["paired", "metaStatus"])
         test_prim_only, test_met_only, test_prim_met, test_coupled = split_data(test)
+        th_init, fd_init, sd_init = indep(train.to_numpy(), test_coupled.shape[1])
+        
         for j in range(splits.size):
-            mhn_diag_con = opt.minimize(reg_opt.value_grad, x0 = start_params,#
-                             args = (train_prim_only, train_prim_met, train_met_only, train_coupled, n-1,#
-                                     splits[j], m_p_corr), method = "L-BFGS-B", jac = True,#
-                             options={"maxiter":10000, "disp":False, "ftol":1e-04})
-
-            runs_constrained[i,j] = reg_opt.value_grad(mhn_diag_con.x, test_prim_only, test_prim_met, test_met_only,#
-                                                       test_coupled, n-1, 0., m_p_corr)[0]
+            th, fd, sd = learn_mhn(th_init, fd_init, sd_init, train_prim_only, 
+                                     train_prim_met, train_met_only, train_coupled, 
+                                     m_p_corr, splits[j])
+            params = np.concatenate((th.flatten(), fd, sd))
+            runs_constrained[i,j] = log_lik(params, test_prim_only, test_prim_met, test_met_only, 
+                                            test_coupled, splits[j], m_p_corr)
             
             logging.info(f"Diag constrained, Split: {splits[j]}, Fold: {i}, Score: {runs_constrained[i,j]}")
 
@@ -202,106 +225,66 @@ def cross_val(dat: pd.DataFrame, splits: jnp.array, nfolds: int, start_params: j
     
     return best_diag_penal
 
-def indep(dat_singles: jnp.array, dat_coupled: jnp.array) -> jnp.array:
-    """Generates a diagonal theta matrix with log odds ratios as entries
 
-    Args:
-        dat_singles (jnp.array): 2d array with uncoupled datapoints as rows
-        dat_coupled (jnp.array): 2d array with coupled datapoints as tows
-
-    Returns:
-        jnp.array: independence model
-    """
-    n = (dat_singles.shape[1] - 1)//2
-    n_coupled = dat_coupled.shape[0]
-    n_singles = dat_singles.shape[0]
-    theta = jnp.zeros((n + 1,n + 1))
-    for i in range(n):
-        mut_count = jnp.sum(dat_singles.at[:,2*i].get() + dat_singles.at[:, 2*i+1].get())
-        mut_count += jnp.sum(dat_coupled.at[:,2*i].get() + dat_coupled.at[:, 2*i+1].get())
-        if mut_count == 0:
-            theta = theta.at[i,i].set(-1e10)
-        else:
-            theta = theta.at[i,i].set(jnp.log(mut_count/(2 * n_coupled + n_singles - mut_count + 1e-10)))
-    seed_count = jnp.sum(dat_singles.at[:,-1].get()) + n_coupled
-    theta = theta.at[n,n].set(jnp.log(seed_count/(n_coupled + n_singles - seed_count + 1e-10)))
-    return theta
-
-
-def plot_theta(theta_in: pd.DataFrame, alpha: float, verbose=True) -> tuple:
+def plot_theta(th_in: np.array, events: np.array, alpha: float, verbose=True) -> tuple:
     """Plot theta matrix 
 
     Args:
-        theta_in (pd.DataFrame): theta matrix with logarithmic entries
-        alpha (float): alpha value for background heatmap coloring
+        th_in (np.array):   Theta matrix with logarithmic entries
+        events (np.array):  Array of event names excluding diagnosis
+        alpha (float):      Threshold for effect size
 
     Returns:
         tuple: tuple of axis objects
     """
-    theta = theta_in.copy()
-    events = theta.columns
-    n = theta.shape[0]
+    th = th_in.copy()
+    n_total = th.shape[1]
+    theta = th[2:, :]
+    th_diag = np.diagonal(theta.copy())
+    theta[np.diag_indices(n_total)] = 0.
+    th = np.row_stack((th[:2,:], theta))
+    th[np.abs(th)<alpha] = np.nan
+    th_diag = np.row_stack((np.array([np.nan, np.nan]).reshape((2,1)), th_diag.reshape(-1,1)))
     
-    theta[(theta.round(2) == 0) | (theta.round(2) == -0)] = np.nan
-    theta_diag = np.diag(theta.copy()).reshape((-1,1))
-    theta[theta.abs() <= alpha] = np.nan
-    np.fill_diagonal(theta.values, np.nan)
 
-    f, (ax, ax2) = plt.subplots(1, 2, figsize=(19,15), gridspec_kw={'width_ratios': [n, 1], "top":1, "bottom": 0, "right":1, "left":0, 
-                                       "hspace":0, "wspace":-0.48})
-    #f.tight_layout()
-
+    f, (ax, ax2) = plt.subplots(1, 2, figsize=(19,15), sharey="col",
+                                gridspec_kw={'width_ratios': [n_total, 1], "top":1, "bottom": 0, "right":1, 
+                                             "left":0, "hspace":0, "wspace":-0.48})
+    events_ext = np.concatenate((np.array(["FD", "SD"]), events))
     # Plot off diagonals on one plot
-    im = ax.matshow(theta[theta!=0], cmap=my_color_gradient)
-    #im2 = ax.matshow(theta[theta>0], cmap="Greens")
-    ax.set_xticks(range(theta.shape[1]), events, fontsize=14, rotation=90)
-    ax.set_yticks(range(theta.shape[1]), events, fontsize=14)
+    im1 = ax.matshow(th, cmap=my_color_gradient)
+    ax.set_xticks(range(n_total), events, fontsize=14, rotation=90)
+    ax.set_yticks(range(n_total+2), events_ext, fontsize=14)
     
     # Plot grid lines between cells
-    ax.set_xticks(np.arange(-.5, theta.shape[1], 1), minor=True)
-    ax.set_yticks(np.arange(-.5, theta.shape[1], 1), minor=True)
+    ax.set_xticks(np.arange(-.5, n_total, 1), minor=True)
+    ax.set_yticks(np.arange(-.5, n_total, 1), minor=True)
     ax.grid(which="minor",color='grey', linestyle='-', linewidth=1)
     ax.tick_params(which='minor', bottom=False, left=False) 
-    
-    f.colorbar(im, ax=ax, orientation="horizontal", shrink=4/n, pad=0.03, aspect=8)
+
+    f.colorbar(im1, ax=ax, orientation="horizontal", shrink=4/n_total, pad=0.03, aspect=8)
     # Plot diagonal entries separately
-    im2 = ax2.matshow(theta_diag, cmap="Blues")
+    im2 = ax2.matshow(th_diag, cmap="Blues")
     ax2.set_yticks([])
-    #ax2.yaxis.tick_right()
-    #ax2.yaxis.set_label_position("right")
     ax2.set_xticks([])
+    ax2.spines['top'].set_visible(False)
+    ax2.spines['right'].set_visible(False)
+    ax2.spines['bottom'].set_visible(False)
+    ax2.spines['left'].set_visible(False)
     f.colorbar(im2, ax=ax2, orientation="horizontal", shrink=4, pad=0.03, aspect=8)
     # Plot numerical values of theta 
     if verbose:
-        for i in range(n):
-            for j in range(n):
-                if np.isnan(theta.iloc[i,j]) == False:
-                    c = np.round(theta.iloc[i,j].round(2), 2)
+       for i in range(n_total+2):
+            for j in range(n_total):
+                if np.isnan(th[i,j]) == False:
+                    c = np.round(th[i,j].round(2), 2)
                 else:
                     c = ""
                 ax.text(j, i, str(c), va='center', ha='center')
-            ax2.text(0, i, np.round(theta_diag[i,0],3), va='center', ha='center')
+            if np.isnan(th_diag[i,0]):
+                c = ""
+            else:
+                c = np.round(th_diag[i,0],3)
+            ax2.text(0, i, str(c), va='center', ha='center')
+    plt.show()
     return f
-
-def p_unobs_seeding(log_theta: jnp.array, lam1: jnp.array,  dat_obs: jnp.array) -> jnp.array:
-    """
-        Returns the probability that tumor dat_obs has spawned an unobserved metastasis
-
-    Args:
-        log_theta (jnp.array): matrix of logarithmic entries of theta
-        lam1 (jnp.arry): Rate of first sampling (non logarithmic)
-        dat_obs (jnp.array): Primary tumor genotype as bitstring
-
-    Returns:
-        jnp.array: _description_
-    """
-    dat_mod = dat_obs.at[::2].get()
-    dat_mod = dat_mod.at[-1].set(1)
-    th_mod = log_theta.copy()
-    th_mod = th_mod.at[:-1, -1].set(0.)
-    m =  dat_mod.sum()
-    p0 = jnp.zeros(2**m)
-    p0 = p0.at[0].set(1.0)
-    pth = lam1 * mhn.R_inv_vec(th_mod, p0, lam1,  dat_mod, False)
-    probs = pth.reshape((-1, 2), order="F").at[-1,:].get()
-    return probs.at[1].get() / probs.sum()
