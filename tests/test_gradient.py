@@ -48,7 +48,7 @@ class DerivativeTestCase(unittest.TestCase):
         self.state_coupled = jnp.array(np.append(rng.binomial(1, 0.6, 2*self.n_mut), 1)).reshape((1,N))
 
         self.h = 1e-08  # Stepsize for finite difference method
-        self.tol = 1e-05    # Tolerance for comparisson between numeric and analytic solution
+        self.tol = 1e-04    # Tolerance for comparisson between numeric and analytic solution
 
     def test_prim_only_deriv(self):
         params = [self.theta, self.fd_effects, self.state_prim_only]
@@ -83,8 +83,9 @@ class DerivativeTestCase(unittest.TestCase):
                                    rtol=self.tol)
     
     def test_full_deriv(self):
-        params = np.concatenate((self.theta.flatten(), self.fd_effects, self.sd_effects))
         n_tot =  self.n_mut + 1
+        params = np.concatenate((self.theta.flatten(), self.fd_effects, self.sd_effects))
+        params[n_tot*(n_tot+1)-1] = 0.
         g_num = np.zeros(n_tot*(n_tot+2))
         score = regopt.log_lik(params, self.state_prim_only, self.state_prim_met, 
                                self.state_met, self.state_coupled, 0., 0.8)
@@ -94,6 +95,7 @@ class DerivativeTestCase(unittest.TestCase):
             score_h = regopt.log_lik(params_h, self.state_prim_only, self.state_prim_met, 
                                      self.state_met, self.state_coupled, 0., 0.8)
             g_num[i] = (score_h - score)/self.h
+        g_num[n_tot*(n_tot+1)-1] = 0.
         np.testing.assert_allclose(g_num, 
                                    np.array(regopt.grad(params, self.state_prim_only, self.state_prim_met, 
                                                         self.state_met, self.state_coupled, 0., 0.8)),

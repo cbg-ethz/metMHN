@@ -123,7 +123,7 @@ class KroneckerTestCase(unittest.TestCase):
                                                           x=jnp.array(p), y=jnp.array(q), state=self.state)[0]),
                         rtol=rtol
                         )
-
-
+                    
+                    
 if __name__ == "__main__":
     unittest.main()
