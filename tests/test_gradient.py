@@ -42,10 +42,14 @@ class DerivativeTestCase(unittest.TestCase):
         self.fd_effects = jnp.log(jnp.array([1,2,3,4]))
         self.sd_effects = jnp.log(jnp.array([0.5, 1.5, 2.5, 3.5]))
 
-        self.state_prim_met = jnp.array(np.append(rng.binomial(1, 0.6, 2*self.n_mut), 1)).reshape((1, N))
-        self.state_prim_only = jnp.array(np.append(rng.binomial(1, 0.6, 2*self.n_mut,), 0)).reshape((1, N))
-        self.state_met = jnp.array(np.append(rng.binomial(1, 0.6, 2*self.n_mut),1)).reshape((1,N))
-        self.state_coupled = jnp.array(np.append(rng.binomial(1, 0.6, 2*self.n_mut), 1)).reshape((1,N))
+        self.state_prim_met = jnp.array(
+            np.append(rng.binomial(1, 0.6, 2*self.n_mut), 1)).reshape((1, N))
+        self.state_prim_only = jnp.array(
+            np.append(rng.binomial(1, 0.6, 2*self.n_mut,), 0)).reshape((1, N))
+        self.state_met = jnp.array(
+            np.append(rng.binomial(1, 0.6, 2*self.n_mut),1)).reshape((1,N))
+        self.state_coupled = jnp.array(
+            np.append(rng.binomial(1, 0.6, 2*self.n_mut), 1)).reshape((1,N))
 
         self.h = 1e-08  # Stepsize for finite difference method
         self.tol = 1e-04    # Tolerance for comparisson between numeric and analytic solution
@@ -85,7 +89,6 @@ class DerivativeTestCase(unittest.TestCase):
     def test_full_deriv(self):
         n_tot =  self.n_mut + 1
         params = np.concatenate((self.theta.flatten(), self.fd_effects, self.sd_effects))
-        params[n_tot*(n_tot+1)-1] = 0.
         g_num = np.zeros(n_tot*(n_tot+2))
         score = regopt.log_lik(params, self.state_prim_only, self.state_prim_met, 
                                self.state_met, self.state_coupled, 0., 0.8)
@@ -95,7 +98,6 @@ class DerivativeTestCase(unittest.TestCase):
             score_h = regopt.log_lik(params_h, self.state_prim_only, self.state_prim_met, 
                                      self.state_met, self.state_coupled, 0., 0.8)
             g_num[i] = (score_h - score)/self.h
-        g_num[n_tot*(n_tot+1)-1] = 0.
         np.testing.assert_allclose(g_num, 
                                    np.array(regopt.grad(params, self.state_prim_only, self.state_prim_met, 
                                                         self.state_met, self.state_coupled, 0., 0.8)),
