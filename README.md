@@ -18,5 +18,5 @@ pip3 install -r requirements.txt
 Then install jaxlib cuda package from [here](https://github.com/google/jax#pip-installation-gpu-cuda-installed-via-pip-easier) choosing the installation where CUDA is installed via pip.
 Install the metMHN package locally 
 ```bash
-pip -e .
+pip install -e .
 ```
