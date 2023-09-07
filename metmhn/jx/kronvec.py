@@ -305,6 +305,7 @@ def _kronvec_prim(
     p: jnp.array,
     i: int,
     state: jnp.array,
+    d_e: jnp.array,
     diag: bool = True,
     transpose: bool = False
 ) -> jnp.array:
@@ -323,6 +324,7 @@ def _kronvec_prim(
             operand=val)
         return val
 
+    n = log_theta.shape[0]-1
     # Diagonal Kronecker factors
     p = lax.fori_loop(lower=0, upper=i,
                       body_fun=loop_body_diag, init_val=p)
@@ -345,7 +347,8 @@ def _kronvec_prim(
                       body_fun=loop_body_diag, init_val=p)
 
     # Last Kronecker factor
-    p = k2d01(p)
+    #p = k2d01(p)
+    p = k2d0t(p, theta=jnp.exp(-d_e))
 
     return p
 
@@ -356,6 +359,7 @@ def kronvec_prim(
     p: jnp.array,
     i: int,
     state: jnp.array,
+    d_e: jnp.array,
     diag: bool = True,
     transpose: bool = False
 ) -> jnp.array:
@@ -369,6 +373,7 @@ def kronvec_prim(
         i (int): Index of the summand.
         n (int): Total number of events in the MHN.
         state (jnp.array): Binary state vector, representing the current sample's events.
+        d_e (jnp.array): Effect of the Seeding on the diagnosis.
         diag (bool, optional): Whether to use the diagonal of Q_i (and not set it to 0). Defaults to True.
         transpose (bool, optional): Whether to transpose Q_i before multiplying. Defaults to False.
 
@@ -387,6 +392,7 @@ def kronvec_prim(
                 p=p,
                 i=i,
                 state=state,
+                d_e=d_e,
                 diag=diag,
                 transpose=transpose
             ),
@@ -568,7 +574,7 @@ def kronvec_seed(
 
 
 @partial(jit, static_argnames=["diag", "transpose"])
-def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array,
+def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array, d_e: jnp.array,
             diag: bool = True, transpose: bool = False) -> jnp.array:
     """
     This computes the restricted version of the product of the rate matrix Q with a vector p.
@@ -579,6 +585,7 @@ def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array,
         nonzero entries in the state vector.
         n (int): Total number of events in the MHN.
         state (jnp.array): Binary state vector, representing the current sample's events.
+        d_e (jnp.array): Effect of the Seeding on the diagnosis.  
         diag (bool, optional): Whether to use the diagonal of Q (and not set it to 0). Defaults to True.
         transpose (bool, optional): Whether to transpose Q before multiplying. Defaults to False.
 
@@ -590,7 +597,7 @@ def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array,
         val += kronvec_sync(log_theta=log_theta, p=p, i=i,
                             state=state, diag=diag, transpose=transpose)
         val += kronvec_prim(log_theta=log_theta, p=p, i=i,
-                            state=state, diag=diag, transpose=transpose)
+                            state=state, d_e=d_e, diag=diag, transpose=transpose)
         val += kronvec_met(log_theta=log_theta, p=p, i=i,
                            state=state, diag=diag, transpose=transpose)
 
@@ -684,6 +691,7 @@ def _kron_prim_diag(
         log_theta: jnp.array,
         i: int,
         state: jnp.array,
+        d_e: jnp.array,
         diag: jnp.array) -> jnp.array:
 
     def loop_body(j, val):
@@ -726,8 +734,8 @@ def _kron_prim_diag(
         init_val=diag
     )
 
-    diag = k2d01(diag)
-
+    #diag = k2d01(diag)
+    diag = k2d0t(diag, jnp.exp(-d_e))
     return diag
 
 
@@ -736,6 +744,7 @@ def kron_prim_diag(
         log_theta: jnp.array,
         i: int,
         state: jnp.array,
+        d_e: jnp.array,
         diag: jnp.array) -> jnp.array:
     """This computes the diagonal of the asynchronous primary tumour part of the ith
     Q summand Q_i.
@@ -746,6 +755,7 @@ def kron_prim_diag(
         i (int): Index of the summand.
         n (int): Total number of events in the MHN.
         state (jnp.array): Binary state vector, representing the current sample's events.
+        d_e (jnp.array): Effect of the Seeding on the diagnosis.
         diag (jnp.array): Vector of ones of size 2 ** (number of 1s in state)
 
     Returns:
@@ -759,6 +769,7 @@ def kron_prim_diag(
             log_theta=log_theta,
             i=i,
             state=state,
+            d_e = d_e,
             diag=diag,
         ),
     )
@@ -896,13 +907,14 @@ def kron_seed_diag(
 
 
 @jit
-def kron_diag(log_theta: jnp.array, state: jnp.array, p_in: jnp.array) -> jnp.array:
+def kron_diag(log_theta: jnp.array, state: jnp.array, d_e: jnp.array, p_in: jnp.array) -> jnp.array:
     """This computes diagonal of the rate matrix Q.
 
     Args:
         log_theta (jnp.array): Log values of the theta matrix
         n (int): Total number of events in the MHN.
         state (jnp.array): Binary state vector, representing the current sample's events.
+        d_e (jnp.array): Effect of the seeding on the diagnosis.
         p_in (jnp.array): Vector size 2 ** (number of 1s in state)
 
     Returns:
@@ -916,7 +928,7 @@ def kron_diag(log_theta: jnp.array, state: jnp.array, p_in: jnp.array) -> jnp.ar
         val += kron_sync_diag(log_theta=log_theta, i=i,
                               state=state, diag=diagonal)
         val += kron_prim_diag(log_theta=log_theta, i=i,
-                              state=state, diag=diagonal)
+                              state=state, d_e=d_e, diag=diagonal)
         val += kron_met_diag(log_theta=log_theta, i=i,
                              state=state, diag=diagonal)
 

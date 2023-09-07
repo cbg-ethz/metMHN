@@ -1,11 +1,13 @@
 from metmhn.jx import likelihood as ssr
 from metmhn.jx.kronvec import diagnosis_theta
+from metmhn.jx.vanilla import R_inv_vec
 
 import jax.numpy as jnp
 import numpy as np
+import scipy.optimize as opt
 
 
-def L1(theta: jnp.array, eps: float = 1e-05) -> float:
+def L1(theta: jnp.array, eps: float = 1e-05) -> jnp.array:
     """
     Computes the L1 penalty
     """
@@ -15,7 +17,7 @@ def L1(theta: jnp.array, eps: float = 1e-05) -> float:
     return jnp.sum(jnp.sqrt(theta_**2 + eps))
 
 
-def L1_(theta: np.ndarray, eps: float = 1e-05) -> jnp.ndarray:
+def L1_(theta: np.ndarray, eps: float = 1e-05) -> jnp.array:
     """
     Derivative of the L1 penalty
     """
@@ -25,7 +27,7 @@ def L1_(theta: np.ndarray, eps: float = 1e-05) -> jnp.ndarray:
     return theta_.flatten() / jnp.sqrt(theta_.flatten()**2 + eps)
 
 
-def lp_prim_only(log_theta: jnp.array, fd_effects, dat: jnp.array) -> jnp.array:
+def lp_prim_only(log_theta: jnp.array, fd_effects: jnp.array, dat: jnp.array) -> jnp.array:
     """Calculates the marginal likelihood of observing unpaired primary tumors at t_1
 
     Args:
@@ -88,12 +90,13 @@ def lp_coupled(log_theta: jnp.array, fd_effects: jnp.array, sd_effects: jnp.arra
     log_theta_fd = diagnosis_theta(log_theta, fd_effects)
     log_theta_sd = diagnosis_theta(log_theta, sd_effects)
     log_theta_prim_fd = log_theta_fd.copy()
-    log_theta_prim_fd = log_theta_prim_fd.at[:-1,-1].set(-1.*fd_effects.at[-1].get())
+    e_seed_fd = fd_effects.at[-1].get()
+    log_theta_prim_fd = log_theta_prim_fd.at[:-1,-1].set(-1. * e_seed_fd)
     for i in range(dat.shape[0]):
         state_joint = dat.at[i, 0:2*n_muts+1].get()
         n_prim = int(state_joint.at[::2].get().sum())
         n_met = int(state_joint.at[1::2].get().sum() + 1)
-        score += ssr._lp_coupled(log_theta_fd, log_theta_prim_fd, log_theta_sd, state_joint, n_prim, n_met)
+        score += ssr._lp_coupled(log_theta_fd, log_theta_prim_fd, log_theta_sd, state_joint,e_seed_fd, n_prim, n_met)
     return score
 
 
@@ -140,12 +143,13 @@ def log_lik(params: np.array, dat_prim_only: jnp.array, dat_prim_met: jnp.array,
         n_coupled = dat_coupled.shape[0]
 
     n_met = n_met_only + n_prim_met + n_coupled
-    score = (1 - perc_met) * score_prim/n_prim_only + perc_met/n_met * (score_met + score_prim_met + score_coupled)
-    # The optimizer needs np.arrays as input
+    score = (1 - perc_met) * score_prim/n_prim_only + perc_met/n_met * (score_coupled + score_prim_met + score_met)
+    # The SciPy-Optimizer only takes np.arrays as input
     return np.array(-score + penal1 * l1)
 
 
-def grad_prim_only(log_theta:jnp.array, fd_effects: jnp.array, dat: jnp.array) -> tuple:
+def grad_prim_only(log_theta:jnp.array, fd_effects: jnp.array, 
+                   dat: jnp.array) -> tuple[jnp.array, jnp.array]:
     """Gradient of lp_prim
     
     Args:
@@ -172,7 +176,8 @@ def grad_prim_only(log_theta:jnp.array, fd_effects: jnp.array, dat: jnp.array) -
     return score, jnp.concatenate((g.flatten(), d_fd, jnp.zeros(n_total)))
 
 
-def grad_met_only(log_theta: jnp.array, fd_effects : jnp.array, sd_effects: jnp.array, dat: jnp.array) -> tuple:
+def grad_met_only(log_theta: jnp.array, fd_effects : jnp.array, sd_effects: jnp.array, 
+                  dat: jnp.array) -> tuple[jnp.array, jnp.array]:
     """ Gradient of lp_met
 
       Args:
@@ -223,7 +228,8 @@ def grad_coupled(log_theta: jnp.array, fd_effects: jnp.array, sd_effects: jnp.ar
     log_theta_fd = diagnosis_theta(log_theta, fd_effects)
     log_theta_sd = diagnosis_theta(log_theta, sd_effects)
     log_theta_prim_fd = log_theta_fd.copy()
-    log_theta_prim_fd = log_theta_prim_fd.at[:-1,-1].set(-1.*fd_effects.at[-1].get())
+    e_seed_diag = fd_effects.at[-1].get()
+    log_theta_prim_fd = log_theta_prim_fd.at[:-1,-1].set(-1. * e_seed_diag)
 
     g = jnp.zeros((n_mut+1, n_mut+1), dtype=float)
     d_fd = jnp.zeros(n_mut+1)
@@ -233,11 +239,13 @@ def grad_coupled(log_theta: jnp.array, fd_effects: jnp.array, sd_effects: jnp.ar
         state = dat.at[i, 0:2*n_mut+1].get()
         n_prim = int(state.at[::2].get().sum())
         n_met = int(state.at[1::2].get().sum() + 1)      
-        lik, dtheta, fd_, sd_ = ssr._g_coupled(log_theta_fd, log_theta_prim_fd, log_theta_sd, state, n_prim, n_met)
+        lik, dtheta, fd_, sd_ = ssr._g_coupled(log_theta_fd, log_theta_prim_fd, log_theta_sd, 
+                                               state, e_seed_diag, n_prim, n_met)
         score += lik
         g += dtheta
         d_fd += fd_
         d_sd += sd_
+
     return score, jnp.concatenate((g.flatten(), d_fd, d_sd)) 
 
 
@@ -263,7 +271,7 @@ def grad(params: np.array, dat_prim_only: jnp.array, dat_prim_met:jnp.array, dat
     log_theta = jnp.array(params[0:n_total**2]).reshape((n_total, n_total))
     fd_effects = jnp.array(params[n_total**2:n_total*(n_total + 1)])
     sd_effects = jnp.array(params[n_total*(n_total+1):])
-    
+
     # Derivatives of penalties
     l1_ = np.concatenate((L1_(log_theta), L1_(fd_effects), L1_(sd_effects)))
     
@@ -290,5 +298,76 @@ def grad(params: np.array, dat_prim_only: jnp.array, dat_prim_met:jnp.array, dat
     
     n_met = n_coupled + n_met_only + n_prim_met
     g = (1 - perc_met) * g_prim/n_prim_only + perc_met/n_met * (g_coupled + g_prim_met + g_met)
-    # Optimizer only takes np.arrays as input
+    # The SciPy-Optimizer only takes np.arrays as input
     return np.array(-g + penal * l1_)
+
+
+def learn_mhn(th_init: jnp.array, fd_init: jnp.array, sd_init: jnp.array, 
+              dat_prim_only: jnp.array, dat_prim_met: jnp.array, dat_met_only: jnp.array, dat_coupled: jnp.array,
+              perc_met: float, penal: float, opt_iter: int=1e05, opt_ftol: float=1e-04, 
+              opt_v: bool=True) -> tuple[jnp.array, jnp.array, jnp.array]:
+    """ Infer a metMHN from data
+
+    Args:
+        th_init (jnp.array):        Initial estimate for the log-theta matrix
+                                    Matrix of dimension (n_muts+1) x (n_muts+1)
+        fd_init (jnp.array):        Initial estimate for the effects of muts on first diagnosis.
+                                    Vector of size n_muts+1
+        sd_init (jnp.array):        Inital estimate for the effects of muts on second diagnosis
+                                    Vector of size n_muts+1 
+        dat_prim_only (jnp.array):  Dataset containing PTs without observed MTs. 
+                                    Binary matrix of size n_prim x 2*n_muts+1
+        dat_prim_met (jnp.array):   Dataset containing PTs with observed but not sequenced MTs
+                                    Binary matrix of size n_prim_met x 2*n_muts+1 
+        dat_met_only (jnp.array):   Dataset containing MTs without matching PTs
+                                    Binary matrix of size n_met x 2*n_muts+1
+        dat_coupled (jnp.array):    Dataset containing PT and MT genotyps in the same patient
+                                    Binary matrix of size n_coupled x 2*n_muts+1
+        perc_met (float):           Correction factor for the sampling bias. Should be a float in the range[0, 1] 
+                                    and corresponds to the epidemiological prevalence of MTs in a population of patients
+        penal (float):              Weight of the L1-penalization
+        opt_iter (int):             Maximal number of iterations for optimizer. Defaults to 1e05
+        opt_ftol (float):           Tolerance for optimizer. Defaults to 1e-05
+        opt_v (bool):               Print out optimizer progress. Defaults to TRUE
+        
+
+    Returns:s
+        tuple[np.array, np.array, np.array]: Estimated log. theta, log fd_effects, log sd_effects
+    """
+    n_total = th_init.shape[0]
+    start_params = np.concatenate((th_init.flatten(), fd_init, sd_init))
+    x = opt.minimize(fun=log_lik, jac=grad, x0=start_params, method="L-BFGS-B",  
+                     args=(dat_prim_only, dat_prim_met, dat_met_only, dat_coupled, penal, perc_met), 
+                     options={"maxiter":opt_iter, "disp": opt_v, "ftol": opt_ftol})
+    theta = jnp.array(x.x[:n_total**2]).reshape((n_total, n_total))
+    fd_effects = jnp.array(x.x[n_total**2:n_total*(n_total+1)])
+    sd_effects = jnp.array(x.x[n_total*(n_total+1):])
+    return theta, fd_effects, sd_effects
+
+
+def p_unobs_seeding(log_theta: jnp.array, fd_effects: jnp.array,  dat: jnp.array) -> jnp.array:
+    """ Returns the probability that tumor dat_obs has spawned an unobserved metastasis
+
+    Args:
+        log_theta (jnp.array):  Theta matrix with logarithmic entries
+        fd_effects (jnp.array): Effects of mutations on first seeding
+        dat (jnp.array):        Dataset of PT observations
+
+    Returns:
+        jnp.array:              Probability of unobserved seeding for each datapoint
+    """
+    dat_mod = dat.at[:,::2].get()
+    dat_mod = dat_mod.at[:,-1].set(1)
+    diag_theta = diagnosis_theta(log_theta, fd_effects)
+    diag_theta = diag_theta.at[:-1, -1].set(-1*fd_effects.at[-1].get())
+    p_unobs = jnp.zeros(dat_mod.shape[0])
+    for i in range(dat_mod.shape[0]):
+        obs = dat_mod.at[i,:].get()
+        m =  obs.sum()
+        p0 = jnp.zeros(2**m)
+        p0 = p0.at[0].set(1.)
+        pth = R_inv_vec(diag_theta, p0, 1.,  obs, False)
+        p_state = pth.reshape((-1, 2), order="F").at[-1,:].get()
+        p_unobs = p_unobs.at[i].set(p_state.at[1].get()/p_state.sum())
+    return p_unobs
+    
