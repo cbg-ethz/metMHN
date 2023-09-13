@@ -81,9 +81,20 @@ class DerivativeTestCase(unittest.TestCase):
     def test_coupled_deriv(self):
         params = [self.theta, self.fd_effects, self.sd_effects, self.state_coupled]
         g_num = finite_difference(regopt.lp_coupled, params, self.n_mut+1, self.h)
+        print()
         np.testing.assert_allclose(g_num, 
                                    np.array(regopt.grad_coupled(self.theta, self.fd_effects, 
                                                                 self.sd_effects, self.state_coupled)[1]), 
+                                   rtol=self.tol)
+        
+    def test_coupled_empty(self):
+        state_pt = jnp.zeros((1, 2*(self.n_mut)+1), dtype=jnp.int8)
+        state_pt = state_pt.at[0,-1].set(1)
+        params = [self.theta, self.fd_effects, self.sd_effects, state_pt]
+        g_num = finite_difference(regopt.lp_coupled, params, self.n_mut+1, self.h)
+        np.testing.assert_allclose(g_num, 
+                                   np.array(regopt.grad_coupled(self.theta, self.fd_effects, 
+                                                                self.sd_effects, state_pt)[1]), 
                                    rtol=self.tol)
     
     def test_full_deriv(self):

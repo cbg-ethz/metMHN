@@ -63,3 +63,11 @@ class LikelihoodTestCase(unittest.TestCase):
         ana_freq = regopt.lp_coupled(self.theta, self.fd_effects, self.sd_effects, jnp.array(dp))
         print(sim_freq, ana_freq)
         np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)
+
+    def test_lp_empty(self):        
+        dp = np.array([0, 0, 0, 0, 0, 0, 1]).reshape((1,-1))
+        ind = np.packbits(dp, axis=1, bitorder="little")[0]
+        sim_freq = np.log(self.counts[ind[0]]/self.n_sim)
+        ana_freq = regopt.lp_coupled(self.theta, self.fd_effects, self.sd_effects, jnp.array(dp))
+        print(sim_freq, ana_freq)
+        np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)
