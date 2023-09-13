@@ -8,9 +8,8 @@ from metmhn.jx.kronvec import (kronvec_sync,
                         )
 
 from metmhn.jx import vanilla as mhn
-import numpy as np
 import jax.numpy as jnp
-from jax import jit, lax, vmap
+from jax import jit, lax
 from functools import partial
 
 
@@ -180,9 +179,6 @@ def x_partial_Q_y(log_theta: jnp.array, x: jnp.array, y: jnp.array, state: jnp.a
     """
     n = log_theta.shape[0] - 1
     z = jnp.zeros(shape=(n + 1, n + 1))
-    # This line leads to an OOM-error for states with > 24 events
-    # z = z.at[:-1,:].set(vmap(deriv_no_seed, in_axes=(0,0, None, None, None, None, None), 
-    #                     out_axes=0)(jnp.arange(n, dtype=jnp.int64), z[:-1,:], x, y, log_theta, state, n))
     # Less performant but robust workaround:
     def init_z(j, val):
         val = val.at[j, :].set(deriv_no_seed(j, val[:, j], x, y, log_theta, state, d_e, n))
@@ -235,7 +231,7 @@ def x_partial_Q_y(log_theta: jnp.array, x: jnp.array, y: jnp.array, state: jnp.a
 
 @partial(jit, static_argnames=["transpose"])
 def R_i_inv_vec(log_theta: jnp.array, x: jnp.array, lam: jnp.array,  state: jnp.array, 
-                d_e: jnp.array, transpose: bool = False) -> jnp.array:
+                d_e: jnp.array, state_size: int, transpose: bool = False) -> jnp.array:
     """This computes R_i^{-1} x = (\lambda_i I - Q)^{-1} x
 
     Args:
@@ -249,8 +245,6 @@ def R_i_inv_vec(log_theta: jnp.array, x: jnp.array, lam: jnp.array,  state: jnp.
     Returns:
         jnp.array: R_i^{-1} x
     """
-    n = log_theta.shape[0] - 1
-    state_size = np.log2(x.shape[0]).astype(int)
     lidg = -1 / (kron_diag(log_theta=log_theta, state= state, d_e=d_e, p_in=x) - lam)
     y = lidg * x
     y = lax.fori_loop(
@@ -264,7 +258,7 @@ def R_i_inv_vec(log_theta: jnp.array, x: jnp.array, lam: jnp.array,  state: jnp.
     return y
 
 @partial(jit, static_argnames=["n_prim", "n_met"])
-def _lp_coupled(log_theta_fd: jnp.array, log_theta_fd_prim: jnp.array, log_theta_sd: jnp.array, state_joint: jnp.array, 
+def _lp_coupled(log_theta_fd: jnp.array, log_theta_sd: jnp.array, state_joint: jnp.array, 
                 d_e: jnp.array, n_prim: int, n_met: int, ) -> jnp.array:
     """
     Evaluates the log probability of seeing coupled genotype data in state "state"
@@ -280,31 +274,24 @@ def _lp_coupled(log_theta_fd: jnp.array, log_theta_fd_prim: jnp.array, log_theta
     Returns:
         jnp.array: log(P(state))
     """
-    p0 = jnp.zeros(2**(n_prim + n_met - 1))
-    p0 = p0.at[0].set(1.)
-    pTh1_joint = R_i_inv_vec(log_theta_fd, p0, 1., state_joint, d_e, transpose = False)
-    
-    p0 = jnp.zeros(2**n_prim)
-    p0 = p0.at[0].set(1.)
-    prim = state_joint.at[0::2].get()
-    pTh1_marg = mhn.R_inv_vec(log_theta_fd_prim, p0, 1., prim, transpose = False)
-    nk = pTh1_marg.at[-1].get()
+    p = jnp.zeros(2**(n_prim + n_met - 1))
+    p = p.at[0].set(1.)
+    pTh1_joint = R_i_inv_vec(log_theta_fd, p, 1., state_joint, d_e, n_prim+n_met-1, transpose = False)
    
     # Select the states where x = prim and z are compatible with met 
-    poss_states = obs_states((n_prim + n_met - 1), state_joint, True)
-    poss_states_inds = jnp.where(poss_states, size=2**(n_met-1))[0]
+    p = obs_states((n_prim + n_met - 1), state_joint, True)
+    poss_states_inds = jnp.where(p == 1., size=2**(n_met-1))[0]
     # Prim conditional distribution at first sampling, to be used as starting dist for second sampling
     pTh1_cond_obs = pTh1_joint.at[poss_states_inds].get()
     # States where the Seeding didn't happen aren't compatible with met and get probability 0
     pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_met-1)), pTh1_cond_obs)
-    pTh1_cond_obs *= 1/nk
 
     met = jnp.append(state_joint.at[1::2].get(), 1)
     pTh2 = mhn.R_inv_vec(log_theta_sd, pTh1_cond_obs, 1., met)
-    return jnp.log(nk) + jnp.log(pTh2.at[-1].get())
+    return jnp.log(pTh2.at[-1].get())
 
 
-@partial(jit, static_argnames=["n_prim"])
+#@partial(jit, static_argnames=["n_prim"])
 def _lp_prim_obs(log_theta_prim_fd: jnp.array, state_prim: jnp.array, n_prim: int) -> jnp.array:
     """Calculates the marginal likelihood of only observing a PT at first sampling with genotype state_prim
     
@@ -323,7 +310,7 @@ def _lp_prim_obs(log_theta_prim_fd: jnp.array, state_prim: jnp.array, n_prim: in
     return jnp.log(pTh.at[-1].get())
 
 
-@partial(jit, static_argnames=["n_met"])
+#@partial(jit, static_argnames=["n_met"])
 def _lp_met_obs(log_theta_fd: jnp.array, log_theta_sd: jnp.array, state_met: jnp.array, n_met: int) -> jnp.array:
     """Calculates the marginal likelihood of only observing a MT at second sampling with genotype state_met
     
@@ -344,7 +331,7 @@ def _lp_met_obs(log_theta_fd: jnp.array, log_theta_sd: jnp.array, state_met: jnp
     return jnp.log(pTh2.at[-1].get())
 
 
-@partial(jit, static_argnames=["n_met"])
+#@partial(jit, static_argnames=["n_met"])
 def _grad_met_obs(log_theta_fd: jnp.array, log_theta_sd: jnp.array, state_met: jnp.array, 
                   n_met: int) -> tuple[jnp.array, jnp.array, jnp.array, jnp.array]:
     """ Gradient of lp_met_obs for a single sample
@@ -389,7 +376,7 @@ def _grad_met_obs(log_theta_fd: jnp.array, log_theta_sd: jnp.array, state_met: j
     dTh_2, d_fd = mhn.x_partial_Q_y(log_theta_fd, lhs, R_1_inv_p_0, state_met) 
     return score, dTh_1 + dTh_2, d_fd, d_sd
 
-@partial(jit, static_argnames=["n_prim"])
+#@partial(jit, static_argnames=["n_prim"])
 def _grad_prim_obs(log_theta_prim_fd: jnp.array, state_prim: jnp.array, n_prim: int) -> tuple[jnp.array, jnp.array, jnp.array]:
     """ Gradient of lp_prim_obs for a single sample
 
@@ -413,8 +400,8 @@ def _grad_prim_obs(log_theta_prim_fd: jnp.array, state_prim: jnp.array, n_prim: 
     return score, dth, d_diag_effects 
 
 
-@partial(jit, static_argnames=["n_prim", "n_met"])
-def _g_coupled(log_theta_fd: jnp.array, log_theta_fd_prim: jnp.array, log_theta_sd: jnp.array, 
+#@partial(jit, static_argnames=["n_prim", "n_met"])
+def _g_coupled(log_theta_fd: jnp.array, log_theta_sd: jnp.array, 
                state_joint: jnp.array, d_e: jnp.array, n_prim: int, n_met: int) -> tuple[jnp.array, jnp.array, jnp.array, jnp.array]:
     """Calculates the likelihood and gradients for a coupled datapoint (PT and MT genotype known)
 
@@ -430,46 +417,36 @@ def _g_coupled(log_theta_fd: jnp.array, log_theta_fd_prim: jnp.array, log_theta_
     Returns:
         tuple: score, grad wrt. to theta, grad wrt. fd_effects, grad wrt. sd_effects
     """
-    prim = state_joint.at[0::2].get()
     met = jnp.append(state_joint.at[1::2].get(), 1)
-    p0 = jnp.zeros(2**(n_prim + n_met - 1))
-    p0 = p0.at[0].set(1.)
+    p = jnp.zeros(2**(n_prim + n_met - 1))
+    p = p.at[0].set(1.)
     
     # Joint and met-marginal distribution at first sampling
-    pTh1_joint = R_i_inv_vec(log_theta_fd, p0, 1., state_joint, d_e, transpose = False)
-    p0 = jnp.zeros(2**n_prim)
-    p0 = p0.at[0].set(1.)
-    g_1, d_fd1, pTh1_marg = mhn.gradient(log_theta_fd_prim, 1., prim, p0)
-    nk = pTh1_marg.at[-1].get()
+    pTh1_joint = R_i_inv_vec(log_theta_fd, p, 1., state_joint, d_e, n_prim+n_met-1, transpose = False)
     
-    # Select the states where x = prim and z are compatible with met 
-    poss_states = obs_states((n_prim + n_met - 1), state_joint, True)
-    poss_states_inds = jnp.where(poss_states, size=2**(n_met-1))[0]
+    # Select the states where x = prim and z are compatible with met
+    # Reuse the memory allocated for p 
+    p = obs_states((n_prim + n_met - 1), state_joint, True)
+    poss_states_inds = jnp.where(p==1., size=2**(n_met-1))[0]
+    
     # Prim conditional distribution at first sampling, to be used as starting dist for second sampling
     pTh1_cond_obs = pTh1_joint.at[poss_states_inds].get()
     # States where the Seeding didn't happen aren't compatible with met and get probability 0
     pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_met-1)), pTh1_cond_obs)
-    pTh1_cond_obs *= 1/nk
     
     # Derivative of pTh2 = M(I-Q_sd)^(-1)pth1_cond
-    g_2, d_sd1, pTh2_marg = mhn.gradient(log_theta_sd, 1., met, pTh1_cond_obs)
-    # lhs = (pD/pTh_2)^T M(I-Q_sd)^(-1)
+    g_1, d_sd, pTh2_marg = mhn.gradient(log_theta_sd, 1., met, pTh1_cond_obs)
+    # q = (pD/pTh_2)^T M(I-Q_sd)^(-1)
     q = jnp.zeros(2**n_met)
     q = q.at[-1].set(1/pTh2_marg.at[-1].get())
     q = mhn.R_inv_vec(log_theta_sd, q, 1., met, transpose = True)
-    lhs = jnp.zeros(2**(n_prim + n_met - 1))
-    lhs = lhs.at[poss_states_inds].set(q.at[2**(n_met - 1):].get())
+    
+    # Reuse the memory allocated for p0
+    p = p.at[:].multiply(0.)
+    p = p.at[poss_states_inds].set(q.at[2**(n_met - 1):].get())
     
     # Derivative of pth1_cond
-    q = R_i_inv_vec(log_theta_fd, lhs, 1., state_joint, d_e, transpose = True)
-    g_3, d_fd2 = x_partial_Q_y(log_theta_fd, q, pTh1_joint, state_joint, d_e)
-    g_3 /= nk
-    d_fd2 /= nk
-    q = jnp.zeros(2**(n_prim))
-    q = q.at[-1].set(1/nk)
-    q = mhn.R_inv_vec(log_theta_fd_prim, q, 1., prim, transpose = True)
-    g_4, d_fd3 = mhn.x_partial_Q_y(log_theta_fd_prim, q, pTh1_marg, prim)
-    g_4 *= -1.
-    d_fd3 *= -1.
-    score =  jnp.log(nk) + jnp.log(pTh2_marg.at[-1].get())
-    return score, g_1 + g_2 + g_3 + g_4, d_fd1 + d_fd2 + d_fd3, d_sd1
+    p = R_i_inv_vec(log_theta_fd, p, 1., state_joint, d_e, n_prim + n_met-1, transpose = True)
+    g_2, d_fd = x_partial_Q_y(log_theta_fd, p, pTh1_joint, state_joint, d_e)
+    score = jnp.log(pTh2_marg.at[-1].get())
+    return score, g_1 + g_2, d_fd, d_sd

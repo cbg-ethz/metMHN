@@ -1,7 +1,8 @@
 from metmhn.jx import likelihood as ssr
 from metmhn.jx.kronvec import diagnosis_theta
 from metmhn.jx.vanilla import R_inv_vec
-
+from metmhn.jx import one_event as one
+import logging 
 import jax.numpy as jnp
 import numpy as np
 import scipy.optimize as opt
@@ -73,7 +74,8 @@ def lp_met_only(log_theta: jnp.array, fd_effects: jnp.array, sd_effects: jnp.arr
     return score
 
 
-def lp_coupled(log_theta: jnp.array, fd_effects: jnp.array, sd_effects: jnp.array, dat: jnp.array) -> jnp.array:
+def lp_coupled(log_theta: jnp.array, fd_effects: jnp.array, sd_effects: 
+               jnp.array, dat: jnp.array) -> jnp.array:
     """Calculates the log likelihood score of sequential observations of PT-MT pairs
 
     Args:
@@ -89,14 +91,17 @@ def lp_coupled(log_theta: jnp.array, fd_effects: jnp.array, sd_effects: jnp.arra
     n_muts = log_theta.shape[0] - 1
     log_theta_fd = diagnosis_theta(log_theta, fd_effects)
     log_theta_sd = diagnosis_theta(log_theta, sd_effects)
-    log_theta_prim_fd = log_theta_fd.copy()
     e_seed_fd = fd_effects.at[-1].get()
-    log_theta_prim_fd = log_theta_prim_fd.at[:-1,-1].set(-1. * e_seed_fd)
     for i in range(dat.shape[0]):
         state_joint = dat.at[i, 0:2*n_muts+1].get()
         n_prim = int(state_joint.at[::2].get().sum())
         n_met = int(state_joint.at[1::2].get().sum() + 1)
-        score += ssr._lp_coupled(log_theta_fd, log_theta_prim_fd, log_theta_sd, state_joint,e_seed_fd, n_prim, n_met)
+        if (n_prim + n_met) > 2:
+            score += ssr._lp_coupled(log_theta_fd, log_theta_sd, 
+                                     state_joint,e_seed_fd, n_prim, n_met)
+        else:
+            score += one._lp_coupled(log_theta, log_theta_sd, e_seed_fd)
+    
     return score
 
 
@@ -124,8 +129,7 @@ def log_lik(params: np.array, dat_prim_only: jnp.array, dat_prim_met: jnp.array,
     
     l1 = L1(log_theta) + L1(fd_effects) + L1(sd_effects)
     score_prim, score_coupled, score_met, score_prim_met = 0., 0., 0., 0.
-    n_prim_only, n_met_only, n_coupled, n_prim_met = 0, 0, 0, 0
-    
+    n_prim_only, n_met_only, n_coupled, n_prim_met = 1, 1, 1, 1
     if dat_prim_only != None:
         score_prim = lp_prim_only(log_theta, fd_effects, dat_prim_only)
         n_prim_only =  dat_prim_only.shape[0]
@@ -144,6 +148,7 @@ def log_lik(params: np.array, dat_prim_only: jnp.array, dat_prim_met: jnp.array,
 
     n_met = n_met_only + n_prim_met + n_coupled
     score = (1 - perc_met) * score_prim/n_prim_only + perc_met/n_met * (score_coupled + score_prim_met + score_met)
+    logging.info(f"Score")
     # The SciPy-Optimizer only takes np.arrays as input
     return np.array(-score + penal1 * l1)
 
@@ -227,20 +232,23 @@ def grad_coupled(log_theta: jnp.array, fd_effects: jnp.array, sd_effects: jnp.ar
     n_mut = log_theta.shape[0] - 1
     log_theta_fd = diagnosis_theta(log_theta, fd_effects)
     log_theta_sd = diagnosis_theta(log_theta, sd_effects)
-    log_theta_prim_fd = log_theta_fd.copy()
     e_seed_diag = fd_effects.at[-1].get()
-    log_theta_prim_fd = log_theta_prim_fd.at[:-1,-1].set(-1. * e_seed_diag)
 
     g = jnp.zeros((n_mut+1, n_mut+1), dtype=float)
     d_fd = jnp.zeros(n_mut+1)
     d_sd = jnp.zeros(n_mut+1)
     score = 0.0
+
     for i in range(dat.shape[0]):
         state = dat.at[i, 0:2*n_mut+1].get()
         n_prim = int(state.at[::2].get().sum())
-        n_met = int(state.at[1::2].get().sum() + 1)      
-        lik, dtheta, fd_, sd_ = ssr._g_coupled(log_theta_fd, log_theta_prim_fd, log_theta_sd, 
-                                               state, e_seed_diag, n_prim, n_met)
+        n_met = int(state.at[1::2].get().sum() + 1)
+        if (n_prim + n_met) > 2:      
+            lik, dtheta, fd_, sd_ = ssr._g_coupled(log_theta_fd, log_theta_sd,
+                                                   state, e_seed_diag, n_prim, n_met)
+        else:
+            lik, dtheta, fd_, sd_ = one._g_coupled(log_theta, log_theta_sd, e_seed_diag)
+        
         score += lik
         g += dtheta
         d_fd += fd_
@@ -249,8 +257,8 @@ def grad_coupled(log_theta: jnp.array, fd_effects: jnp.array, sd_effects: jnp.ar
     return score, jnp.concatenate((g.flatten(), d_fd, d_sd)) 
 
 
-def grad(params: np.array, dat_prim_only: jnp.array, dat_prim_met:jnp.array, dat_met: jnp.array, dat_coupled: jnp.array,
-        penal: float, perc_met: float) -> np.array:
+def grad(params: np.array, dat_prim_only: jnp.array, dat_prim_met:jnp.array, dat_met: jnp.array, 
+         dat_coupled: jnp.array, penal: float, perc_met: float) -> np.array:
     """Calculates the gradient of log_lik wrt. to all log(\theta_ij)
 
     Args:
@@ -278,7 +286,7 @@ def grad(params: np.array, dat_prim_only: jnp.array, dat_prim_met:jnp.array, dat
     g_prim, g_coupled = jnp.zeros(n_total*(n_total + 2)), jnp.zeros(n_total*(n_total + 2))
     g_met, g_prim_met = jnp.zeros(n_total*(n_total + 2)), jnp.zeros(n_total*(n_total + 2))
     
-    n_prim_only, n_coupled, n_prim_met, n_prim_met = 0, 0, 0, 0
+    n_prim_only, n_coupled, n_prim_met, n_met_only = 1, 1, 1, 1
     
     if dat_prim_only != None:
         _, g_prim = grad_prim_only(log_theta, fd_effects, dat_prim_only)

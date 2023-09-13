@@ -1,4 +1,3 @@
-import numpy as np
 from functools import partial
 from jax import jit, lax
 import jax.numpy as jnp
@@ -604,13 +603,11 @@ def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array, d_e: jnp.array
         return val
 
     n = log_theta.shape[0]-1
-    m = np.log2(p.shape[0]).astype(int)
-    y = jnp.zeros(2**m)
     y = lax.fori_loop(
         lower=0,
         upper=n,
         body_fun=body_fun,
-        init_val=y
+        init_val=jnp.zeros_like(p)
     )
 
     y += kronvec_seed(log_theta=log_theta, p=p,
@@ -1008,4 +1005,4 @@ def obs_states(n_joint: int, state: jnp.array, obs_prim: bool = True) -> jnp.arr
                 lambda p: p,
                 lambda p: keep_col2(p),
                 operand = p)
-    return p.astype(jnp.int32)
+    return p
