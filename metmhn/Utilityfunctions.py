@@ -203,7 +203,7 @@ def cross_val(dat: pd.DataFrame, splits: jnp.array, nfolds: int, m_p_corr: float
         test = shuffled.iloc[test_inds, :]
         test = test.set_index(["paired", "metaStatus"])
         test_prim_only, test_met_only, test_prim_met, test_coupled = split_data(test)
-        th_init, fd_init, sd_init = indep(train.to_numpy(), test_coupled.shape[1])
+        th_init, fd_init, sd_init = indep(jnp.array(train.to_numpy()), test_coupled.shape[1])
         
         for j in range(splits.size):
             th, fd, sd = learn_mhn(th_init, fd_init, sd_init, train_prim_only, 
@@ -211,17 +211,17 @@ def cross_val(dat: pd.DataFrame, splits: jnp.array, nfolds: int, m_p_corr: float
                                      m_p_corr, splits[j])
             params = np.concatenate((th.flatten(), fd, sd))
             runs_constrained[i,j] = log_lik(params, test_prim_only, test_prim_met, test_met_only, 
-                                            test_coupled, splits[j], m_p_corr)
+                                            test_coupled, 0., m_p_corr)
             
-            logging.info(f"Diag constrained, Split: {splits[j]}, Fold: {i}, Score: {runs_constrained[i,j]}")
-
-    diag_penal_scores = runs_constrained.mean(axis=1)
+            logging.info(f"Split: {splits[j]}, Fold: {i}, Score: {runs_constrained[i,j]}")
+        print(runs_constrained)
+    diag_penal_scores = runs_constrained.mean(axis=0)
     best_diag_score = np.min(diag_penal_scores)
     best_diag_penal = splits[np.argmin(diag_penal_scores)]
     
     logging.info(f"Crossvalidation finished")
-    logging.info(f"Highest likelihood score: {best_diag_score} (Diag penalized)")
-    logging.info(f"Best Lambda: {best_diag_penal} (Diag penalized)")
+    logging.info(f"Highest likelihood score: {best_diag_score}")
+    logging.info(f"Best Lambda: {best_diag_penal}")
     
     return best_diag_penal
 
@@ -243,22 +243,23 @@ def plot_theta(th_in: np.array, events: np.array, alpha: float, verbose=True) ->
     th_diag = np.diagonal(theta.copy())
     theta[np.diag_indices(n_total)] = 0.
     th = np.row_stack((th[:2,:], theta))
+    max_c = np.max(np.abs(th))
     th[np.abs(th)<alpha] = np.nan
     th_diag = np.row_stack((np.array([np.nan, np.nan]).reshape((2,1)), th_diag.reshape(-1,1)))
-    
+
 
     f, (ax, ax2) = plt.subplots(1, 2, figsize=(19,15), sharey="col",
                                 gridspec_kw={'width_ratios': [n_total, 1], "top":1, "bottom": 0, "right":1, 
                                              "left":0, "hspace":0, "wspace":-0.48})
     events_ext = np.concatenate((np.array(["FD", "SD"]), events))
     # Plot off diagonals on one plot
-    im1 = ax.matshow(th, cmap=my_color_gradient)
+    im1 = ax.matshow(th, cmap=my_color_gradient, vmin=-max_c, vmax=max_c)
     ax.set_xticks(range(n_total), events, fontsize=14, rotation=90)
     ax.set_yticks(range(n_total+2), events_ext, fontsize=14)
     
     # Plot grid lines between cells
     ax.set_xticks(np.arange(-.5, n_total, 1), minor=True)
-    ax.set_yticks(np.arange(-.5, n_total, 1), minor=True)
+    ax.set_yticks(np.arange(-.5, n_total+2, 1), minor=True)
     ax.grid(which="minor",color='grey', linestyle='-', linewidth=1)
     ax.tick_params(which='minor', bottom=False, left=False) 
 
@@ -286,5 +287,4 @@ def plot_theta(th_in: np.array, events: np.array, alpha: float, verbose=True) ->
             else:
                 c = np.round(th_diag[i,0],3)
             ax2.text(0, i, str(c), va='center', ha='center')
-    plt.show()
     return f
