@@ -18,7 +18,7 @@ def L1(theta: jnp.array, eps: float = 1e-05) -> jnp.array:
     return jnp.sum(jnp.sqrt(theta_**2 + eps))
 
 
-def L1_(theta: np.ndarray, eps: float = 1e-05) -> jnp.array:
+def L1_(theta: jnp.ndarray, eps: float = 1e-05) -> jnp.array:
     """
     Derivative of the L1 penalty
     """
@@ -129,26 +129,26 @@ def log_lik(params: np.array, dat_prim_only: jnp.array, dat_prim_met: jnp.array,
     
     l1 = L1(log_theta) + L1(fd_effects) + L1(sd_effects)
     score_prim, score_coupled, score_met, score_prim_met = 0., 0., 0., 0.
-    n_prim_only, n_met_only, n_coupled, n_prim_met = 1, 1, 1, 1
-    if dat_prim_only != None:
+    n_prim_only, n_met_only, n_coupled, n_prim_met = 0, 0, 0, 0
+    if dat_prim_only.shape[0] > 0:
         score_prim = lp_prim_only(log_theta, fd_effects, dat_prim_only)
         n_prim_only =  dat_prim_only.shape[0]
     
-    if dat_prim_met != None:
+    if dat_prim_met.shape[0] > 0:
         score_prim_met = lp_prim_only(log_theta, fd_effects, dat_prim_met)
         n_prim_met =  dat_prim_met.shape[0]
     
-    if dat_met != None:
+    if dat_met.shape[0] > 0:
         score_met = lp_met_only(log_theta, fd_effects, sd_effects, dat_met)
         n_met_only =  dat_met.shape[0]
 
-    if dat_coupled != None:
+    if dat_coupled.shape[0] > 0:
         score_coupled = lp_coupled(log_theta, fd_effects, sd_effects, dat_coupled)
         n_coupled = dat_coupled.shape[0]
 
     n_met = n_met_only + n_prim_met + n_coupled
     score = (1 - perc_met) * score_prim/n_prim_only + perc_met/n_met * (score_coupled + score_prim_met + score_met)
-    logging.info(f"Score")
+    logging.info(f"Score calculated")
     # The SciPy-Optimizer only takes np.arrays as input
     return np.array(-score + penal1 * l1)
 
@@ -286,21 +286,21 @@ def grad(params: np.array, dat_prim_only: jnp.array, dat_prim_met:jnp.array, dat
     g_prim, g_coupled = jnp.zeros(n_total*(n_total + 2)), jnp.zeros(n_total*(n_total + 2))
     g_met, g_prim_met = jnp.zeros(n_total*(n_total + 2)), jnp.zeros(n_total*(n_total + 2))
     
-    n_prim_only, n_coupled, n_prim_met, n_met_only = 1, 1, 1, 1
+    n_prim_only, n_coupled, n_prim_met, n_met_only = 0, 0, 0, 0
     
-    if dat_prim_only != None:
+    if dat_prim_only.shape[0] > 0:
         _, g_prim = grad_prim_only(log_theta, fd_effects, dat_prim_only)
         n_prim_only =  dat_prim_only.shape[0]
     
-    if dat_prim_met != None:
+    if dat_prim_met.shape[0] > 0:
         _, g_prim_met = grad_prim_only(log_theta, fd_effects, dat_prim_met)
         n_prim_met =  dat_prim_met.shape[0]
     
-    if dat_met != None:
+    if dat_met.shape[0] > 0:
         _, g_met = grad_met_only(log_theta, fd_effects, sd_effects, dat_met)
         n_met_only =  dat_met.shape[0]
 
-    if dat_coupled != None:
+    if dat_coupled.shape[0] > 0:
         _, g_coupled = grad_coupled(log_theta, fd_effects, sd_effects, dat_coupled)
         n_coupled = dat_coupled.shape[0]
     

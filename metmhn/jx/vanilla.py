@@ -92,7 +92,7 @@ def kronvec_i(
     )
 
 
-@ partial(jit, static_argnames=["diag", "transpose"])
+@partial(jit, static_argnames=["diag", "transpose"])
 def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array, diag: bool = True, transpose: bool = False) -> jnp.array:
     """This computes the restricted version of the product of the rate matrix Q with a vector Q p.
 

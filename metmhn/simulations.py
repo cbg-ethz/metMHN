@@ -231,6 +231,7 @@ def simulate_dat(
         dat[i, :] = datum
         pre_seeding_probs += psp
         i += 1
+
     dat = dat.astype(int)
     return dat, pre_seeding_probs/n_dat
 

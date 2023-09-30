@@ -116,8 +116,34 @@ def finite_sample(p_th: np.array, k: int) -> np.array:
     n = p_th.size
     return np.bincount(np.random.choice(n, k, replace=True, p=p_th), minlength=n) / k
 
+def categorize(x: pd.DataFrame) -> int:
+    if x['paired'] == 0:
+        if x['metaStatus'] == "absent":
+            return 0
+        elif x['metaStatus'] == "present":
+            return 1
+        elif x['metaStatus'] == 'isMetastasis':
+            return 2
+        elif x['metaStatus'] == 'unknown':
+            return 4
+        else:
+            return -1
+    elif x['paired'] == 1:
+        return 3
+    else:
+        return -1
 
-def split_data(dat: pd.DataFrame) -> tuple:
+
+def add_seeding(x: pd.DataFrame) -> int:
+    if x['type'] in [1,2,3]:
+        return 1
+    elif x['type'] == 0:
+        return 0
+    else:
+        return -1
+    
+
+def split_data(dat: pd.DataFrame, events: list) -> tuple:
     """Splits the whole dataset into subsets, based on their type
 
     Args:
@@ -126,24 +152,37 @@ def split_data(dat: pd.DataFrame) -> tuple:
     Returns:
         tuple: tuple of 4 subsets
     """
-    if dat.index.isin([(0, "absent")]).any():
-        prim_only =  jnp.array(dat.loc[(0, "absent")].to_numpy(dtype=np.int8))
-    else:
-        prim_only = None
-    if dat.index.isin([(0, "isMetastasis")]).any():
-        met_only = jnp.array(dat.loc[(0, "isMetastasis")].to_numpy(dtype=np.int8))
-    else:
-        met_only = None
-    if dat.index.isin([(0, "present")]).any():
-        prim_met = jnp.array(dat.loc[(0, "present")].to_numpy(dtype=np.int8))
-    else:
-        prim_met = None
-    if dat.index.isin([(1, "isPaired")]).any():
-        coupled = dat.loc[(1, "isPaired")].to_numpy(dtype=np.int8)
-        coupled = jnp.array(coupled[coupled.sum(axis=1) > 1, ])
-    else:
-        coupled = None
-    return prim_only, met_only, prim_met, coupled
+    prim_only = jnp.array(dat.loc[dat["type"] == 0, events].to_numpy(dtype=np.int8))
+    prim_met = jnp.array(dat.loc[dat["type"] == 1, events].to_numpy(dtype=np.int8))
+    met_only = jnp.array(dat.loc[dat["type"] == 2, events].to_numpy(dtype=np.int8))
+    coupled = jnp.array(dat.loc[dat["type"] == 3, events].to_numpy(dtype=np.int8))
+    return prim_only, prim_met, met_only, coupled
+
+
+def marg_frequs(dat_prim_nomet, dat_prim_met, dat_met_only, dat_coupled, events):
+    n_mut = (dat_prim_nomet.shape[1]-1)//2
+    n_tot = n_mut + 1
+    arr = dat_coupled * np.array([1,2]*n_mut+[1])
+    arr = arr @ (np.diag([1,0]*n_mut+[1]) + np.diag([1,0]*n_mut, -1))
+    counts = np.zeros((6, n_tot))
+    for i in range(0,2*n_tot,2):
+        i_h = int(i/2)
+        for j in range(1,4):
+            counts[j-1, i_h] = np.count_nonzero(arr[:,i]==j)/dat_coupled.shape[0]
+        counts[3, i_h] = np.sum(dat_prim_nomet[:, i], axis=0)/dat_prim_nomet.shape[0]
+        counts[4, i_h] = np.sum(dat_prim_met[:, i], axis=0)/dat_prim_met.shape[0]
+        counts[5, i_h] = np.sum(dat_met_only[:, i+1], axis=0)/dat_met_only.shape[0]
+
+    labels = [["Coupled ("+str(dat_coupled.shape[0])+")"]*3 +\
+            ["NM ("+str(dat_prim_nomet.shape[0])+")"] +\
+            ["EM-PT ("+str(dat_prim_met.shape[0])+")"] +\
+            ["EM-MT ("+str(dat_met_only.shape[0])+")"],
+            ["PT-Private", "MT-Private", "Shared"] + ["Present"]*3]
+       
+    inds =  pd.MultiIndex.from_tuples(list(zip(*labels)))
+    counts = pd.DataFrame(np.around(counts, 2), columns=events, index=inds).T
+
+    return counts
 
 
 def indep(dat: jnp.array, n_coupled: int) -> tuple[np.array, np.array, np.array]:
@@ -171,7 +210,7 @@ def indep(dat: jnp.array, n_coupled: int) -> tuple[np.array, np.array, np.array]
     return theta, np.zeros(n+1), np.zeros(n+1)
 
 
-def cross_val(dat: pd.DataFrame, splits: jnp.array, nfolds: int, m_p_corr: float) -> float:
+def cross_val(dat: pd.DataFrame, events: list, splits: jnp.array, nfolds: int, m_p_corr: float) -> float:
     """Performs nfolds-crossvalidation across a parameter range in splits 
 
     Args:
@@ -184,7 +223,6 @@ def cross_val(dat: pd.DataFrame, splits: jnp.array, nfolds: int, m_p_corr: float
         float: best hyperparameter
     """
     n_dat = dat.shape[0]
-    dat = dat.reset_index()
     shuffled = dat.sample(frac=1)
     runs_constrained = np.zeros((nfolds, splits.shape[0]))
     batch_size = np.ceil(n_dat/nfolds)
@@ -194,16 +232,15 @@ def cross_val(dat: pd.DataFrame, splits: jnp.array, nfolds: int, m_p_corr: float
         start = batch_size*i
         stop = np.min((batch_size*(i+1), n_dat))
 
-        train_inds = np.concatenate((np.arange(start), np.arange(stop, n_dat)))
+        train_inds = np.concatenate((np.arange(start), 
+                                     np.arange(stop, n_dat)))
         train = shuffled.iloc[train_inds,:]
-        train = train.set_index(["paired", "metaStatus"])
-        train_prim_only, train_met_only, train_prim_met, train_coupled = split_data(train)
+        train_prim_only, train_prim_met, train_met_only, train_coupled = split_data(train, events)
         
         test_inds = np.arange(start, stop)
         test = shuffled.iloc[test_inds, :]
-        test = test.set_index(["paired", "metaStatus"])
-        test_prim_only, test_met_only, test_prim_met, test_coupled = split_data(test)
-        th_init, fd_init, sd_init = indep(jnp.array(train.to_numpy()), test_coupled.shape[1])
+        test_prim_only, test_prim_met, test_met_only, test_coupled = split_data(test, events)
+        th_init, fd_init, sd_init = indep(jnp.array(train[events].to_numpy()), test_coupled.shape[1])
         
         for j in range(splits.size):
             th, fd, sd = learn_mhn(th_init, fd_init, sd_init, train_prim_only, 
@@ -214,7 +251,7 @@ def cross_val(dat: pd.DataFrame, splits: jnp.array, nfolds: int, m_p_corr: float
                                             test_coupled, 0., m_p_corr)
             
             logging.info(f"Split: {splits[j]}, Fold: {i}, Score: {runs_constrained[i,j]}")
-        print(runs_constrained)
+
     diag_penal_scores = runs_constrained.mean(axis=0)
     best_diag_score = np.min(diag_penal_scores)
     best_diag_penal = splits[np.argmin(diag_penal_scores)]
@@ -245,11 +282,13 @@ def plot_theta(th_in: np.array, events: np.array, alpha: float, verbose=True) ->
     th = np.row_stack((th[:2,:], theta))
     max_c = np.max(np.abs(th))
     th[np.abs(th)<alpha] = np.nan
-    th_diag = np.row_stack((np.array([np.nan, np.nan]).reshape((2,1)), th_diag.reshape(-1,1)))
+    th_diag = np.row_stack((np.array([np.nan, np.nan]).reshape((2,1)), 
+                            th_diag.reshape(-1,1)))
 
 
     f, (ax, ax2) = plt.subplots(1, 2, figsize=(19,15), sharey="col",
-                                gridspec_kw={'width_ratios': [n_total, 1], "top":1, "bottom": 0, "right":1, 
+                                gridspec_kw={'width_ratios': [n_total, 1], 
+                                             "top":1, "bottom": 0, "right":1, 
                                              "left":0, "hspace":0, "wspace":-0.48})
     events_ext = np.concatenate((np.array(["FD", "SD"]), events))
     # Plot off diagonals on one plot
@@ -268,10 +307,8 @@ def plot_theta(th_in: np.array, events: np.array, alpha: float, verbose=True) ->
     im2 = ax2.matshow(th_diag, cmap="Blues")
     ax2.set_yticks([])
     ax2.set_xticks([])
-    ax2.spines['top'].set_visible(False)
-    ax2.spines['right'].set_visible(False)
-    ax2.spines['bottom'].set_visible(False)
-    ax2.spines['left'].set_visible(False)
+    ax2.spines[['top', 'right', 'bottom', 'left']].set_visible(False)
+
     f.colorbar(im2, ax=ax2, orientation="horizontal", shrink=4, pad=0.03, aspect=8)
     # Plot numerical values of theta 
     if verbose:
