@@ -34,7 +34,6 @@ class LikelihoodTestCase(unittest.TestCase):
         ind = np.packbits(dp, axis=1, bitorder="little")[0]
         sim_freq = np.log(self.counts[ind[0]]/self.n_sim)
         ana_freq = regopt.lp_prim_only(self.theta, self.fd_effects, jnp.array(dp))
-        print(sim_freq, ana_freq)
         np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)
     
 
@@ -52,22 +51,39 @@ class LikelihoodTestCase(unittest.TestCase):
         sim_freq = np.log(sim_freq/self.n_sim)
         dp = np.ones((1, 2*self.n_mut+1), dtype=np.int8)
         ana_freq = regopt.lp_prim_only(self.theta, self.fd_effects, jnp.array(dp))
-        print(sim_freq, ana_freq)
+
         np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)
     
+
+    def test_lp_met(self):
+        pt_states = np.kron(utils.state_space(self.n_mut), np.array([1,0]))
+        mt_states =  np.kron(np.ones((2**self.n_mut, self.n_mut), dtype=np.int8), 
+                             np.array([0,1])) 
+        combined = np.column_stack((mt_states + pt_states, 
+                                    np.ones((2**self.n_mut,1), dtype=np.int8))
+                                    )
+        inds = np.packbits(combined, axis=1, bitorder="little")[:,0]
+        sim_freq = 0.
+        for i in inds:
+            sim_freq += self.counts[i]
+        sim_freq = np.log(sim_freq/self.n_sim)
+        dp = np.ones((1, 2*self.n_mut+1), dtype=np.int8)
+        ana_freq = regopt.lp_met_only(self.theta, self.fd_effects, self.sd_effects, jnp.array(dp))
+        print(sim_freq, ana_freq)
+        np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)
+
 
     def test_lp_coupled(self):
         dp = np.array([1, 1, 1, 1, 1, 1, 1]).reshape((1,-1))
         ind = np.packbits(dp, axis=1, bitorder="little")[0]
         sim_freq = np.log(self.counts[ind[0]]/self.n_sim)
         ana_freq = regopt.lp_coupled(self.theta, self.fd_effects, self.sd_effects, jnp.array(dp))
-        print(sim_freq, ana_freq)
         np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)
+
 
     def test_lp_empty(self):        
         dp = np.array([0, 0, 0, 0, 0, 0, 1]).reshape((1,-1))
         ind = np.packbits(dp, axis=1, bitorder="little")[0]
         sim_freq = np.log(self.counts[ind[0]]/self.n_sim)
         ana_freq = regopt.lp_coupled(self.theta, self.fd_effects, self.sd_effects, jnp.array(dp))
-        print(sim_freq, ana_freq)
         np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)

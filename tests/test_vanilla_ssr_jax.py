@@ -29,7 +29,7 @@ class KroneckerTestCase(unittest.TestCase):
     def test_vanilla_kron_diag(self):
         np.testing.assert_allclose(
             ssr_kv_jx.kron_diag(log_theta=jnp.array(
-                self.log_theta), state=jnp.array(self.state), p_in=jnp.ones(2**self.state_size))[self.reachable],
+                self.log_theta), state=jnp.array(self.state), p_in=jnp.ones(2**self.state_size), d_e=1.)[self.reachable],
             vanilla.kron_diag(log_theta=jnp.array(self.log_theta[:-1, :-1]), state=jnp.array(
                 self.v_state), diag=jnp.ones(2**self.v_state_size)),
             rtol=self.tol
@@ -45,7 +45,7 @@ class KroneckerTestCase(unittest.TestCase):
                 p[j] = 1
                 np.testing.assert_allclose(
                     ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
-                        p), state=jnp.array(self.state))[self.reachable],
+                        p), state=jnp.array(self.state), d_e=1.)[self.reachable],
                     vanilla.kronvec(log_theta=self.log_theta[:-1, :-1], p=p[self.reachable],
                                     state=jnp.array(self.v_state)),
                     rtol=self.tol                
@@ -61,7 +61,7 @@ class KroneckerTestCase(unittest.TestCase):
                 p[j] = 1
                 np.testing.assert_allclose(
                     ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
-                        p), state=jnp.array(self.state), diag=False)[self.reachable],
+                        p), state=jnp.array(self.state), d_e = 1., diag=False)[self.reachable],
                     vanilla.kronvec(log_theta=self.log_theta[:-1, :-1], p=p[self.reachable],
                                     state=jnp.array(self.v_state), diag=False),
                     rtol=self.tol
@@ -77,7 +77,7 @@ class KroneckerTestCase(unittest.TestCase):
                 p[j] = 1
                 np.testing.assert_allclose(
                     ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
-                        p), state=jnp.array(self.state), transpose=True)[self.reachable],
+                        p), state=jnp.array(self.state), d_e=1., transpose=True)[self.reachable],
                     vanilla.kronvec(log_theta=self.log_theta[:-1, :-1], p=p[self.reachable],
                                     state=jnp.array(self.v_state), transpose=True),
                     rtol=self.tol
@@ -93,7 +93,7 @@ class KroneckerTestCase(unittest.TestCase):
                 p[j] = 1
                 np.testing.assert_allclose(
                     ssr_kv_jx.kronvec(log_theta=jnp.array(self.log_theta), p=jnp.array(
-                        p), state=jnp.array(self.state), diag=False, transpose=True)[self.reachable],
+                        p), state=jnp.array(self.state), d_e=1.,diag=False, transpose=True)[self.reachable],
                     vanilla.kronvec(log_theta=self.log_theta[:-1, :-1], p=p[self.reachable],
                                     state=jnp.array(self.v_state), diag=False, transpose=True),
                     rtol=self.tol
