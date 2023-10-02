@@ -1,5 +1,5 @@
 # metMHN
-This is an adaptation of the MHN-model such that it models the progression of primary tumors and metastases jointly.
+MHNs for primary tumors and metastases
 
 ## Setting up the Python environment
 
