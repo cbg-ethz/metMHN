@@ -244,11 +244,11 @@ def cross_val(dat: pd.DataFrame, events: list, splits: jnp.array, nfolds: int, m
         
         for j in range(splits.size):
             th, fd, sd = learn_mhn(th_init, fd_init, sd_init, train_prim_only, 
-                                     train_prim_met, train_met_only, train_coupled, 
-                                     m_p_corr, splits[j])
+                                     train_prim_met, train_coupled, 
+                                     m_p_corr, jnp.ones(2), splits[j])
             params = np.concatenate((th.flatten(), fd, sd))
-            runs_constrained[i,j] = log_lik(params, test_prim_only, test_prim_met, test_met_only, 
-                                            test_coupled, 0., m_p_corr)
+            runs_constrained[i,j] = log_lik(params, test_prim_only, test_prim_met, 
+                                            test_coupled, 0., m_p_corr, jnp.ones(2))
             
             logging.info(f"Split: {splits[j]}, Fold: {i}, Score: {runs_constrained[i,j]}")
 
@@ -263,7 +263,7 @@ def cross_val(dat: pd.DataFrame, events: list, splits: jnp.array, nfolds: int, m
     return best_diag_penal
 
 
-def plot_theta(th_in: np.array, events: np.array, alpha: float, verbose=True) -> tuple:
+def plot_theta(th_in: np.array, events: np.array, alpha: float, verbose=True, font_size=10) -> tuple:
     """Plot theta matrix 
 
     Args:
@@ -315,13 +315,13 @@ def plot_theta(th_in: np.array, events: np.array, alpha: float, verbose=True) ->
        for i in range(n_total+2):
             for j in range(n_total):
                 if np.isnan(th[i,j]) == False:
-                    c = np.round(th[i,j].round(2), 2)
+                    c = np.round(th[i,j], 2)
                 else:
                     c = ""
-                ax.text(j, i, str(c), va='center', ha='center')
+                ax.text(j, i, str(c), va='center', ha='center', size=font_size)
             if np.isnan(th_diag[i,0]):
                 c = ""
             else:
-                c = np.round(th_diag[i,0],3)
-            ax2.text(0, i, str(c), va='center', ha='center')
+                c = np.round(th_diag[i,0], 2)
+            ax2.text(0, i, str(c), va='center', ha='center', size=font_size)
     return f
