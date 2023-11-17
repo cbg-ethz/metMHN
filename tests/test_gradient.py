@@ -70,18 +70,17 @@ class DerivativeTestCase(unittest.TestCase):
                                                                   self.state_prim_met)[1]), 
                                    rtol=self.tol)
     
-    def test_met_only_deriv(self):
-        params = [self.theta, self.fd_effects, self.sd_effects, self.state_met]
-        g_num = finite_difference(regopt.lp_met_only, params, self.n_mut+1, self.h)
-        np.testing.assert_allclose(g_num, 
-                                   np.array(regopt.grad_met_only(self.theta, self.fd_effects, 
-                                                                 self.sd_effects, self.state_met)[1]), 
-                                   rtol=self.tol)
+#    def test_met_only_deriv(self):
+#        params = [self.theta, self.fd_effects, self.sd_effects, self.state_met]
+#        g_num = finite_difference(regopt.lp_met_only, params, self.n_mut+1, self.h)
+#        np.testing.assert_allclose(g_num, 
+#                                   np.array(regopt.grad_met_only(self.theta, self.fd_effects, 
+#                                                                 self.sd_effects, self.state_met)[1]), 
+#                                   rtol=self.tol)
     
     def test_coupled_deriv(self):
         params = [self.theta, self.fd_effects, self.sd_effects, self.state_coupled]
         g_num = finite_difference(regopt.lp_coupled, params, self.n_mut+1, self.h)
-        print()
         np.testing.assert_allclose(g_num, 
                                    np.array(regopt.grad_coupled(self.theta, self.fd_effects, 
                                                                 self.sd_effects, self.state_coupled)[1]), 
@@ -102,16 +101,16 @@ class DerivativeTestCase(unittest.TestCase):
         params = np.concatenate((self.theta.flatten(), self.fd_effects, self.sd_effects))
         g_num = np.zeros(n_tot*(n_tot+2))
         score = regopt.log_lik(params, self.state_prim_only, self.state_prim_met, 
-                               self.state_met, self.state_coupled, 0., 0.8)
+                               self.state_coupled, 0., 0.8, weights=jnp.ones(2))
         for i in range(n_tot*(n_tot+2)):
             params_h = params.copy()
             params_h[i] += self.h
             score_h = regopt.log_lik(params_h, self.state_prim_only, self.state_prim_met, 
-                                     self.state_met, self.state_coupled, 0., 0.8)
+                                     self.state_coupled, 0., 0.8, weights=jnp.ones(2))
             g_num[i] = (score_h - score)/self.h
         np.testing.assert_allclose(g_num, 
                                    np.array(regopt.grad(params, self.state_prim_only, self.state_prim_met, 
-                                                        self.state_met, self.state_coupled, 0., 0.8)),
+                                                        self.state_coupled, 0., 0.8, weights=jnp.ones(2))),
                                    rtol=self.tol)
 
 if __name__ == "__main__":
