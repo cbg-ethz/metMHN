@@ -1,6 +1,7 @@
 import numpy as np
 import jax.numpy as jnp
 import metmhn.jx.vanilla as mhn
+from metmhn.jx.kronvec import diagnosis_theta
 
 # This contains the important functions for the case that state_size = 1
 # This needs to be done separately, as otherwise reshape(-1, 4) throws an error
@@ -78,22 +79,22 @@ def x_partial_Q_y(log_theta: jnp.array, x: jnp.array, y: jnp.array,
     return z, d_d_e
 
 
-def _lp_coupled(log_theta: jnp.array, log_theta_sd: jnp.array,
+def _lp_coupled(log_theta: jnp.array, sd_effects: jnp.array,
                 d_e: jnp.array) -> jnp.array:
     n = log_theta.shape[0]-1
     p = jnp.array([1., 0.])
     pTh1_joint = R_i_inv_vec(log_theta, p, d_e, transpose = False)
-
+    log_theta_sd = diagnosis_theta(log_theta, sd_effects)
     # Prim conditional distribution at first sampling, to be used as starting dist for second sampling
     pTh1_cond_obs = pTh1_joint.copy()
     pTh1_cond_obs = pTh1_cond_obs.at[0].set(0.)
 
     met = jnp.array([0]*n+[1], dtype=jnp.int8)
-    pTh2 = mhn.R_inv_vec(log_theta_sd, pTh1_cond_obs, 1., met)
+    pTh2 = mhn.R_inv_vec(log_theta_sd, pTh1_cond_obs, met)
     return jnp.log(pTh2.at[-1].get())
 
 
-def _g_coupled(log_theta: np.array, log_theta_sd: jnp.array, 
+def _g_coupled(log_theta: np.array, sd_effects: jnp.array, 
                d_e: np.array) -> tuple[np.array, np.array, np.array, np.array]:
     n = log_theta.shape[0] - 1
     met = jnp.array([0]*n+[1], dtype=jnp.int8)
@@ -106,11 +107,12 @@ def _g_coupled(log_theta: np.array, log_theta_sd: jnp.array,
     pTh1_cond_obs = pTh1_cond_obs.at[0].set(0.)
     
     # Derivative of pTh2 = M(I-Q_sd)^(-1)pth1_cond
-    g_1, d_sd, pTh2_marg = mhn.gradient(log_theta_sd, 1., met, pTh1_cond_obs)
+    log_theta_sd = diagnosis_theta(log_theta, sd_effects)
+    g_1, d_sd, pTh2_marg = mhn.gradient(log_theta_sd, met, pTh1_cond_obs)
     # q = (pD/pTh_2)^T M(I-Q_sd)^(-1)
     q = jnp.zeros(2)
     q = q.at[-1].set((1/pTh2_marg.at[-1].get()))
-    q = mhn.R_inv_vec(log_theta_sd, q, 1., met, transpose = True)
+    q = mhn.R_inv_vec(log_theta_sd, q, met, transpose = True)
     
     # Derivative of pth1_cond
     q = q.at[0].set(0.)
