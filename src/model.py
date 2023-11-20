@@ -1,10 +1,27 @@
-from src.np.kronvec import kron_diag as get_diag_paired
-from Utilityfunctions import ssr_to_fss, reachable_states
-import numpy as np
-from scipy.linalg.blas import dcopy, dscal, daxpy
-from math import factorial
-import networkx as nx
 import itertools
+import networkx as nx
+from math import factorial
+from scipy.linalg.blas import dcopy, dscal, daxpy
+import numpy as np
+from src.np.kronvec import kron_diag as get_diag_paired
+import sys
+sys.path.append(".")
+
+
+def reachable(bin_state, n, state):
+    full_bin = []
+    for bit in state:
+        if bit == 0:
+            full_bin.append("0")
+        if bit == 1:
+            full_bin.append(str(bin(bin_state)[-1]))
+            bin_state >>= 1
+    # if seeding has happened
+    full_bin = int("".join(full_bin[::-1]), base=2)
+    if full_bin & (1 << (2 * n)):
+        return True
+    else:
+        return not (full_bin ^ (full_bin >> 1)) & int("01"*n, base=2)
 
 
 def tuple_max(x: dict, y: dict) -> tuple[dict, dict]:
@@ -143,19 +160,16 @@ class MetMHN:
     def _likeliest_order_paired(self, state):
 
         k = state.sum()
+
         # whether active events belong to pt
         pt = np.nonzero(state)[0] % 2 == 0
         pt[-1] = False
         events = np.nonzero(state)[0] // 2  # event numbers
         pt_events = np.nonzero(pt.astype(int))[0]  # positions of the pt 1s
-        met_events = np.nonzero((~pt).astype(int))[0]  # positions
-
         diag_paired = get_diag_paired(
             log_theta=self.log_theta, n=self.n, state=state)
         diag_unpaired = self.get_diag_unpaired(
             log_theta=self.log_theta, state=np.concatenate([state[1::2], state[-1::]]))
-
-        reachable = reachable_states(self.n)[ssr_to_fss(state)]
 
         # get there with tau1
         A1 = [dict(), {0: {tuple(): self.tau1 / (self.tau1 - diag_paired[0])}}]
@@ -166,7 +180,7 @@ class MetMHN:
             A1.append(dict())
             A2.append(dict())
             for current_state in bits_fixed_n(n=n_events, k=k):
-                if not reachable[current_state]:
+                if not reachable(current_state, state, self.n):
                     continue
                 if current_state & (1 << (k - 1)):    # seeding has happened
                     state_events = [i for i in range(k) if (
@@ -183,6 +197,7 @@ class MetMHN:
 
                         denom2 = 1 / \
                             (self.tau2 - diag_unpaired[met(current_state, pt)])
+                        start_factor = self.tau2 * denom2
                     # fill A1[2][current_state] and A2[1][current_state] with probabilities to current_state
 
                     for pre_state, pre_orders1 in A1[1].items():
@@ -214,17 +229,15 @@ class MetMHN:
                             num = np.exp(
                                 self.log_theta[events[new_event], events[state_events][~pt[state_events]]].sum())
 
+                            for pre_order1, pre_prob1 in A1[1][pre_state].items():
+                                A2[1][current_state][pre_order1 + (new_event,)] \
+                                    = start_factor * A1[2][current_state][pre_order1 + (new_event,)]
+
                             # if pre_state was pt_terminal
                             if pre_state in A2[0]:
                                 for pre_order2, pre_prob2 in A2[0][pre_state].items():
-                                    # get binary state w.r.t. met mhn of prestate
-                                    A2[1][current_state][pre_order2 + (new_event,)] = \
-                                        num * ((self.tau2 / (self.tau2 - diag_unpaired[met(
-                                            pre_state, pt)])) * pre_orders1[pre_order2] + pre_prob2) * denom2
-                            else:
-                                for pre_order1 in A1[1][pre_state]:
-                                    A2[1][current_state][pre_order1 +
-                                                         (new_event,)] = 0
+                                    A2[1][current_state][pre_order2 + (new_event,)] \
+                                        += pre_prob2 * num * denom2
 
                     # Now I have the two dicts A1[2][current_state] and A2[1][current_state] with possible paths to get
                     # to current_state. I can kick out some of them, because I am only interested in those orders that
@@ -266,19 +279,11 @@ class MetMHN:
                     A1[2][current_state] = {
                         likeliest: A1[2][current_state][likeliest]}
 
-            pass
-
             A1.pop(0)
             A2.pop(0)
 
         bin_state = int("1" * k, base=2)
-
-        # if I came to the final state just with tau1, I still have to add the second observation, i.e.
-        # tau2/ (tau2 - q_finalstate)
-        final_factor = self.tau2 / (self.tau2 - diag_unpaired[-1])
-        result = {k: v * final_factor + A2[0][bin_state][k]
-                  for k, v in A1[1][bin_state].items()}
-        return max(result, key=result.get), max(result.values())
+        return A2[0][bin_state]
 
     def _likeliest_order_unpaired(self, state: np.array, tau: int) -> tuple[float, np.array]:
         """For a given state, this returns the order in which the events were most likely to accumulate.
@@ -444,3 +449,15 @@ class MetMHN:
                     g.add_edge(order[:i], order[:i+1], weight=1)
 
         return g
+
+
+# if __name__ == "__main__":
+    # n = 2
+    # np.random.seed(2)
+    # log_theta = 2 * np.random.random(size=(n + 1, n + 1)) - 1
+    # tau1, tau2 = np.random.random(2) * 2
+
+    # mmhn = MetMHN(log_theta=log_theta, tau1=tau1, tau2=tau2)
+    # state = np.zeros(2 * n + 1, dtype=int)
+    # state[[0, 1, 3, 4]] = 1
+    # mmhn._likeliest_order_paired(state=state)
