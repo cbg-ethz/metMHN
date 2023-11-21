@@ -157,7 +157,7 @@ class MetMHN:
             daxpy(n=nx, a=1, x=subdiag, incx=1, y=diag, incy=1)
         return diag
 
-    def _likeliest_order_paired(self, state):
+    def _likeliest_order_paired(self, state, verbose=False):
 
         k = state.sum()
 
@@ -169,7 +169,7 @@ class MetMHN:
         diag_paired = get_diag_paired(
             log_theta=self.log_theta, n=self.n, state=state)
         diag_unpaired = self.get_diag_unpaired(
-            log_theta=self.log_theta, state=np.concatenate([state[1::2], state[-1::]]))
+            state=np.concatenate([state[1::2], state[-1::]]))
 
         # get there with tau1
         A1 = [dict(), {0: {tuple(): self.tau1 / (self.tau1 - diag_paired[0])}}]
@@ -180,7 +180,10 @@ class MetMHN:
             A1.append(dict())
             A2.append(dict())
             for current_state in bits_fixed_n(n=n_events, k=k):
-                if not reachable(current_state, state, self.n):
+                if verbose:
+                    print(
+                        f"{n_events:3}/{k:3}, {len(A1[2]):10}, {sum(len(x) for x in A1[2].values()):10}", end="\r")
+                if not reachable(bin_state=current_state, state=state, n=self.n):
                     continue
                 if current_state & (1 << (k - 1)):    # seeding has happened
                     state_events = [i for i in range(k) if (
@@ -246,6 +249,7 @@ class MetMHN:
                     if pt_terminal:
                         A1[2][current_state], A2[1][current_state] = tuple_max(
                             A1[2][current_state], A2[1][current_state])
+                        pass
 
                 else:  # seeding has not happened yet
                     state_events = [i for i in range(k) if (
@@ -283,7 +287,8 @@ class MetMHN:
             A2.pop(0)
 
         bin_state = int("1" * k, base=2)
-        return A2[0][bin_state]
+        return np.nonzero(state)[0][np.array([k for k in A2[0][bin_state].keys()])], \
+            [v for v in A2[0][bin_state].values()]
 
     def _likeliest_order_unpaired(self, state: np.array, tau: int) -> tuple[float, np.array]:
         """For a given state, this returns the order in which the events were most likely to accumulate.
@@ -451,13 +456,17 @@ class MetMHN:
         return g
 
 
-# if __name__ == "__main__":
-    # n = 2
-    # np.random.seed(2)
-    # log_theta = 2 * np.random.random(size=(n + 1, n + 1)) - 1
-    # tau1, tau2 = np.random.random(2) * 2
+if __name__ == "__main__":
+    from src.model import MetMHN
+    import pandas as pd
+    import numpy as np
 
-    # mmhn = MetMHN(log_theta=log_theta, tau1=tau1, tau2=tau2)
-    # state = np.zeros(2 * n + 1, dtype=int)
-    # state[[0, 1, 3, 4]] = 1
-    # mmhn._likeliest_order_paired(state=state)
+    log_theta = pd.read_csv("results/paad/paad_mixed_08_003.csv", index_col=0)
+    tau1, tau2 = np.exp(log_theta["Sampling"][:2])
+    log_theta.drop(columns=["Sampling"], inplace=True)
+    mmhn = MetMHN(log_theta=log_theta.to_numpy(), tau1=tau1, tau2=tau2)
+    state = np.zeros(2 * mmhn.n + 1, dtype=int)
+    state[:6] = 1
+    state[[8, 20]] = 1
+    state[-1] = 1
+    print(mmhn._likeliest_order_paired(state))
