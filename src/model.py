@@ -8,19 +8,34 @@ import sys
 sys.path.append(".")
 
 
-def reachable(bin_state, n, state):
-    full_bin = []
+def reachable(bin_state: int, n: int, state: np.array) -> bool:
+    """This function checks for a binary state in state space restricted form whether it can be
+    actually reached by an MHN
+
+    Args:
+        bin_state (int): Binary state in state space restriction w.r.t. state.
+        n (int): Number of events (excluding metastasis).
+        state (np.array): Binary state vector w.r.t. which there is restricted to.
+
+    Returns:
+        bool: Whether bin_state is a reachable state.
+    """
+    # transform the restricted bin_state to a full state
+    full_bin = 0
+
+    # iterate over the entries of state and pad bin_state with 0s
     for bit in state:
-        if bit == 0:
-            full_bin.append("0")
-        if bit == 1:
-            full_bin.append(str(bin(bin_state)[-1]))
+        full_bin <<= 1
+        if bit:
+            full_bin |= (1 & bin_state)
             bin_state >>= 1
+    # reverse bitstring
+    full_bin = int(f"{full_bin:0{2*n + 1}b}"[::-1], 2)
     # if seeding has happened
-    full_bin = int("".join(full_bin[::-1]), base=2)
     if full_bin & (1 << (2 * n)):
         return True
     else:
+        # check whether pt and met state agree
         return not (full_bin ^ (full_bin >> 1)) & int("01"*n, base=2)
 
 
