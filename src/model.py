@@ -4,18 +4,19 @@ from math import factorial
 from scipy.linalg.blas import dcopy, dscal, daxpy
 import numpy as np
 from src.np.kronvec import kron_diag as get_diag_paired
-import sys
-sys.path.append(".")
-
+from collections import deque
+from line_profiler import profile
 
 def reachable(bin_state: int, n: int, state: np.array) -> bool:
-    """This function checks for a binary state in state space restricted form whether it can be
-    actually reached by an MHN
+    """This function checks for a binary state in state space restricted
+    form whether it can be actually reached by an MHN
 
     Args:
-        bin_state (int): Binary state in state space restriction w.r.t. state.
+        bin_state (int): Binary state in state space restriction w.r.t.
+        state.
         n (int): Number of events (excluding metastasis).
-        state (np.array): Binary state vector w.r.t. which there is restricted to.
+        state (np.array): Binary state vector w.r.t. which there is
+        restricted to.
 
     Returns:
         bool: Whether bin_state is a reachable state.
@@ -40,17 +41,20 @@ def reachable(bin_state: int, n: int, state: np.array) -> bool:
 
 
 def tuple_max(x: dict, y: dict) -> tuple[dict, dict]:
-    """If given two values x_i and y_i for each i, we want to find i s.t. for all non-negative linear factors a and b
-    we have ax_i + by_i >= ax_j + by_j
-    There will in general not be a unique i that satisfies this, therefore we just return all possible candidates i 
-    that could fulfill this for the right values a and b. 
+    """If given two values x_i and y_i for each i, we want to find i
+    s.t. for all non-negative linear factors a and b we have 
+    ax_i + by_i >= ax_j + by_j
+    There will in general not be a unique i that satisfies this,
+    therefore we just return all possible candidates i that could
+    fulfill this for the right values a and b. 
 
     Args:
         x (dict): First dictionary
         y (dict): Second dictionary, should have the same keys as x
 
     Returns:
-        tuple[dict, dict]: Subdictionaries that only contain the maximizing candidates. 
+        tuple[dict, dict]: Subdictionaries that only contain the
+        maximizing candidates. 
     """
     argmax_x = max(x, key=x.get)
     argmax_y = max(y, key=y.get)
@@ -62,13 +66,14 @@ def tuple_max(x: dict, y: dict) -> tuple[dict, dict]:
 
 
 def met(bin_state: int, pt) -> int:
-    """Get the metastasis part of a state, both binary and state-space restricted to some state vector
-    x.
+    """Get the metastasis part of a state, both binary and state-space
+    restricted to some state vector x.
 
     Args:
         bin_state (int): state, binary
-        pt (numpy.array, dtype=bool): Boolean array of length k, where k = x.sum(). Its entries encode
-        whether the nonzero entries of x belongs to the pt or the met part.  
+        pt (numpy.array, dtype=bool): Boolean array of length k, where
+        k = x.sum(). Its entries encode whether the nonzero entries of x
+        belongs to the pt or the met part.  
 
     Returns:
         int: Inter
@@ -81,7 +86,8 @@ def met(bin_state: int, pt) -> int:
 
 class bits_fixed_n:
     """
-    Iterator over integers whose binary representation has a fixed number of 1s, in lexicographical order.
+    Iterator over integers whose binary representation has a fixed
+    number of 1s, in lexicographical order.
     From https://graphics.stanford.edu/~seander/bithacks.html#NextBitPermutation
 
     :param n: How many 1s there should be
@@ -114,9 +120,12 @@ class MetMHN:
 
     def __init__(self, log_theta: np.array, tau1: float, tau2: float, events: list[str] = None, meta: dict = None):
         """
-        :param log_theta: logarithmic values of the theta matrix representing the MHN
-        :param events: (optional) list of strings containing the names of the events considered by the MHN
-        :param meta: (optional) dictionary containing metadata for the MHN, e.g. parameters used to train the model
+        :param log_theta: logarithmic values of the theta matrix
+        representing the MHN
+        :param events: (optional) list of strings containing the names
+        of the events considered by the MHN
+        :param meta: (optional) dictionary containing metadata for the
+        MHN, e.g. parameters used to train the model
         """
 
         self.log_theta = log_theta
@@ -127,15 +136,18 @@ class MetMHN:
         self.n = log_theta.shape[0] - 1
 
     def get_diag_unpaired(self, state: np.array) -> np.array:
-        """This returns the diagonal of the restricted rate matrix of the metMHN's Markov chain.
+        """This returns the diagonal of the restricted rate matrix of
+        the metMHN's Markov chain.
 
         Args:
-            state (np.array): Binary unpaired state vector, dtype must be int32. This is the vector according
-            to which state space restriction will be performed. Shape (n,) with n the number of events including
-            seeding.
+            state (np.array): Binary unpaired state vector, dtype must
+            be int32. This is the vector according to which state space
+            restriction will be performed. Shape (n,) with n the number
+            of events including seeding.
 
         Returns:
-            np.array: Diagonal of the restricted rate matrix. Shape (2^k,) with k the number of 1s in state.
+            np.array: Diagonal of the restricted rate matrix. Shape
+            (2^k,) with k the number of 1s in state.
         """
         k = state.sum()
         nx = 1 << k
@@ -172,9 +184,13 @@ class MetMHN:
             daxpy(n=nx, a=1, x=subdiag, incx=1, y=diag, incy=1)
         return diag
 
-    def _likeliest_order_paired(self, state, verbose=False):
+    @profile
+    def _likeliest_order_paired(self, state: np.array, verbose: bool = False):
 
         k = state.sum()
+        if not reachable(
+            bin_state=int("1" * k, base=2), n=self.n, state=state):
+            raise ValueError("This state is not reachable by mhn.")
 
         # whether active events belong to pt
         pt = np.nonzero(state)[0] % 2 == 0
@@ -186,10 +202,16 @@ class MetMHN:
         diag_unpaired = self.get_diag_unpaired(
             state=np.concatenate([state[1::2], state[-1::]]))
 
+        # In A1[i][state][order], the probabilities to reach a state
+        # with a given order are stored. Here, i can be 0, 1 or 2, where
+        # A1[2] holds the states that have n_events events and A1[1] and
+        # A1[1] hold the ones with 1 and 2 events less, respectively.
+
+
         # get there with tau1
-        A1 = [dict(), {0: {tuple(): self.tau1 / (self.tau1 - diag_paired[0])}}]
+        A1 = deque([dict(), {0: {tuple(): self.tau1 / (self.tau1 - diag_paired[0])}}])
         # get there with tau2
-        A2 = [dict()]
+        A2 = deque([dict()])
 
         for n_events in range(1, k + 1):
             A1.append(dict())
@@ -201,8 +223,8 @@ class MetMHN:
                 if not reachable(bin_state=current_state, state=state, n=self.n):
                     continue
                 if current_state & (1 << (k - 1)):    # seeding has happened
-                    state_events = [i for i in range(k) if (
-                        1 << i) | current_state == current_state]  # positions of 1s
+                    state_events = [i for i in range(k)
+                    if (1 << i) | current_state == current_state]  # positions of 1s
                     # Does the pt part fit the observation?
                     pt_terminal = np.isin(pt_events, state_events).all()
                     A1[2][current_state] = dict()
@@ -238,8 +260,8 @@ class MetMHN:
 
                         # Assign the probabilities for A1
                         for pre_order1, pre_prob1 in pre_orders1.items():
-                            A1[2][current_state][pre_order1 +
-                                                 (new_event,)] = num * pre_prob1 * denom1
+                            A1[2][current_state][pre_order1 + (new_event,)] \
+                                = num * pre_prob1 * denom1
 
                         if pt_terminal:
 
@@ -257,8 +279,10 @@ class MetMHN:
                                     A2[1][current_state][pre_order2 + (new_event,)] \
                                         += pre_prob2 * num * denom2
 
-                    # Now I have the two dicts A1[2][current_state] and A2[1][current_state] with possible paths to get
-                    # to current_state. I can kick out some of them, because I am only interested in those orders that
+                    # Now I have the two dicts A1[2][current_state] and
+                    # A2[1][current_state] with possible paths to get to
+                    # current_state. I can kick out some of them,
+                    # because I am only interested in those orders that
                     # stand a chance to be maximal
 
                     if pt_terminal:
@@ -298,22 +322,25 @@ class MetMHN:
                     A1[2][current_state] = {
                         likeliest: A1[2][current_state][likeliest]}
 
-            A1.pop(0)
-            A2.pop(0)
+            A1.popleft()
+            A2.popleft()
 
         bin_state = int("1" * k, base=2)
         return np.nonzero(state)[0][np.array([k for k in A2[0][bin_state].keys()])], \
             [v for v in A2[0][bin_state].values()]
 
     def _likeliest_order_unpaired(self, state: np.array, tau: int) -> tuple[float, np.array]:
-        """For a given state, this returns the order in which the events were most likely to accumulate.
-        So far, this only works for an unpaired state which was observed at a timepoint that is an
-        exponentially distributed random variable with rate tau1 or tau2. 
+        """For a given state, this returns the order in which the events
+        were most likely to accumulate.
+        So far, this only works for an unpaired state which was observed
+        at a timepoint that is an exponentially distributed random
+        variable with rate tau1 or tau2. 
 
         Args:
-            state (np.array): Binary unpaired state vector. Shape (n,) with n the number of events including
-            seeding.
-            tau (int): Which rate parameter to use, tau1 or tau2. Must be either 1 or 2.
+            state (np.array): Binary unpaired state vector. Shape (n,)
+            with n the number of events including seeding.
+            tau (int): Which rate parameter to use, tau1 or tau2. Must
+            be either 1 or 2.
 
         Returns:
             float: likelihood of the order.
@@ -352,14 +379,17 @@ class MetMHN:
         return (A[i], np.arange(self.log_theta.shape[0])[state.astype(bool)][B[i]])
 
     def m_likeliest_orders(self, state: np.array, tau: int, m: int) -> tuple[np.array, np.array]:
-        """For a given state, this returns the m orders in which the events were most likely to accumulate.
-        So far, this only works for an unpaired state which was observed at a timepoint that is an
-        exponentially distributed random variable with rate tau1 or tau2. 
+        """For a given state, this returns the m orders in which the
+        events were most likely to accumulate.
+        So far, this only works for an unpaired state which was observed
+        at a timepoint that is an exponentially distributed random
+        variable with rate tau1 or tau2. 
 
         Args:
-            state (np.array): Binary unpaired state vector. Shape (n,) with n the number of events including
-            seeding.
-            tau (int): Which rate parameter to use, tau1 or tau2. Must be either 1 or 2.
+            state (np.array): Binary unpaired state vector. Shape (n,)
+            with n the number of events including seeding.
+            tau (int): Which rate parameter to use, tau1 or tau2. Must
+            be either 1 or 2.
             m (int): Number of orders to compute the likelihoods for.
 
         Returns:
@@ -404,13 +434,17 @@ class MetMHN:
             A = A_new
             B = B_new
         i = (1 << k) - 1
-        return (A[i], (np.arange(self.log_theta.shape[0])[state.astype(bool)])[B[i].flatten()].reshape(-1, k))
+        return (
+            A[i],
+            (np.arange(self.log_theta.shape[0])\
+             [state.astype(bool)])[B[i].flatten()].reshape(-1, k))
 
     def simulate(self, timepoint: int) -> tuple[np.array, float]:
         """This function simulates one sample according to the metMHN.
 
         Args:
-            timepoint (int): At which timepoint to stop the simulation, t_1 or t_2. Must be either 1 or 2.
+            timepoint (int): At which timepoint to stop the simulation,
+            t_1 or t_2. Must be either 1 or 2.
 
         Returns:
             np.array: Binary state of the sample.
@@ -475,6 +509,8 @@ if __name__ == "__main__":
     from src.model import MetMHN
     import pandas as pd
     import numpy as np
+    import cProfile
+    import pstats
 
     log_theta = pd.read_csv("results/paad/paad_mixed_08_003.csv", index_col=0)
     tau1, tau2 = np.exp(log_theta["Sampling"][:2])
@@ -482,6 +518,6 @@ if __name__ == "__main__":
     mmhn = MetMHN(log_theta=log_theta.to_numpy(), tau1=tau1, tau2=tau2)
     state = np.zeros(2 * mmhn.n + 1, dtype=int)
     state[:6] = 1
-    state[[8, 20]] = 1
+    state[[8, 20, 13, 23]] = 1
     state[-1] = 1
-    print(mmhn._likeliest_order_paired(state))
+    mmhn._likeliest_order_paired(state)
