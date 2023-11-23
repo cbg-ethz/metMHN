@@ -7,6 +7,26 @@ from src.np.kronvec import kron_diag as get_diag_paired
 from collections import deque
 from line_profiler import profile
 
+
+def order_to_int(order: tuple) -> int:
+    if len(order) == 0:
+        return 0
+    indices = list(order)
+    indices.sort()
+    my_int = 0
+    n = len(order)
+    for o in order:
+        index_o = indices.index(o)
+        my_int = my_int * n + index_o
+        indices.pop(index_o)
+        n -= 1
+    return my_int
+
+
+def int_to_order(my_int: int) -> tuple:
+    pass
+
+
 def reachable(bin_state: int, n: int, state: np.array) -> bool:
     """This function checks for a binary state in state space restricted
     form whether it can be actually reached by an MHN
@@ -189,7 +209,7 @@ class MetMHN:
 
         k = state.sum()
         if not reachable(
-            bin_state=int("1" * k, base=2), n=self.n, state=state):
+                bin_state=int("1" * k, base=2), n=self.n, state=state):
             raise ValueError("This state is not reachable by mhn.")
 
         # whether active events belong to pt
@@ -207,9 +227,9 @@ class MetMHN:
         # A1[2] holds the states that have n_events events and A1[1] and
         # A1[1] hold the ones with 1 and 2 events less, respectively.
 
-
         # get there with tau1
-        A1 = deque([dict(), {0: {tuple(): self.tau1 / (self.tau1 - diag_paired[0])}}])
+        A1 = deque(
+            [dict(), {0: {tuple(): self.tau1 / (self.tau1 - diag_paired[0])}}])
         # get there with tau2
         A2 = deque([dict()])
 
@@ -224,7 +244,7 @@ class MetMHN:
                     continue
                 if current_state & (1 << (k - 1)):    # seeding has happened
                     state_events = [i for i in range(k)
-                    if (1 << i) | current_state == current_state]  # positions of 1s
+                                    if (1 << i) | current_state == current_state]  # positions of 1s
                     # Does the pt part fit the observation?
                     pt_terminal = np.isin(pt_events, state_events).all()
                     A1[2][current_state] = dict()
@@ -436,7 +456,7 @@ class MetMHN:
         i = (1 << k) - 1
         return (
             A[i],
-            (np.arange(self.log_theta.shape[0])\
+            (np.arange(self.log_theta.shape[0])
              [state.astype(bool)])[B[i].flatten()].reshape(-1, k))
 
     def simulate(self, timepoint: int) -> tuple[np.array, float]:
@@ -506,18 +526,20 @@ class MetMHN:
 
 
 if __name__ == "__main__":
-    from src.model import MetMHN
-    import pandas as pd
-    import numpy as np
-    import cProfile
-    import pstats
+    # from src.model import MetMHN
+    # import pandas as pd
+    # import numpy as np
+    # import cProfile
+    # import pstats
 
-    log_theta = pd.read_csv("results/paad/paad_mixed_08_003.csv", index_col=0)
-    tau1, tau2 = np.exp(log_theta["Sampling"][:2])
-    log_theta.drop(columns=["Sampling"], inplace=True)
-    mmhn = MetMHN(log_theta=log_theta.to_numpy(), tau1=tau1, tau2=tau2)
-    state = np.zeros(2 * mmhn.n + 1, dtype=int)
-    state[:6] = 1
-    state[[8, 20, 13, 23]] = 1
-    state[-1] = 1
-    mmhn._likeliest_order_paired(state)
+    # log_theta = pd.read_csv("results/paad/paad_mixed_08_003.csv", index_col=0)
+    # tau1, tau2 = np.exp(log_theta["Sampling"][:2])
+    # log_theta.drop(columns=["Sampling"], inplace=True)
+    # mmhn = MetMHN(log_theta=log_theta.to_numpy(), tau1=tau1, tau2=tau2)
+    # state = np.zeros(2 * mmhn.n + 1, dtype=int)
+    # state[:6] = 1
+    # state[[8, 20, 13, 23]] = 1
+    # state[-1] = 1
+    # mmhn._likeliest_order_paired(state)
+
+    order_to_int((1, 3, 2, 0))
