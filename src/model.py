@@ -23,8 +23,41 @@ def order_to_int(order: tuple) -> int:
     return my_int
 
 
-def int_to_order(my_int: int) -> tuple:
-    pass
+def int_to_order(my_int: int, numbers: list) -> tuple:
+    numbers.sort()
+    order = list()
+    for i in range(len(numbers) - 1, -1, -1):
+        f = factorial(i)
+        order.append(numbers.pop(my_int // f))
+        my_int %= f
+    return tuple(order)
+
+
+def append_to_int_order(my_int: int, numbers: list[int], new_event: int) -> int:
+    numbers = numbers.copy()
+    numbers.sort()
+    new_int = 0
+    for i in range(len(numbers) - 1, -1, -1):
+        f = factorial(i)
+        j = my_int // f
+        e = numbers.pop(j)
+        if e > new_event:
+            j += 1
+        new_int += j * f * (i + 1)
+        my_int %= f
+    return new_int
+
+
+append_to_int_order = np.vectorize(
+    append_to_int_order, excluded=["numbers", "new_event"])
+
+
+def tuple_max_2(x: np.array, y: np.array) -> tuple[np.array]:
+    x.sort(order="order")
+    y.sort(order="order")
+    indices = (x["prob"] >= x["prob"][np.argmax(y["prob"])]) \
+        & (y["prob"] >= y["prob"][np.argmax(x["prob"])])
+    return x[indices], y[indices]
 
 
 def reachable(bin_state: int, n: int, state: np.array) -> bool:
@@ -227,9 +260,10 @@ class MetMHN:
         # A1[2] holds the states that have n_events events and A1[1] and
         # A1[1] hold the ones with 1 and 2 events less, respectively.
 
+        order_type = [("order", int), ("prob", float)]
         # get there with tau1
         A1 = deque(
-            [dict(), {0: {tuple(): self.tau1 / (self.tau1 - diag_paired[0])}}])
+            [dict(), {0: np.array([(0, self.tau1 / (self.tau1 - diag_paired[0]))], dtype=order_type)}])
         # get there with tau2
         A2 = deque([dict()])
 
@@ -242,27 +276,32 @@ class MetMHN:
                         f"{n_events:3}/{k:3}, {len(A1[2]):10}, {sum(len(x) for x in A1[2].values()):10}", end="\r")
                 if not reachable(bin_state=current_state, state=state, n=self.n):
                     continue
-                if current_state & (1 << (k - 1)):    # seeding has happened
-                    state_events = [i for i in range(k)
-                                    if (1 << i) | current_state == current_state]  # positions of 1s
+                if current_state & (1 << (k - 1)):
+                    # seeding has happened
+                    state_events = [
+                        i for i in range(k)
+                        if (1 << i) | current_state == current_state]  # positions of 1s
                     # Does the pt part fit the observation?
                     pt_terminal = np.isin(pt_events, state_events).all()
-                    A1[2][current_state] = dict()
+                    A1[2][current_state] = np.empty([0], dtype=order_type)
                     denom1 = 1/(self.tau1 - diag_paired[current_state])
 
                     if pt_terminal:
-                        # if the pt part fits the observation, it is possible that the same holds for a prestate. Then we need
-                        # to calculate how we can reach current_state with tau2
-                        A2[1][current_state] = dict()
+                        # if the pt part fits the observation, it is
+                        # possible that the same holds for a prestate.
+                        # Then we need to calculate how we can reach
+                        # current_state with tau2
 
                         denom2 = 1 / \
                             (self.tau2 - diag_unpaired[met(current_state, pt)])
                         start_factor = self.tau2 * denom2
-                    # fill A1[2][current_state] and A2[1][current_state] with probabilities to current_state
+                    # fill A1[2][current_state] and A2[1][current_state]
+                    # with probabilities to current_state
 
                     for pre_state, pre_orders1 in A1[1].items():
 
-                        # Skip pre_state if it is not a subset of current_state
+                        # Skip pre_state if it is not a subset of
+                        # current_state
                         if not (current_state | pre_state == current_state):
                             continue
 
@@ -272,32 +311,60 @@ class MetMHN:
 
                         # Get the numerator
                         if pt[new_event]:       # new event belongs to pt
-                            num = np.exp(
-                                self.log_theta[events[new_event], events[state_events][pt[state_events]]].sum())
+                            num = np.exp(self.log_theta[
+                                events[new_event],
+                                events[state_events][pt[state_events]]].sum())
                         else:                   # new event belongs to met
-                            num = np.exp(
-                                self.log_theta[events[new_event], events[state_events][~pt[state_events]]].sum())
+                            num = np.exp(self.log_theta[
+                                events[new_event],
+                                events[state_events][~pt[state_events]]].sum())
 
                         # Assign the probabilities for A1
-                        for pre_order1, pre_prob1 in pre_orders1.items():
-                            A1[2][current_state][pre_order1 + (new_event,)] \
-                                = num * pre_prob1 * denom1
+                        new_orders = pre_orders1.copy()
+                        new_orders["prob"] *= (num * denom1)
+                        new_orders["order"] = append_to_int_order(
+                            new_orders["order"], numbers=[e for e in state_events if e != new_event], new_event=new_event)
+                        A1[2][current_state] = np.append(
+                            A1[2][current_state],
+                            new_orders
+                        )
 
-                        if pt_terminal:
+                    if pt_terminal:
 
-                            # Get the numerator
-                            num = np.exp(
-                                self.log_theta[events[new_event], events[state_events][~pt[state_events]]].sum())
+                        # ich brauch hier nur die neuen, die zu
+                        # pre_state passen
+                        A2[1][current_state] = A1[2][current_state].copy()
+                        A2[1][current_state]["prob"] *= start_factor
 
-                            for pre_order1, pre_prob1 in A1[1][pre_state].items():
-                                A2[1][current_state][pre_order1 + (new_event,)] \
-                                    = start_factor * A1[2][current_state][pre_order1 + (new_event,)]
+                        for pre_state, pre_orders1 in A1[1].items():
+
+                            # Skip pre_state if it is not a subset of
+                            # current_state
+                            if not (current_state | pre_state == current_state):
+                                continue
 
                             # if pre_state was pt_terminal
                             if pre_state in A2[0]:
-                                for pre_order2, pre_prob2 in A2[0][pre_state].items():
-                                    A2[1][current_state][pre_order2 + (new_event,)] \
-                                        += pre_prob2 * num * denom2
+
+                                # get the position of the new 1
+                                new_event = bin(current_state ^ pre_state)[
+                                    :1:-1].index("1")
+
+                                # Get the numerator
+                                num = np.exp(self.log_theta[
+                                    events[new_event],
+                                    events[state_events][~pt[state_events]]].sum())
+
+                                pre_terminals = append_to_int_order(
+                                    my_int=A2[0][pre_state]["order"],
+                                    numbers=[
+                                        e for e in state_events if e != new_event],
+                                    new_event=new_event)
+                                A2[1][current_state]["prob"][
+                                    np.isin(A2[1][current_state]["order"],
+                                            pre_terminals)] \
+                                    += A2[0][pre_state]["prob"] \
+                                    * num * denom2
 
                     # Now I have the two dicts A1[2][current_state] and
                     # A2[1][current_state] with possible paths to get to
@@ -306,15 +373,14 @@ class MetMHN:
                     # stand a chance to be maximal
 
                     if pt_terminal:
-                        A1[2][current_state], A2[1][current_state] = tuple_max(
+                        A1[2][current_state], A2[1][current_state] = tuple_max_2(
                             A1[2][current_state], A2[1][current_state])
-                        pass
 
                 else:  # seeding has not happened yet
                     state_events = [i for i in range(k) if (
                         1 << i) | current_state == current_state]  # positions of 1s
 
-                    A1[2][current_state] = dict()
+                    A1[2][current_state] = np.empty([0], dtype=order_type)
 
                     denom1 = 1/(self.tau1 - diag_paired[current_state])
 
@@ -328,26 +394,37 @@ class MetMHN:
                         new_event = bin(current_state ^ pre_state)[
                             :1:-1].index("1")
 
-                        num = np.exp(
-                            self.log_theta[events[new_event], events[state_events][pt[state_events]]].sum())
+                        num = np.exp(self.log_theta[
+                            events[new_event],
+                            events[state_events][pt[state_events]]].sum())
 
                         # Assign the probabilities for A1
-                        for pre_order1, pre_prob1 in pre_orders1.items():
-                            A1[2][current_state][pre_order1 +
-                                                 (new_event, new_event + 1)] = num * pre_prob1 * denom1
+                        new_orders = pre_orders1.copy()
+                        new_orders["prob"] *= num * denom1
+                        new_orders["order"] = append_to_int_order(
+                            my_int=append_to_int_order(
+                                my_int=new_orders["order"],
+                                numbers=[e for e in state_events if e not in [
+                                    new_event, new_event + 1]],
+                                new_event=new_event
+                            ),
+                            numbers=[
+                                e for e in state_events if e != new_event],
+                            new_event=new_event + 1
+                        )
+                        A1[2][current_state] = np.append(
+                            A1[2][current_state],
+                            new_orders)
 
-                    likeliest = max(A1[2][current_state],
-                                    key=A1[2][current_state].get)
-
-                    A1[2][current_state] = {
-                        likeliest: A1[2][current_state][likeliest]}
+                    A1[2][current_state] = A1[2][current_state][
+                        [np.argmax(A1[2][current_state]["prob"])]]
 
             A1.popleft()
             A2.popleft()
 
         bin_state = int("1" * k, base=2)
-        return np.nonzero(state)[0][np.array([k for k in A2[0][bin_state].keys()])], \
-            [v for v in A2[0][bin_state].values()]
+        arg_max = np.argmax(A2[0][bin_state]["prob"])
+        return A2[0][bin_state][arg_max]
 
     def _likeliest_order_unpaired(self, state: np.array, tau: int) -> tuple[float, np.array]:
         """For a given state, this returns the order in which the events
@@ -526,20 +603,22 @@ class MetMHN:
 
 
 if __name__ == "__main__":
-    # from src.model import MetMHN
-    # import pandas as pd
-    # import numpy as np
-    # import cProfile
-    # import pstats
+    from src.model import MetMHN
+    import pandas as pd
+    import numpy as np
+    import cProfile
+    import pstats
 
-    # log_theta = pd.read_csv("results/paad/paad_mixed_08_003.csv", index_col=0)
-    # tau1, tau2 = np.exp(log_theta["Sampling"][:2])
-    # log_theta.drop(columns=["Sampling"], inplace=True)
-    # mmhn = MetMHN(log_theta=log_theta.to_numpy(), tau1=tau1, tau2=tau2)
-    # state = np.zeros(2 * mmhn.n + 1, dtype=int)
-    # state[:6] = 1
-    # state[[8, 20, 13, 23]] = 1
-    # state[-1] = 1
-    # mmhn._likeliest_order_paired(state)
-
-    order_to_int((1, 3, 2, 0))
+    log_theta = pd.read_csv("results/paad/paad_mixed_08_003.csv", index_col=0)
+    tau1, tau2 = np.exp(log_theta["Sampling"][:2])
+    log_theta.drop(columns=["Sampling"], inplace=True)
+    mmhn = MetMHN(log_theta=log_theta.to_numpy(), tau1=tau1, tau2=tau2)
+    state = np.zeros(2 * mmhn.n + 1, dtype=int)
+    state[:6] = 1
+    state[[8, 20, 23]] = 1
+    state[-1] = 1
+    int_order, prob = mmhn._likeliest_order_paired(state)
+    print(
+        int_to_order(int_order, np.nonzero(state)[0].tolist()),
+        prob
+    )
