@@ -3,10 +3,11 @@ import networkx as nx
 from math import factorial
 from scipy.linalg.blas import dcopy, dscal, daxpy
 import numpy as np
+import sys
+sys.path.append(".")
 from src.np.kronvec import kron_diag as get_diag_paired
 from collections import deque
-# from line_profiler import profile as timeprofile
-from memory_profiler import profile as memprofile
+from line_profiler import profile
 
 
 def order_to_int(order: tuple) -> int:
@@ -52,8 +53,6 @@ def append_to_int_order(
 
 append_to_int_order = np.vectorize(
     append_to_int_order, excluded=["numbers", "new_event"])
-
-# @memprofile
 
 
 def tuple_max_2(x: np.array, y: np.array) -> tuple[np.array]:
@@ -242,8 +241,7 @@ class MetMHN:
             daxpy(n=nx, a=1, x=subdiag, incx=1, y=diag, incy=1)
         return diag
 
-    @memprofile
-    def _likeliest_order_paired(self, state: np.array, verbose: bool = False):
+    def likeliest_order_paired(self, state: np.array, verbose: bool = False) -> tuple[tuple[int, ...], float]:
 
         k = state.sum()
         if not reachable(
@@ -253,8 +251,12 @@ class MetMHN:
         # whether active events belong to pt
         pt = np.nonzero(state)[0] % 2 == 0
         pt[-1] = False
-        events = np.nonzero(state)[0] // 2  # event numbers
-        pt_events = np.nonzero(pt.astype(int))[0]  # positions of the pt 1s
+
+        # get the numbers of events
+        events = np.nonzero(state)[0] // 2
+
+        # get the positions of the pt 1s
+        pt_events = np.nonzero(pt.astype(int))[0]
         diag_paired = get_diag_paired(
             log_theta=self.log_theta, n=self.n, state=state)
         diag_unpaired = self.get_diag_unpaired(
@@ -367,7 +369,8 @@ class MetMHN:
 
                             # Skip pre_state if it is not a subset of
                             # current_state
-                            if not (current_state | pre_state == current_state):
+                            if not (current_state | pre_state ==
+                                    current_state):
                                 continue
 
                             # if pre_state was pt_terminal
@@ -423,7 +426,8 @@ class MetMHN:
 
                     for pre_state, pre_orders1 in A1[0].items():
 
-                        # Skip pre_state if it is not a subset of current_state
+                        # Skip pre_state if it is not a subset of
+                        # current_state
                         if not (current_state | pre_state == current_state):
                             continue
 
@@ -465,9 +469,10 @@ class MetMHN:
 
         bin_state = int("1" * k, base=2)
         arg_max = np.argmax(A2[0][bin_state]["prob"])
-        return A2[0][bin_state][arg_max]
+        o, p = A2[0][bin_state][arg_max]
+        return int_to_order(o, np.nonzero(state)[0].tolist()), p
 
-    def _likeliest_order_unpaired(self, state: np.array, tau: int) -> tuple[float, np.array]:
+    def likeliest_order_unpaired(self, state: np.array, tau: int) -> tuple[float, np.array]:
         """For a given state, this returns the order in which the events
         were most likely to accumulate.
         So far, this only works for an unpaired state which was observed
@@ -543,7 +548,7 @@ class MetMHN:
         k = state.sum()
 
         if k <= 1:
-            return self._likeliest_order_unpaired(state=state, tau=tau)
+            return self.likeliest_order_unpaired(state=state, tau=tau)
 
         # {state: highest path probability to this state}
         A = {0: np.array(tau / (tau - restr_diag[0]))}
@@ -644,22 +649,12 @@ class MetMHN:
 
 
 if __name__ == "__main__":
-    from src.model import MetMHN
     import pandas as pd
-    import numpy as np
-    import cProfile
-    import pstats
 
     log_theta = pd.read_csv("results/paad/paad_mixed_08_003.csv", index_col=0)
     tau1, tau2 = np.exp(log_theta["Sampling"][:2])
     log_theta.drop(columns=["Sampling"], inplace=True)
     mmhn = MetMHN(log_theta=log_theta.to_numpy(), tau1=tau1, tau2=tau2)
     state = np.zeros(2 * mmhn.n + 1, dtype=int)
-    state[:6] = 1
-    state[[8, 20, 23]] = 1
-    state[-1] = 1
-    int_order, prob = mmhn._likeliest_order_paired(state)
-    print(
-        int_to_order(int_order, np.nonzero(state)[0].tolist()),
-        prob
-    )
+    state[[0,1,4,5,8,20,23,-1]] = 1
+    mmhn.likeliest_order_paired(state)
