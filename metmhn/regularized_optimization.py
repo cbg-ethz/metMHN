@@ -1,5 +1,5 @@
 from metmhn.jx import likelihood as ssr
-from metmhn.jx.kronvec import diagnosis_theta
+#from metmhn.jx.kronvec import diagnosis_theta
 from metmhn.jx.vanilla import R_inv_vec
 from metmhn.jx import one_event as one
 import logging 

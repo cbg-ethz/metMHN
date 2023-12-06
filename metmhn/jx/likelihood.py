@@ -1,13 +1,14 @@
 from metmhn.jx.kronvec import (
-                        diagnosis_theta,
                         kronvec_sync, 
                         kronvec_met, 
                         kronvec_prim, 
                         kronvec_seed, 
                         kronvec,
-                        xdQmetddiy, 
-                        kron_diag, 
-                        obs_states
+                        kron_diag,
+                        diag_scal_p,
+                        diag_scal_m, 
+                        obs_states,
+                        diagnosis_theta
                         )
 
 from metmhn.jx import vanilla as mhn
@@ -17,7 +18,7 @@ from functools import partial
 
 
 
-def f1(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, jnp.array, float, float]:
+def f1(s: jnp.ndarray, p: jnp.ndarray, m: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, float]:
     s = s.reshape((-1, 2), order="C")
     p = p.reshape((-1, 2), order="C")
     m = m.reshape((-1, 2), order="C")
@@ -28,10 +29,10 @@ def f1(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, 
     p = p.flatten(order="F")
     m = m.flatten(order="F")
 
-    return s, p, m, z, 0.
+    return s, p, m, z
 
 
-def f2(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, jnp.array, float]:
+def f2(s: jnp.ndarray, p: jnp.ndarray, m: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, float]:
     s = s.reshape((-1, 2), order="C")
     p = p.reshape((-1, 2), order="C")
     m = m.reshape((-1, 2), order="C")
@@ -42,53 +43,52 @@ def f2(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, 
     p = p.flatten(order="F")
     m = m.flatten(order="F")
 
-    return s, p, m, 0., z
+    return s, p, m, z
 
 
-def f3(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, jnp.array, float]:
+def f3(s: jnp.ndarray, p: jnp.ndarray, m: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, float]:
     s = s.reshape((-1, 4), order="C")
     p = p.reshape((-1, 4), order="C")
     m = m.reshape((-1, 4), order="C")
 
-    z = s[:, 3].sum() + p[:, [1, 3]].sum()
-    z_m = m[:, [2, 3]].sum()
+    z = s[:, 3].sum() + p[:, [1, 3]].sum() + m[:, [2, 3]].sum()
+
     s = s.flatten(order="F")
     p = p.flatten(order="F")
     m = m.flatten(order="F")
 
-    return s, p, m, z, z_m
+    return s, p, m, z
 
 
-def t12(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, jnp.array, float, float]:
+def t12(s: jnp.ndarray, p: jnp.ndarray, m: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, float]:
     s = s.reshape((-1, 2), order="C")
     p = p.reshape((-1, 2), order="C")
     m = m.reshape((-1, 2), order="C")
 
-    z = s[:, 0].sum() + p.sum()
-    z_m = m.sum()
+    z = s[:, 0].sum() + p.sum() + m.sum()
+
     s = s.flatten(order="F")
     p = p.flatten(order="F")
     m = m.flatten(order="F")
 
-    return s, p, m, z, z_m
+    return s, p, m, z
 
 
-def t3(s: jnp.array, p: jnp.array, m: jnp.array) -> tuple[jnp.array, jnp.array, jnp.array, float, float]:
+def t3(s: jnp.ndarray, p: jnp.ndarray, m: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, float]:
     s = s.reshape((-1, 4), order="C")
     p = p.reshape((-1, 4), order="C")
     m = m.reshape((-1, 4), order="C")
 
-    z = s.sum() + p.sum()
-    z_m =  m.sum()
+    z = s.sum() + p.sum() + m.sum()
 
     s = s.flatten(order="F")
     p = p.flatten(order="F")
     m = m.flatten(order="F")
 
-    return s, p, m, z, z_m
+    return s, p, m, z
 
 
-def z3(s: jnp.array) -> tuple[jnp.array, float]:
+def z3(s: jnp.ndarray) -> tuple[jnp.ndarray, float]:
     s = s.reshape((-1, 4), order="C")
 
     z = s[:, 3].sum()
@@ -103,7 +103,7 @@ def deriv_no_seed(i:int, g_row_i: jnp.array, g_m_row_i: jnp.array, x: jnp.array,
 
     d_e = diag_effects.at[-1].get()
     diag_th = diagnosis_theta(log_theta, diag_effects)
-    z_sync = jnp.multiply(x, kronvec_sync(diag_log_theta=diag_th,
+    z_sync = jnp.multiply(x, kronvec_sync(log_theta=diag_th,
                                 p=y, i=i, state=state))
     z_prim = jnp.multiply(x, kronvec_prim(diag_log_theta=diag_th,
                                 p=y, i=i, d_e=d_e, state=state))
@@ -255,9 +255,9 @@ def x_partial_Q_y(log_theta: jnp.array, diag_effects: jnp.array, x: jnp.array,
 
 
 @partial(jit, static_argnames=["transpose", "state_size"])
-def R_i_inv_vec(log_theta: jnp.array, diag_effects: jnp.array, x: jnp.array, state: jnp.array, 
-                state_size: int, transpose: bool = False) -> jnp.array:
-    """This computes R_i^{-1} x = (\lambda_i I - Q)^{-1} x
+def R_i_inv_vec(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, x: jnp.ndarray, state: jnp.ndarray, 
+                state_size: int, transpose: bool = False) -> jnp.ndarray:
+    """This computes R_i^{-1} x = ((D_dP + D_dM) - Q)^{-1} x
 
     Args:
         log_theta (np.array): Log values of the theta matrix
@@ -270,13 +270,13 @@ def R_i_inv_vec(log_theta: jnp.array, diag_effects: jnp.array, x: jnp.array, sta
     Returns:
         jnp.array: R_i^{-1} x
     """
-    lidg = -1. / (kron_diag(log_theta=log_theta, diag_effects = diag_effects, 
-                           state= state, n_state=state_size) - 1.)
+    lidg = -1. / (kron_diag(log_theta=log_theta, state= state, n_state=state_size) - 
+                  (diag_scal_p(log_d_p, state, jnp.ones_like(x)) + diag_scal_m(log_d_m, state, jnp.ones_like(x))))
     y = lidg * x
     y = lax.fori_loop(
         lower=0,
         upper=state_size+1,
-        body_fun=lambda _, val: lidg * (kronvec(log_theta=log_theta, diag_effects=diag_effects, p=val,
+        body_fun=lambda _, val: lidg * (kronvec(log_theta=log_theta, p=val,
                                                 state=state, diag=False, transpose=transpose) + x),
         init_val=y
     )
@@ -284,41 +284,66 @@ def R_i_inv_vec(log_theta: jnp.array, diag_effects: jnp.array, x: jnp.array, sta
     return y
 
 
-def _lp_coupled(log_theta: jnp.array, fd_effects:jnp.array, sd_effects: jnp.array, 
-                state_joint: jnp.array, n_prim: int, n_met: int) -> jnp.array:
-    """
-    Evaluates the log probability of seeing coupled genotype data in state "state"
+def _lp_coupled(log_theta: jnp.ndarray, log_d_p:jnp.ndarray, log_d_m: jnp.ndarray, 
+                state_joint: jnp.ndarray, n_prim: int, n_met: int, obs_order: int) -> jnp.ndarray:
+    """Calculate the log prob to observe a datapoint state_joint
+
     Args:
-        log_theta_fd (jnp.array):       Theta_matrix with logarithmics entries, scaled by effects on second diagnosis.
-        log_theta_sd (jnp.array):       Theta_matrix with logarithmic entries, scaled by effects on first diagnosis.
-        log_theta_prim (jnp.array):     Copy of log_theta_fd,but  with off-diagonal entries in the 
-                                        last column set to 0.
-        state_joint (jnp.array):        Bitstring, genotypes of PT and MT. 
-        d_e (jnp.array):                Effect of the seeding on diagnosis. 
-        n_prim (int):                   Number of active events in PT.
-        n_met (int):                    Number of active events in MT.
+        log_theta (jnp.ndarray): Theta matrix with logarithmic entries
+        log_d_p (jnp.ndarray): Logarithmic effects of events on PT-observation
+        log_d_m (jnp.ndarray): Logarithmic effects of events on MT-observation
+        state_joint (jnp.ndarray): Observed datapoint
+        n_prim (int): Number of active events (1s) in PT-part of state_joint
+        n_met (int): Number of active events (1s) in MT-part of state_joint
+        obs_order (int): Ordering of observations (0: same time, 1: PT->MT, 2: MT->PT)
+
     Returns:
-        jnp.array: log(P(state))
+        jnp.ndarray: log. prob of state_joint
     """
-    p = jnp.zeros(2**(n_prim + n_met - 1))
-    p = p.at[0].set(1.)
-    pTh1_joint = R_i_inv_vec(log_theta, fd_effects, p, state_joint, 
-                             n_prim+n_met-1, transpose = False)
-   
+    joint_size = n_prim + n_met - 1
+    p0 = jnp.zeros(2**joint_size)
+    p0 = p0.at[0].set(1.)
+    pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p0, state_joint, joint_size)
+    pTh1_joint = lax.switch(index = obs_order,
+                            branches = [
+                                lambda: diag_scal_p(log_d_p, state_joint, pTh1_joint) + diag_scal_m(log_d_m, state_joint, pTh1_joint),
+                                lambda: diag_scal_p(log_d_p, state_joint, pTh1_joint),
+                                lambda: diag_scal_m(log_d_m, state_joint, pTh1_joint)
+                                ])
+    
     # Select the states where x = prim and z are compatible with met 
-    p = obs_states((n_prim + n_met - 1), state_joint, True)
-    poss_states_inds = jnp.where(p == 1., size=2**(n_met-1))[0]
-    # Prim conditional distribution at first sampling, to be used as starting dist for second sampling
-    pTh1_cond_obs = pTh1_joint.at[poss_states_inds].get()
-    # States where the Seeding didn't happen aren't compatible with met and get probability 0
-    pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_met-1)), pTh1_cond_obs)
+    def pt_first():
+        compatible_states = obs_states(n_joint=joint_size, state=state_joint, pt_first=True)
+        poss_states_inds = jnp.where(compatible_states == 1., size=2**(n_met-1))[0]
+        pTh1_cond_obs = pTh1_joint[poss_states_inds]
+        #States where the Seeding didn't happen aren't compatible with met and get probability 0
+        pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_met-1)), pTh1_cond_obs)
+        met = jnp.append(state_joint[1::2], 1)
+        log_theta_scal = diagnosis_theta(log_theta, log_d_m)
+        pTh2 = mhn.R_inv_vec(log_theta_scal, pTh1_cond_obs, met)
+        return jnp.log(pTh2[-1])
+    
+    def mt_first():
+        compatible_states = obs_states(joint_size, state_joint, False)
+        poss_states_inds = jnp.where(compatible_states == 1., size=2**(n_prim-1))[0]
+        pTh1_cond_obs = pTh1_joint.at[poss_states_inds].get()
+        #States where the Seeding didn't happen aren't compatible with met and get probability 0
+        pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_prim-1)), pTh1_cond_obs)
+        prim = jnp.append(state_joint[0::2], 1)
+        log_theta_scal = diagnosis_theta(log_theta, log_d_p)
+        pTh2 = mhn.R_inv_vec(log_theta_scal, pTh1_cond_obs, prim)
+        return jnp.log(pTh2[-1])
+    
+    log_prob = lax.switch(index = obs_order,
+                          branches =[
+                              lambda:jnp.log(pTh1_joint[-1]),
+                              pt_first,
+                              mt_first
+                              ])
+    return log_prob
+    
 
-    met = jnp.append(state_joint.at[1::2].get(), 1)
-    log_theta_sd = diagnosis_theta(log_theta, sd_effects)
-    pTh2 = mhn.R_inv_vec(log_theta_sd, pTh1_cond_obs, met)
-    return jnp.log(pTh2.at[-1].get())
-
-
+    
 def _lp_prim_obs(log_theta_prim: jnp.array, fd_effects: jnp.array,
                  state_prim: jnp.array, n_prim: int) -> jnp.array:
     """Calculates the marginal likelihood of only observing a PT at first sampling with genotype state_prim

@@ -2,6 +2,7 @@ from metmhn.jx.kronvec import (k2d1t,
                                k2ntt, 
                                k2dt0
                                )
+import numpy as np
 import jax.numpy as jnp
 from jax import jit, lax, vmap
 from functools import partial
@@ -78,7 +79,7 @@ def kronvec_i(
     transpose: bool = False
 ) -> jnp.array:
     return lax.cond(
-        not diag and state.at[i].get() != 1,
+        not diag and state[i] != 1,
         lambda: jnp.zeros_like(p),
         lambda: _kronvec(
             log_theta=log_theta,
@@ -92,8 +93,7 @@ def kronvec_i(
 
 
 @partial(jit, static_argnames=["diag", "transpose"])
-def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array, 
-            diag: bool = True, transpose: bool = False) -> jnp.array:
+def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array, diag: bool = True, transpose: bool = False) -> jnp.array:
     """This computes the restricted version of the product of the rate matrix Q with a vector Q p.
 
     Args:
@@ -115,13 +115,13 @@ def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array,
                          state=state, diag=diag, transpose=transpose)
 
         return val
-    
     n = log_theta.shape[0]
+    state_size = np.log2(p.shape[0]).astype(int)
     return lax.fori_loop(
         lower=0,
         upper=n,
         body_fun=body_fun,
-        init_val=jnp.zeros_like(p)
+        init_val=jnp.zeros(shape=2**state_size)
     )
 
 
@@ -139,8 +139,7 @@ def kron_diag_i(
             index=state.at[j].get(),
             branches=[
                 lambda val: val,
-                lambda val: k2d1t(val, 
-                                  jnp.exp(log_theta.at[i, j].get())),
+                lambda val: k2d1t(val, jnp.exp(log_theta[i, j])),
             ],
             operand=val
         )
@@ -156,8 +155,8 @@ def kron_diag_i(
     diag = lax.switch(
         index=state.at[i].get(),
         branches=[
-            lambda val: -jnp.exp(log_theta.at[i, i].get()) * val,
-            lambda val: k2dt0(val, jnp.exp(log_theta.at[i, i].get())),
+            lambda val: -jnp.exp(log_theta[i, i]) * val,
+            lambda val: k2dt0(val, jnp.exp(log_theta[i, i])),
         ],
         operand=diag
     )
@@ -193,8 +192,7 @@ def kron_diag(
 
 
 @partial(jit, static_argnames=["transpose"])
-def R_inv_vec(log_theta: jnp.array, x: jnp.array,  
-              state: jnp.array, transpose: bool = False) -> jnp.array:
+def R_inv_vec(log_theta: jnp.array, x: jnp.array, lam: float,  state: jnp.array, transpose: bool = False) -> jnp.array:
     """This computes R^{-1} x = (\lambda I - Q)^{-1} x
 
     Args:
@@ -210,8 +208,8 @@ def R_inv_vec(log_theta: jnp.array, x: jnp.array,
     """
     state_size = jnp.log2(x.shape[0]).astype(int)
 
-    lidg = -1. / (kron_diag(log_theta=log_theta,
-                 state=state, diag=jnp.ones_like(x)) - 1.)
+    lidg = -1 / (kron_diag(log_theta=log_theta,
+                 state=state, diag=jnp.ones_like(x)) - lam)
     y = lidg * x
 
     y = lax.fori_loop(
@@ -230,7 +228,8 @@ def x_partial_Q_y(
         log_theta: jnp.array,
         x: jnp.array,
         y: jnp.array,
-        state: jnp.array) -> jnp.array:
+        state: jnp.array, 
+        diagnosis:bool=True) -> jnp.array:
     """This function computes x \partial Q y with \partial Q the Jacobian of Q w.r.t. all thetas
     efficiently using the shuffle trick (sic!).
 
@@ -294,14 +293,16 @@ def x_partial_Q_y(
 
     val = vmap(body_fun, in_axes=(0, 0), out_axes=0)(
         jnp.arange(n, dtype=int), val)
-    d_diag = -jnp.sum(val, axis=0) + jnp.diagonal(val)
-
+    d_diag = lax.cond(diagnosis,
+                      lambda z: -1. * jnp.sum(z, axis=0) + jnp.diagonal(z),
+                      lambda z: jnp.zeros(z.shape[0]),
+                      val
+                    )
     return val, d_diag
 
 
 @jit
-def gradient(log_theta: jnp.array, state: jnp.array, 
-             p_0: jnp.array) -> jnp.array:
+def gradient(log_theta: jnp.array, lam: float, state: jnp.array, p_0: jnp.array, diagnosis: bool=True) -> jnp.array:
     """This computes the gradient of the score function, which is the log-likelihood of a data vector p_D
     with respect to the log_theta matrix
 
@@ -315,9 +316,11 @@ def gradient(log_theta: jnp.array, state: jnp.array,
     Returns:
         jnp.array: \partial_theta (p_D^T log p_theta)
     """
-    p_theta = R_inv_vec(log_theta=log_theta, x=p_0, state=state)
+    p_theta = R_inv_vec(log_theta=log_theta, x=p_0, lam=lam,
+                        state=state)
     x = jnp.zeros_like(p_theta)
     x = x.at[-1].set(1/p_theta.at[-1].get())
-    x = R_inv_vec(log_theta=log_theta, x=x, state=state, transpose=True)
-    d_th, d_diag = x_partial_Q_y(log_theta=log_theta, x=x, y=p_theta, state=state)
-    return d_th, d_diag, p_theta
+    x = R_inv_vec(log_theta=log_theta, x=x, lam=lam,
+                  state=state, transpose=True)
+    d_th, d_diag = x_partial_Q_y(log_theta=log_theta, x=x, y=p_theta, state=state, diagnosis=diagnosis)
+    return d_th, d_diag, lam * p_theta

@@ -1,7 +1,7 @@
 import numpy as np
 import jax.numpy as jnp
 import metmhn.jx.vanilla as mhn
-from metmhn.jx.kronvec import diagnosis_theta
+#from metmhn.jx.kronvec import diagnosis_theta
 
 # This contains the important functions for the case that state_size = 1
 # This needs to be done separately, as otherwise reshape(-1, 4) throws an error
