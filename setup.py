@@ -1,4 +1,7 @@
 import setuptools
+from Cython.Build import cythonize 
+
+
 
 setuptools.setup(
     name='MetaMHN',
@@ -7,4 +10,5 @@ setuptools.setup(
         'jx': 'src/jx',
         'np': 'src/np'
     },
+    ext_modules = cythonize("src/perf.pyx")
 )
