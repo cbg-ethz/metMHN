@@ -1,6 +1,8 @@
 from metmhn.jx.kronvec import (k2d1t, 
                                k2ntt, 
-                               k2dt0
+                               k2dt0,
+                               k2d10,
+                               k2d0t
                                )
 import numpy as np
 import jax.numpy as jnp
@@ -10,14 +12,14 @@ from functools import partial
 
 
 @jit
-def t(z: jnp.array) -> tuple[jnp.array, float]:
+def t(z: jnp.ndarray) -> tuple[jnp.ndarray, float]:
     z = z.reshape((-1, 2), order="C")
     val = z.sum()
     return z.flatten(order="F"), val
 
 
 @jit
-def f(z: jnp.array) -> tuple[jnp.array, float]:
+def f(z: jnp.ndarray) -> tuple[jnp.ndarray, float]:
     z = z.reshape((-1, 2), order="C")
     val = z[:, 1].sum()
     return z.flatten(order="F"), val
@@ -25,13 +27,13 @@ def f(z: jnp.array) -> tuple[jnp.array, float]:
 
 @partial(jit, static_argnames=["diag", "transpose"])
 def _kronvec(
-    log_theta: jnp.array,
-    p: jnp.array,
+    log_theta: jnp.ndarray,
+    p: jnp.ndarray,
     i: int,
-    state: jnp.array,
+    state: jnp.ndarray,
     diag: bool = True,
     transpose: bool = False
-) -> jnp.array:
+    ) -> jnp.ndarray:
 
     def loop_body_diag(j, val):
 
@@ -44,8 +46,8 @@ def _kronvec(
             ],
             operand=val
         )
-
         return val
+    
     n = log_theta.shape[0]
     # Diagonal Kronecker factors
     p = lax.fori_loop(lower=0, upper=i,
@@ -71,13 +73,13 @@ def _kronvec(
 
 @partial(jit, static_argnames=["diag", "transpose"])
 def kronvec_i(
-    log_theta: jnp.array,
-    p: jnp.array,
+    log_theta: jnp.ndarray,
+    p: jnp.ndarray,
     i: int,
-    state: jnp.array,
+    state: jnp.ndarray,
     diag: bool = True,
     transpose: bool = False
-) -> jnp.array:
+    ) -> jnp.ndarray:
     return lax.cond(
         not diag and state[i] != 1,
         lambda: jnp.zeros_like(p),
@@ -93,20 +95,21 @@ def kronvec_i(
 
 
 @partial(jit, static_argnames=["diag", "transpose"])
-def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array, diag: bool = True, transpose: bool = False) -> jnp.array:
+def kronvec(log_theta: jnp.ndarray, p: jnp.ndarray, state: jnp.ndarray, 
+            diag: bool = True, transpose: bool = False) -> jnp.ndarray:
     """This computes the restricted version of the product of the rate matrix Q with a vector Q p.
 
     Args:
-        log_theta (jnp.array): Log values of the theta matrix
-        p (jnp.array): Vector to multiply with from the right. Length must equal the number of
-        nonzero entries in the state vector.
+        log_theta (jnp.ndarray): Log values of the theta matrix
+        p (jnp.ndarray): Vector to multiply with from the right. Length must equal the number of
+            nonzero entries in the state vector.
         n (int): Total number of events in the MHN.
-        state (jnp.array): Binary state vector, representing the current sample's events.
+        state (jnp.ndarray): Binary state vector, representing the current sample's events.
         diag (bool, optional): Whether to use the diagonal of Q (and not set it to 0). Defaults to True.
         transpose (bool, optional): Whether to transpose Q before multiplying. Defaults to False.
 
     Returns:
-        jnp.array: Q p
+        jnp.array: Q p or p^T Q
     """
 
     def body_fun(i, val):
@@ -125,12 +128,27 @@ def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array, diag: bool = T
     )
 
 
+def scal_d_pt(log_d_pt: jnp.array, log_d_mt:jnp.array, state: jnp.array, vec: jnp.ndarray) -> jnp.ndarray:
+    def loop_body_diag(j, val):
+        val = lax.cond(state[j] == 1,
+                        lambda x: (k2d1t(p=x[0], theta=jnp.exp(log_d_pt[j])),
+                                  k2d1t(p=x[1], theta=jnp.exp(log_d_mt[j]))),
+                       lambda x: x,
+                       operand=val
+                       )
+        return val
+    n = log_d_mt.shape[0]
+    p = lax.fori_loop(lower=0, upper=n-1, 
+                      body_fun=loop_body_diag, init_val=(vec, vec))
+    return k2d10(p[0]) + k2d0t(p[1], jnp.exp(log_d_mt[-1]))
+    
+    
 @jit
 def kron_diag_i(
-        log_theta: jnp.array,
+        log_theta: jnp.ndarray,
         i: int,
-        state: jnp.array,
-        diag: jnp.array) -> jnp.array:
+        state: jnp.ndarray,
+        diag: jnp.ndarray) -> jnp.ndarray:
 
     n = log_theta.shape[0]
 
@@ -173,9 +191,10 @@ def kron_diag_i(
 
 @jit
 def kron_diag(
-        log_theta: jnp.array,
-        state: jnp.array,
-        diag: jnp.array) -> jnp.array:
+        log_theta: jnp.ndarray,
+        state: jnp.ndarray,
+        diag: jnp.ndarray
+        ) -> jnp.ndarray:
 
     def body_fun(i, val):
         val += kron_diag_i(log_theta=log_theta, i=i, state=state, diag=diag)
@@ -192,24 +211,28 @@ def kron_diag(
 
 
 @partial(jit, static_argnames=["transpose"])
-def R_inv_vec(log_theta: jnp.array, x: jnp.array, lam: float,  state: jnp.array, transpose: bool = False) -> jnp.array:
-    """This computes R^{-1} x = (\lambda I - Q)^{-1} x
+def R_inv_vec(log_theta: jnp.ndarray, 
+              x: jnp.ndarray, 
+              state: jnp.ndarray,
+              d_rates: jnp.ndarray = 1,
+              transpose: bool = False,
+              ) -> jnp.ndarray:
+    """This computes R^{-1} x = (I - Q D^{-1})^{-1} x
 
     Args:
-        log_theta (np.array): Log values of the theta matrix
-        x (np.array): Vector to multiply with from the right. Length must equal the number of
-        nonzero entries in the state vector.
-        lam (float): Value of \lambda_i
-        state (np.array): Binary state vector, representing the current sample's events.
-
+        log_theta (np.ndarray): Log values of the theta matrix
+        x (np.ndarray): Vector to multiply with from the right. Length must equal the number of
+            nonzero entries in the state vector.
+        state (np.ndarray): Binary state vector, representing the current sample's events.
+        transpose (bool): Logical flag, if true calculate x^T (I - Q D^{-1})^{-1}
 
     Returns:
-        np.array: R_i^{-1} x
+        np.ndarray: R_i^{-1} x or x^T R_i^{-1}
     """
     state_size = jnp.log2(x.shape[0]).astype(int)
 
     lidg = -1 / (kron_diag(log_theta=log_theta,
-                 state=state, diag=jnp.ones_like(x)) - lam)
+                 state=state, diag=jnp.ones_like(x))-d_rates)
     y = lidg * x
 
     y = lax.fori_loop(
@@ -225,24 +248,24 @@ def R_inv_vec(log_theta: jnp.array, x: jnp.array, lam: float,  state: jnp.array,
 
 @jit
 def x_partial_Q_y(
-        log_theta: jnp.array,
-        x: jnp.array,
-        y: jnp.array,
-        state: jnp.array, 
-        diagnosis:bool=True) -> jnp.array:
+        log_theta: jnp.ndarray,
+        x: jnp.ndarray,
+        y: jnp.ndarray,
+        state: jnp.ndarray, 
+        ) -> jnp.ndarray:
     """This function computes x \partial Q y with \partial Q the Jacobian of Q w.r.t. all thetas
     efficiently using the shuffle trick (sic!).
 
     Args:
-        log_theta (np.array): Logarithmic theta values of the MHN
-        x (np.array): x vector to multiply with from the left. Length must equal the number of
-        nonzero entries in the state vector.
-        y (np.array): y vector to multiply with from the right. Length must equal the number of
-        nonzero entries in the state vector.
-        state (np.array): Binary state vector, representing the current sample's events.
+        log_theta (np.ndarray): Logarithmic theta values of the MHN
+        x (np.ndarray): x vector to multiply with from the left. Length must equal the number of
+            nonzero entries in the state vector.
+        y (np.ndarray): y vector to multiply with from the right. Length must equal the number of
+            nonzero entries in the state vector.
+        state (np.ndarray): Binary state vector, representing the current sample's events.
 
     Returns:
-        np.array: x \partial_(\Theta_{ij}) Q y for i, j = 1, ..., n+1
+        np.ndarray: x \partial_(\Theta_{ij}) Q y for i, j = 1, ..., n+1
     """
     n = log_theta.shape[0]
     val = jnp.zeros(shape=(n, n))
@@ -293,34 +316,30 @@ def x_partial_Q_y(
 
     val = vmap(body_fun, in_axes=(0, 0), out_axes=0)(
         jnp.arange(n, dtype=int), val)
-    d_diag = lax.cond(diagnosis,
-                      lambda z: -1. * jnp.sum(z, axis=0) + jnp.diagonal(z),
-                      lambda z: jnp.zeros(z.shape[0]),
-                      val
-                    )
+    d_diag = -jnp.sum(val, axis=0) + jnp.diagonal(val)
     return val, d_diag
 
 
 @jit
-def gradient(log_theta: jnp.array, lam: float, state: jnp.array, p_0: jnp.array, diagnosis: bool=True) -> jnp.array:
+def gradient(log_theta: jnp.ndarray,
+             state: jnp.ndarray, 
+             p_0: jnp.ndarray
+             ) -> jnp.ndarray:
     """This computes the gradient of the score function, which is the log-likelihood of a data vector p_D
     with respect to the log_theta matrix
 
     Args:
-        log_theta (np.array): Log values of the theta matrix.
-        p_D (np.array): Data vector.
-        lam (float): Rate of the sampling.
-        state (np.array): Binary state vector, representing the current sample's events.
-
+        log_theta (np.ndarray): Theta matrix with logarithmic entries.
+        state (np.ndarray): Binary state vector, representing the current sample's events.
+        p_0 (np.ndarray): Starting distribution
 
     Returns:
-        jnp.array: \partial_theta (p_D^T log p_theta)
+        jnp.ndarray: \partial_theta (p_D^T log p_theta)
     """
-    p_theta = R_inv_vec(log_theta=log_theta, x=p_0, lam=lam,
-                        state=state)
+    p_theta = R_inv_vec(log_theta=log_theta, x=p_0, state=state)
     x = jnp.zeros_like(p_theta)
     x = x.at[-1].set(1/p_theta.at[-1].get())
-    x = R_inv_vec(log_theta=log_theta, x=x, lam=lam,
+    x = R_inv_vec(log_theta=log_theta, x=x,
                   state=state, transpose=True)
-    d_th, d_diag = x_partial_Q_y(log_theta=log_theta, x=x, y=p_theta, state=state, diagnosis=diagnosis)
-    return d_th, d_diag, lam * p_theta
+    d_th, d_diag = x_partial_Q_y(log_theta=log_theta, x=x, y=p_theta, state=state)
+    return d_th, d_diag, p_theta

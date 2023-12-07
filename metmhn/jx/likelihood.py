@@ -270,7 +270,7 @@ def R_i_inv_vec(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndarr
     Returns:
         jnp.array: R_i^{-1} x
     """
-    lidg = -1. / (kron_diag(log_theta=log_theta, state= state, n_state=state_size) - 
+    lidg = -1. / (kron_diag(log_theta=log_theta, state=state, n_state=state_size) - 
                   (diag_scal_p(log_d_p, state, jnp.ones_like(x)) + diag_scal_m(log_d_m, state, jnp.ones_like(x))))
     y = lidg * x
     y = lax.fori_loop(
@@ -300,6 +300,8 @@ def _lp_coupled(log_theta: jnp.ndarray, log_d_p:jnp.ndarray, log_d_m: jnp.ndarra
     Returns:
         jnp.ndarray: log. prob of state_joint
     """
+    theta_pt = log_theta.copy()
+    theta_pt = theta_pt.at[:-1,-1].set(0.)
     joint_size = n_prim + n_met - 1
     p0 = jnp.zeros(2**joint_size)
     p0 = p0.at[0].set(1.)
@@ -329,9 +331,10 @@ def _lp_coupled(log_theta: jnp.ndarray, log_d_p:jnp.ndarray, log_d_m: jnp.ndarra
         pTh1_cond_obs = pTh1_joint.at[poss_states_inds].get()
         #States where the Seeding didn't happen aren't compatible with met and get probability 0
         pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_prim-1)), pTh1_cond_obs)
-        prim = jnp.append(state_joint[0::2], 1)
-        log_theta_scal = diagnosis_theta(log_theta, log_d_p)
-        pTh2 = mhn.R_inv_vec(log_theta_scal, pTh1_cond_obs, prim)
+        prim = state_joint[0::2]
+        # Seeding has no effect in PTs
+        log_theta_pt_scal = diagnosis_theta(theta_pt, log_d_p)
+        pTh2 = mhn.R_inv_vec(log_theta_pt_scal, pTh1_cond_obs, prim)
         return jnp.log(pTh2[-1])
     
     log_prob = lax.switch(index = obs_order,
@@ -344,45 +347,46 @@ def _lp_coupled(log_theta: jnp.ndarray, log_d_p:jnp.ndarray, log_d_m: jnp.ndarra
     
 
     
-def _lp_prim_obs(log_theta_prim: jnp.array, fd_effects: jnp.array,
-                 state_prim: jnp.array, n_prim: int) -> jnp.array:
-    """Calculates the marginal likelihood of only observing a PT at first sampling with genotype state_prim
-    
+def _lp_prim_obs(log_theta: jnp.ndarray, log_d_p: jnp.ndarray,
+                 state_pt: jnp.ndarray, n_prim: int) -> jnp.ndarray:
+    """Log Prob. to observe an uncoupled primary tumor with genotype state_pt
+
     Args:
-        log_theta_prim_fd (jnp.array):      Theta matrix for diagnosis formalism with logarithmic entries. 
-                                            The off-diagonal entries of the last column are set to 0.
-        state_prim (jnp.array):             Bitstring of length 2*n+1, observed genotype of tumor(pair)
-        n_prim (int):                       Number of active events in the PT.
-        
+        log_theta (jnp.ndarray): Theta matrix with logarithmic entries
+        log_d_p (jnp.ndarray): Logrithmic effects of muts in PT on its rate of diagnosis
+        state_pt (jnp.ndarray): Bitstring, genotype of tumor 
+        n_prim (int): Number of non-zero entries in state_prim
+
     Returns:
-        jnp.array: log(P(state_prim; theta))
+        jnp.ndarray: log(P(state_pt| \theta))
     """
-    log_theta_fd = diagnosis_theta(log_theta_prim, fd_effects)
+    log_theta_pt = log_theta.at[:-1,-1].set(0.)
+    log_theta_fd = diagnosis_theta(log_theta_pt, log_d_p)
     p0 = jnp.zeros(2**n_prim)
     p0 = p0.at[0].set(1.)
-    pTh = mhn.R_inv_vec(log_theta_fd, p0, state_prim, False)
-    return jnp.log(pTh.at[-1].get())
+    pTh = mhn.R_inv_vec(log_theta_fd, p0, state_pt)
+    return jnp.log(pTh[-1])
 
 
-#def _lp_met_obs(log_theta_fd: jnp.array, log_theta_sd: jnp.array, 
-#                state_met: jnp.array, n_met: int) -> jnp.array:
-#    """Calculates the marginal likelihood of only observing a MT at second sampling with genotype state_met
-#    
-#    Args:
-#        log_theta_fd (jnp.array):   Theta matrix with logarithmic entries, scaled by fd_effects.
-#        log_theta_sd (jnp.array):   Theta matrix with logarithmic entries, scaled by sd_effects. 
-#        state_met (jnp.array):      Bitstring, genotype of MT.
-#        n_met (int):                Number of active events in the MT.
-#
-#    Returns:
-#        jnp.array: log(P(state_met; theta))
-#    """
-#    p0 = jnp.zeros(2**n_met)
-#    p0 = p0.at[0].set(1.)
-#    pTh1 = mhn.R_inv_vec(log_theta_fd, p0, state_met, False)
-#    pTh1 = pTh1.at[:2**(n_met-1)].set(0.)
-#    pTh2 = mhn.R_inv_vec(log_theta_sd, pTh1, state_met, False)
-#    return jnp.log(pTh2.at[-1].get())
+def _lp_met_obs(log_theta: jnp.ndarray, log_d_pt: jnp.ndarray, log_d_mt: jnp.ndarray, 
+                state_mt: jnp.ndarray, n_met: int) -> jnp.ndarray:
+    """Log Prob. to observe an uncoupled metastatis with genotype state_mt
+
+    Args:
+        log_theta (jnp.ndarray): Theta matrix with logarithmic entries
+        log_d_pt (jnp.ndarray): Effects of muts on diagnosis prior to seeding
+        log_d_mt (jnp.ndarray): Effects of muts on diagnosis after seeding
+        state_mt (jnp.ndarray): Bitstring, genotype of the met.
+        n_met (int): Number of nonzero bits in state_mt
+
+    Returns:
+        jnp.ndarray: log(P(state_mt | \theta))
+    """
+    p0 = jnp.zeros(2**n_met)
+    p0 = p0.at[0].set(1.)
+    d_rates = mhn.scal_d_pt(log_d_pt, log_d_mt, state_mt, jnp.ones(2**n_met))
+    pTh = mhn.R_inv_vec(log_theta, p0, state_mt, d_rates,False) * d_rates
+    return jnp.log(pTh[-1])
 
 
 #def _grad_met_obs(log_theta_fd: jnp.array, log_theta_sd: jnp.array, state_met: jnp.array, 
