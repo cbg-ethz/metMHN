@@ -6,3 +6,7 @@ src/crossval.log
 build
 dist
 *.egg-info
+
+# Cython builds
+*.c
+*.pyd
