@@ -2,10 +2,9 @@ import numpy as np
 
 def single_traject(
         log_theta: np.ndarray,
-        d_effects: np.ndarray,
+        pt_d_ef: np.ndarray,
+        mt_d_ef: np.ndarray,
         rng: np.random.Generator,
-        state: np.ndarray=None,
-        second_s: bool=False,
         ) -> np.ndarray:
     """Sample a trajectory to first diagnosis or from first diagnosis to second diagnosis
 
@@ -24,118 +23,93 @@ def single_traject(
     log_theta_prim = log_theta.copy()
     log_theta_prim[:-1,-1] = 0.
     n = log_theta.shape[0]
-    r_rates = np.zeros(2*n+1, dtype=np.float64)
-    inds = np.arange(0, 2*n+1, dtype=np.int8)
+    n_d = n+1
+    # 0:(n-1) PT mut. rates, (n-1) Seeding rate, (n) PT diag. rate
+    # (n+1):2n+1 MT mut. rates, 2n+1 MT diag. rate
+    r_rates = np.zeros(2*n+2, dtype=np.float64)
+    inds = np.arange(0, 2*n+2, dtype=np.int8)
     pre_seeding = np.zeros(n, dtype=np.int8)
-    if state is None:
-        state = np.zeros(2*n+1, dtype=np.int8)
-    else:
-        state[-1] = 0
+    state = np.zeros(2*n+2, dtype=np.int8)
+    obs_order = 0.
     while True:
         # Seeding didn't happen yet
         if state[n-1] == 0:
-            r_rates[-1] = np.exp(np.dot(d_effects, state[:n]))
+            r_rates[n] = np.exp(np.dot(pt_d_ef, state[:n]))
             r_rates[:n] = np.exp(log_theta @ state[:n] + b_rates)
             r_rates[:n] *= (1-state[:n])
             out_rate = np.sum(r_rates)
             next_event = rng.choice(inds, size=1, p=r_rates/out_rate)
             # Tumor is diagnosed, trajectory stops
-            if next_event == 2*n:
+            if next_event == n:
                 break
             else:
-                state[[next_event, next_event+n]] = 1
+                state[[next_event, next_event+n_d]] = 1
                 pre_seeding[next_event] = 1
         # Seeding already happened
         else:
-            if second_s:
-                # Scale diagnosis rate by the effects of the MT
-                r_rates[-1] = np.exp(np.dot(d_effects, state[n:-1]))
-            else:
-                # Scale diagnosis rate by the effects of the PT
-                r_rates[-1] = np.exp(np.dot(d_effects, state[:n]))
+            # Calculate MT-diag. rate as function of MT-state
+            r_rates[-1] = np.exp(np.dot(mt_d_ef, state[n_d:-1]))
+            # Calculate PT-diag. rate as function of PT-state
+            r_rates[n] = np.exp(np.dot(pt_d_ef, state[:n]))
             
-            r_rates[:n] = np.exp(log_theta_prim @ state[:n] + b_rates)
+            # If only the PT is diagnosed only its progression is halted
+            r_rates[:n] = np.exp(log_theta_prim @ state[:n] + b_rates)*(1-state[n])
             r_rates[:n] *= (1-state[:n])
 
-            r_rates[n:-1] = np.exp(log_theta @ state[n:-1] + b_rates)
-            r_rates[n:-1] *= (1-state[n:-1])
+            # If only the MT is diagnosed only its progression is halted
+            r_rates[n_d:-1] = np.exp(log_theta @ state[n_d:-1] + b_rates)*(1-state[-1])
+            r_rates[n_d:-1] *= (1-state[n_d:-1])
 
             out_rate = np.sum(r_rates)
             next_event = rng.choice(inds, size=1, p=r_rates/out_rate)
             state[next_event] = 1
-        # Tumor is diagnosed, trajectory stops
-        if state[-1] == 1:
+            if state[n] == 1 and state[-1]==0:
+                obs_order = 1
+            elif state[n] == 0 and state[-1] == 1:
+                obs_order = 2
+            else:
+                pass
+        # Both tumors are diagnosed, trajectory stops
+        if state[-1] + state[n] == 2:
             break
-    return state, pre_seeding
-
-
-def sample_metmhn(
-        log_theta: np.ndarray,
-        fd_effects: np.ndarray,
-        sd_effects: np.ndarray,
-        rng: np.random.Generator
-        ) -> np.ndarray:
-    """Simulate a full trajectory from metMHN
-
-    Args:
-        log_theta (np.ndarray): Theta matrix with logarithmic entries
-        fd_effects (np.ndarray): Effects of mutations in the PT on the rate of diagnosis
-        sd_effects (np.ndarray): Effects of mutations in the MT on the rate of diagnosis
-        rng (np.random.Generator): Random number generator
-
-    Returns:
-        np.ndarray: Full PT+MT state, preseeding muts
-    """
-    # Simulate until 1st diagnosis
-    n = log_theta.shape[0]
-    state, ps = single_traject(log_theta, fd_effects, rng,
-                               state=None, second_s=False)
-    # Record the state of the primary at 1st diagnosis
-    prim_obs = state[:n].copy()
-    # Simulate until 2nd diagnosis, if the seeding happened
-    if state[n-1] == 1:
-        state, _ = single_traject(log_theta, sd_effects, rng,
-                                  state=state, second_s=True)
-    # Concatenate the prim and met in the shape metMHN expects
-    ret = np.vstack((prim_obs, state[n:-1])).flatten(order='F')
-    return ret[:-1], ps
+    state = state.reshape((-1,2), order="F").flatten()
+    return state[:-3], pre_seeding, obs_order
 
 
 def simulate_dat(
     theta_in: np.ndarray,
-    fd_effects: np.ndarray,
-    sd_effects: np.ndarray,
+    pt_d_ef: np.ndarray,
+    mt_d_ef: np.ndarray,
     n_dat: int,
     rng: np.random.Generator
     ) -> tuple[np.ndarray, np.ndarray]:
-    """Simulate a dataset of n_dat observations from metMHN
+    """Simulate a dataset consisting of observations and PT/MT observation times
 
     Args:
         theta_in (np.ndarray): Theta matrix with logarithmic entries
-        fd_effects (np.ndarray): Effects of mutations in the PT on the rate of first diagnosis
-        sd_effcets (np.ndarray): Effects of mutations int the MT on the rate of second diagnosis
-        n_dat (int): Number of samples to generate
-        rng (np.random.Generator]): Numpy Random number generator object
+        pt_d_ef (np.ndarray): Effects of PT-Mutations on its diagnosis
+        mt_d_ef (np.ndarray): Effects of MT-Mutations on its diagnosis
+        n_dat (int): number of datapoints to simulate
+        rng (np.random.Generator): Numpy Random Number Generator
 
     Returns:
-        tuple[np.ndarray, np.ndarray]: Dataset of observations, 
-            Counts of mutations that happened prior to the seeding
+        tuple[np.ndarray, np.ndarray]: dataset and pre-seeded muts
     """
     n = theta_in.shape[0]
-    dat = np.zeros((n_dat, 2*n-1), dtype=np.int8)
+    dat = np.zeros((n_dat, 2*n), dtype=np.int8)
     pre_seeding_counts = np.zeros(n, dtype=np.int32)
-    i = 0
     for i in range(n_dat):
-        datum, ps = sample_metmhn(theta_in, fd_effects, sd_effects, rng)
-        dat[i,:] = datum
+        datum, ps, obs_order = single_traject(theta_in, pt_d_ef, mt_d_ef, rng)
+        dat[i,:-1] = datum
+        dat[i, -1] = obs_order
         pre_seeding_counts += ps
 
     return dat, pre_seeding_counts[:-1]
 
 
 def p_shared_mut_pre_seed(theta: np.ndarray, 
-                          fd_effects: np.ndarray, 
-                          sd_effects: np.ndarray, 
+                          pt_d_ef: np.ndarray, 
+                          mt_d_ef: np.ndarray, 
                           n_dat: int, 
                           rng: np.random.Generator
                           ) -> tuple[np.ndarray, np.ndarray]:
@@ -144,7 +118,7 @@ def p_shared_mut_pre_seed(theta: np.ndarray,
     total_muts = np.zeros(n-1, dtype=np.int32)
     i = 0
     while i < n_dat:
-        datum, psp = sample_metmhn(theta, fd_effects, sd_effects, rng)
+        datum, psp, _ = single_traject(theta, pt_d_ef, mt_d_ef, rng)
         if datum[-1] == 1:
             both = (datum[:-1:2]+datum[1::2]==2)
             pre_seeded_muts += psp[:-1] * both
@@ -156,8 +130,8 @@ def p_shared_mut_pre_seed(theta: np.ndarray,
 
 
 def p_any_mut_pre_seed(theta: np.ndarray, 
-                       fd_effects: np.ndarray, 
-                       sd_effects: np.ndarray, 
+                       pt_d_ef: np.ndarray, 
+                       mt_d_ef: np.ndarray, 
                        n_dat: int, 
                        rng: np.random.Generator
                        ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -167,7 +141,7 @@ def p_any_mut_pre_seed(theta: np.ndarray,
     total_muts_met = np.zeros(n-1, dtype=np.int32)
     i = 0
     while i < n_dat:
-        datum, psp = sample_metmhn(theta, fd_effects, sd_effects, rng)
+        datum, psp, _ = single_traject(theta, pt_d_ef, mt_d_ef, rng)
         if datum[-1] == 1:
             pre_seeded_muts += psp[:-1]
             total_muts_prim += datum[:-1:2]

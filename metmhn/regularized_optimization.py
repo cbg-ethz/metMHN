@@ -1,5 +1,5 @@
 from metmhn.jx import likelihood as ssr
-#from metmhn.jx.kronvec import diagnosis_theta
+from metmhn.jx.kronvec import diagnosis_theta
 from metmhn.jx.vanilla import R_inv_vec
 from metmhn.jx import one_event as one
 import logging 
@@ -8,7 +8,7 @@ import numpy as np
 import scipy.optimize as opt
 
 
-def L1(theta: jnp.array, eps: float = 1e-05) -> jnp.array:
+def L1(theta: jnp.ndarray, eps: float = 1e-05) -> jnp.ndarray:
     """
     Computes the L1 penalty
     """
@@ -18,7 +18,7 @@ def L1(theta: jnp.array, eps: float = 1e-05) -> jnp.array:
     return jnp.sum(jnp.sqrt(theta_**2 + eps))
 
 
-def L1_(theta: jnp.ndarray, eps: float = 1e-05) -> jnp.array:
+def L1_(theta: jnp.ndarray, eps: float = 1e-05) -> jnp.ndarray:
     """
     Derivative of the L1 penalty
     """
@@ -28,60 +28,58 @@ def L1_(theta: jnp.ndarray, eps: float = 1e-05) -> jnp.array:
     return theta_.flatten() / jnp.sqrt(theta_.flatten()**2 + eps)
 
 
-def lp_prim_only(log_theta: jnp.array, fd_effects: jnp.array, dat: jnp.array) -> jnp.array:
-    """Calculates the marginal likelihood of observing unpaired primary tumors at t_1
+def lp_prim_only(log_theta: jnp.ndarray, log_d_pt: jnp.ndarray, 
+                 dat: jnp.ndarray) -> jnp.ndarray:
+    """Calculates the marginal likelihood of observing unpaired primary tumors
 
     Args:
-        log_theta (jnp.array):      Theta matrix with logarithmic entries
-        fd_effects (jnp.array):     Effects of the PT on first diagnosis
-        dat (jnp.array):            Dataset of unpaired primary tumors
+        log_theta (jnp.ndarray):    Theta matrix with logarithmic entries
+        log_d_pt (jnpnd.array):     Log. effects of muts in the PT on PT-diagnosis
+        dat (jnp.ndarray):            Dataset of unpaired primary tumors
 
     Returns:
-        jnp.array: log(L(\theta; Dat_prim))
+        jnp.ndarray: log(L(\theta; Dat_prim))
     """
     score = 0.0
     n_muts = log_theta.shape[0] - 1
-    log_theta_prim = log_theta.at[:-1,-1].set(0.)
     for i in range(dat.shape[0]):
-        state_prim = dat.at[i, 0:2*n_muts+1:2].get()
-        n_prim = int(state_prim.sum())
-        score += ssr._lp_prim_obs(log_theta_prim, fd_effects, 
-                                  state_prim, n_prim)
+        state_pt = dat[i, 0:2*n_muts+1:2]
+        n_prim = int(state_pt.sum())
+        score += ssr._lp_prim_obs(log_theta, log_d_pt, state_pt, n_prim)
     return score
 
 
-def lp_met_only(log_theta: jnp.array, fd_effects: jnp.array, sd_effects: jnp.array, dat: jnp.array) -> jnp.array:
-    """Calculates the marginal likelihood of observing an unpaired MT at second sampling
+def lp_met_only(log_theta: jnp.ndarray, log_d_pt: jnp.ndarray, 
+                log_d_mt: jnp.ndarray, dat: jnp.ndarray) -> jnp.ndarray:
+    """Calculates the marginal likelihood of observing an unpaired MT
 
     Args:
-        log_theta (jnp.array):      Theta matrix with logarithmic entries
-        fd_effects (jnp.array):     Effects of PT on first diagnosis
-        sd_effects (jnp.array):     Effects of MT on second diagnosis
-        dat (jnp.array):            Dataset
+        log_theta (jnp.ndarray):    Theta matrix with logarithmic entries
+        log_d_pt (jnp.ndarray):     Effects of muts prior to the seeding on diagnosis
+        log_d_mt (jnp.ndarray):     Effects of muts after seeding on diagnosis
+        dat (jnp.ndarray):          Dataset
 
     Returns:
-        jnp.array: log(P(state))
+        jnp.ndarray: log(P(dat, theta))
     """
-    log_theta_fd = diagnosis_theta(log_theta, fd_effects)
-    log_theta_sd = diagnosis_theta(log_theta, sd_effects)
     n_mut = log_theta.shape[0] - 1
     score = 0.0
     for i in range(dat.shape[0]):
-        state_met = jnp.append(dat.at[i, 1:2*n_mut+1:2].get(), 1)
-        n_met = int(jnp.sum(state_met))
-        score += ssr._lp_met_obs(log_theta, log_theta_sd, state_met, n_met)
+        state_mt = jnp.append(dat[i, 1:2*n_mut+1:2], 1)
+        n_met = int(jnp.sum(state_mt))
+        score += ssr._lp_met_obs(log_theta, log_d_pt, log_d_mt, state_mt, n_met)
     return score
 
 
-def lp_coupled(log_theta: jnp.array, fd_effects: jnp.array, sd_effects: 
-               jnp.array, dat: jnp.array) -> jnp.array:
-    """Calculates the log likelihood score of sequential observations of PT-MT pairs
+def lp_coupled(log_theta: jnp.ndarray, log_d_pt: jnp.ndarray, 
+               log_d_mt: jnp.ndarray, dat: jnp.ndarray) -> jnp.ndarray:
+    """Calculates the log likelihood score of coupled PT-MT pairs
 
     Args:
-        log_theta (jnp.array):      theta matrix with logarithmic entries
-        fd_effects (jnp.array):     Effects of PT on first diagnosis
-        sd_effects (jnp.array):     Effects of MT on second diagnosis
-        dat (jnp.array):            Dataset
+        log_theta (jnp.ndarray):    Theta matrix with logarithmic entries
+        log_d_pt (jnp.ndarray):     Effects of muts in PT on its diagnosis
+        log_d_mt (jnp.ndarray):     Effects of muts in MT on its diagnosis
+        dat (jnp.ndarray):          Dataset
 
     Returns:
         jnp.array: log(L(\theta; Dat_coupled))
@@ -89,14 +87,16 @@ def lp_coupled(log_theta: jnp.array, fd_effects: jnp.array, sd_effects:
     score = 0.0
     n_muts = log_theta.shape[0] - 1
     for i in range(dat.shape[0]):
-        state_joint = dat.at[i, 0:2*n_muts+1].get()
-        n_prim = int(state_joint.at[::2].get().sum())
-        n_met = int(state_joint.at[1::2].get().sum() + 1)
+        state_joint = dat[i, 0:2*n_muts+1]
+        n_prim = int(state_joint[::2].sum())
+        n_met = int(state_joint[1::2].sum() + 1)
+        print(n_prim, n_met)
+        order = dat[i,2*n_muts+1]
         if (n_prim + n_met) > 2:
-            score += ssr._lp_coupled(log_theta, fd_effects, sd_effects, state_joint,
-                                     n_prim, n_met)
+            score += ssr._lp_coupled(log_theta, log_d_pt, log_d_mt, state_joint,
+                                     n_prim, n_met, order)
         else:
-            score += one._lp_coupled(log_theta, sd_effects, fd_effects.at[-1].get())
+            score += one._lp_coupled(log_theta, log_d_mt, order)
     
     return score
 
