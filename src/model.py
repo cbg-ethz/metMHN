@@ -1,54 +1,52 @@
+from MetaMHN.perf import order_to_int, int_to_order, append_to_int_order
+from collections import deque
+from np.kronvec import kron_diag as get_diag_paired
 import itertools
 import networkx as nx
 from math import factorial
 from scipy.linalg.blas import dcopy, dscal, daxpy
 import numpy as np
-import sys
-sys.path.append(".")
-from src.np.kronvec import kron_diag as get_diag_paired
-from collections import deque
-from line_profiler import profile
 
 
-def order_to_int(order: tuple) -> int:
-    if len(order) == 0:
-        return 0
-    indices = list(order)
-    indices.sort()
-    my_int = 0
-    n = len(order)
-    for o in order:
-        index_o = indices.index(o)
-        my_int = my_int * n + index_o
-        indices.pop(index_o)
-        n -= 1
-    return my_int
+# def order_to_int(order: tuple) -> int:
+#     if len(order) == 0:
+#         return 0
+#     indices = list(order)
+#     indices.sort()
+#     my_int = 0
+#     n = len(order)
+#     for o in order:
+#         index_o = indices.index(o)
+#         my_int = my_int * n + index_o
+#         indices.pop(index_o)
+#         n -= 1
+#     return my_int
 
 
-def int_to_order(my_int: int, numbers: list) -> tuple:
-    numbers.sort()
-    order = list()
-    for i in range(len(numbers) - 1, -1, -1):
-        f = factorial(i)
-        order.append(numbers.pop(my_int // f))
-        my_int %= f
-    return tuple(order)
+# def int_to_order(my_int: int, numbers: list) -> tuple:
+#     numbers.sort()
+#     order = list()
+#     for i in range(len(numbers) - 1, -1, -1):
+#         f = factorial(i)
+#         order.append(numbers.pop(my_int // f))
+#         my_int %= f
+#     return tuple(order)
 
 
-def append_to_int_order(
-        my_int: int, numbers: list[int], new_event: int) -> int:
-    numbers = numbers.copy()
-    numbers.sort()
-    new_int = 0
-    for i in range(len(numbers) - 1, -1, -1):
-        f = factorial(i)
-        j = my_int // f
-        e = numbers.pop(j)
-        if e > new_event:
-            j += 1
-        new_int += j * f * (i + 1)
-        my_int %= f
-    return new_int
+# def append_to_int_order(
+#         my_int: int, numbers: list[int], new_event: int) -> int:
+#     numbers = numbers.copy()
+#     numbers.sort()
+#     new_int = 0
+#     for i in range(len(numbers) - 1, -1, -1):
+#         f = factorial(i)
+#         j = my_int // f
+#         e = numbers.pop(j)
+#         if e > new_event:
+#             j += 1
+#         new_int += j * f * (i + 1)
+#         my_int %= f
+#     return new_int
 
 
 append_to_int_order = np.vectorize(
@@ -506,7 +504,8 @@ class MetMHN:
             for st in bits_fixed_n(n=i, k=k):  # all states with i events
                 A_new[st] = -1
                 state_events = np.array(
-                    [i for i in range(k) if (1 << i) | st == st])  # events in state
+                    # events in state
+                    [i for i in range(k) if (1 << i) | st == st])
                 for e in state_events:
                     pre_st = st - (1 << e)  # pre state
                     # numerator of additional factor
@@ -562,7 +561,8 @@ class MetMHN:
                 A_new[st] = np.zeros(i * _m)
                 B_new[st] = np.zeros((i * _m, i), dtype=int)
                 state_events = np.array(
-                    [i for i in range(k) if 1 << i | st == st])  # events in state
+                    # events in state
+                    [i for i in range(k) if 1 << i | st == st])
                 for j, e in enumerate(state_events):
                     pre_st = st - (1 << e)
                     # numerator of additional factor
@@ -656,5 +656,6 @@ if __name__ == "__main__":
     log_theta.drop(columns=["Sampling"], inplace=True)
     mmhn = MetMHN(log_theta=log_theta.to_numpy(), tau1=tau1, tau2=tau2)
     state = np.zeros(2 * mmhn.n + 1, dtype=int)
-    state[[0,1,4,5,8,20,23,-1]] = 1
+    state[[0, 1, 4, 5, 8, 20, 23, 30, 31, -1]] = 1
+
     mmhn.likeliest_order_paired(state)
