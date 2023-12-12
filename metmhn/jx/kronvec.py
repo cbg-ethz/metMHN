@@ -191,9 +191,23 @@ def k4dtt00(p: jnp.ndarray, theta: float) -> jnp.ndarray:
     return p.flatten(order="F")
 
 
+def k4d00tt(p: jnp.ndarray, theta: float) -> jnp.ndarray:
+    p = p.reshape((-1, 4), order="C")
+    theta_slice = jnp.array([0, 0, theta, theta])
+    p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
+    return p.flatten(order="F")
+
+
 def k4dt0t0(p: jnp.ndarray, theta: float) -> jnp.ndarray:
     p = p.reshape((-1, 4), order="C")
     theta_slice = jnp.array([-theta, 0., -theta, 0.])
+    p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
+    return p.flatten(order="F")
+
+
+def k4d0t0t(p: jnp.ndarray, theta: float) -> jnp.ndarray:
+    p = p.reshape((-1, 4), order="C")
+    theta_slice = jnp.array([0, theta, 0, theta])
     p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
     return p.flatten(order="F")
 
@@ -632,14 +646,12 @@ def diag_scal_p(log_d_p: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray) -> jnp
     """
     def sync_loop(j, val):
         val = lax.switch(
-            index=state.at[2*j].get() + 2 * state.at[2*j+1].get(),
+            index=state[2*j] + 2 * state[2*j+1],
             branches=[
                 lambda x: x,
-                lambda x: k2d1t(x,
-                                theta=jnp.exp(log_d_p.at[j].get())),
+                lambda x: k2d1t(x, theta=jnp.exp(log_d_p[j])),
                 lambda x: k2d11(x),
-                lambda x: k4d1t1t(p=x,
-                                  theta=jnp.exp(log_d_p.at[j].get()))
+                lambda x: k4d1t1t(p=x, theta=jnp.exp(log_d_p[j]))
             ],
             operand=val)
         return val
@@ -652,8 +664,45 @@ def diag_scal_p(log_d_p: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray) -> jnp
     pt_d_rates = pt_d_rates.reshape((-1, 2), order="C").flatten(order="F")
     return pt_d_rates
 
+def _partial_diag_scal_p(log_d_p: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray, i:int):
+    def sync_loop(j, val):
+        val = lax.switch(
+        index=state[2*j] + 2 * state[2*j+1],
+            branches=[
+                lambda x: x,
+                lambda x: k2d1t(x, theta=jnp.exp(log_d_p[j])),
+                lambda x: k2d11(x),
+                lambda x: k4d1t1t(p=x, theta=jnp.exp(log_d_p[j]))
+                ],
+            operand=val)
+        return val
 
-def diag_scal_m(log_d_m: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray) -> jnp.ndarray:
+    n = log_d_p.shape[0]-1
+    # Diagonal Kronecker factors
+    pt_d_rates = lax.fori_loop(lower=0, upper=i, body_fun=sync_loop, init_val=p)
+    pt_d_rates = lax.cond(state[2*i] + state[2*i+1]==1,
+                          k2d0t,
+                          k4d0t0t,
+                          pt_d_rates, jnp.exp(log_d_p[i]))
+    pt_d_rates = lax.fori_loop(lower=i+1, upper=n, body_fun=sync_loop, init_val=pt_d_rates)
+
+
+    pt_d_rates = pt_d_rates.reshape((-1, 2), order="C").flatten(order="F")
+    return pt_d_rates
+
+@jit
+def partial_diag_scal_p(log_d_p: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray, 
+                        i:int) -> jnp.ndarray:
+    n = log_d_p.shape[0] - 1  
+    return lax.switch(state[2*i]+(i==n),
+                    [lambda: 0. * p,
+                    lambda: _partial_diag_scal_p(log_d_p, state, p, i),
+                    lambda: 0. * p]
+                    )
+ 
+@jit
+def diag_scal_m(log_d_m: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray
+                ) -> jnp.ndarray:
     """Multiplies a vector p with the diagonal matrix of MT-diagnosis effects d_m
 
     Args:
@@ -666,7 +715,7 @@ def diag_scal_m(log_d_m: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray) -> jnp
     """
     def met_loop(j, val):
         val = lax.switch(
-            index=state.at[2*j].get() + 2 * state.at[2*j+1].get(),
+            index=state[2*j] + 2 * state[2*j+1],
             branches=[
                 # ...|00|...
                 lambda x: x,
@@ -674,10 +723,10 @@ def diag_scal_m(log_d_m: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray) -> jnp
                 lambda x: k2d11(x),
                 #...|01|...
                 lambda x: k2d1t(x, 
-                                theta=jnp.exp(log_d_m.at[j].get())),
+                                theta=jnp.exp(log_d_m[j])),
                 #...|11|...
                 lambda x: k4d11tt(p=x,
-                                  theta=jnp.exp(log_d_m.at[j].get()))
+                                  theta=jnp.exp(log_d_m[j]))
             ],
             operand=val
         )
@@ -685,8 +734,56 @@ def diag_scal_m(log_d_m: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray) -> jnp
     n = log_d_m.shape[0] - 1
     mt_d_rates = lax.fori_loop(lower=0, upper=n,
                            body_fun=met_loop, init_val=p)
-    mt_d_rates = k2d0t(mt_d_rates, jnp.exp(log_d_m.at[-1].get()))
+    mt_d_rates = k2d0t(mt_d_rates, jnp.exp(log_d_m[-1]))
     return mt_d_rates
+
+
+def _partial_diag_scal_m(log_d_m: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray, 
+                         i:int) -> jnp.ndarray:
+    """Multiplies a vector p with the diagonal matrix of MT-diagnosis effects d_m
+
+    Args:
+        d_m (jnp.ndarray): Vector of MT-diagnosis effects
+        state (jnp.ndarray): Observed PT-MT tumor state
+        p (jnp.ndarray): Vector to multiply with d_m
+
+    Returns:
+        jnp.ndarray: d_m*p
+    """
+    def met_loop(j, val):
+        val = lax.switch(
+            index=state[2*j] + 2 * state[2*j+1],
+            branches=[
+                # ...|00|...
+                lambda x: x,
+                #...|10|...
+                lambda x: k2d11(x),
+                #...|01|...
+                lambda x: k2d1t(x, theta=jnp.exp(log_d_m[j])),
+                #...|11|...
+                lambda x: k4d11tt(p=x, theta=jnp.exp(log_d_m[j]))
+            ],
+            operand=val
+        )
+        return val
+    n = log_d_m.shape[0] - 1
+    mt_d_rates = lax.fori_loop(lower=0, upper=i, body_fun=met_loop, init_val=p)
+    mt_d_rates = lax.cond(state[2*i]+state[2*i+1]==1, 
+                          k2d0t, 
+                          k4d00tt,
+                          mt_d_rates, jnp.exp(log_d_m[i]))
+    mt_d_rates = lax.fori_loop(lower=i+1, upper=n, body_fun=met_loop, init_val=mt_d_rates)
+    return k2d0t(mt_d_rates, jnp.exp(log_d_m[-1]))
+
+
+@jit
+def partial_diag_scal_m(log_d_m: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray, 
+                        i:int) -> jnp.ndarray:
+    n = log_d_m.shape[0] - 1
+    return lax.switch((state[jnp.min(jnp.array([2*n, 2*i+1]))]) + (i==n),
+                      [lambda: 0.*p,
+                      lambda: _partial_diag_scal_m(log_d_m, state, p, i),
+                      lambda: diag_scal_m(log_d_m, state, p)])
 
 
 def kron_sync_diag(

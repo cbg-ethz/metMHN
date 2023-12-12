@@ -127,22 +127,67 @@ def kronvec(log_theta: jnp.ndarray, p: jnp.ndarray, state: jnp.ndarray,
         init_val=jnp.zeros(shape=2**state_size)
     )
 
-
-def scal_d_pt(log_d_pt: jnp.array, log_d_mt:jnp.array, state: jnp.array, vec: jnp.ndarray) -> jnp.ndarray:
+@jit
+def scal_d_pt(log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, state: jnp.ndarray, 
+              vec: jnp.ndarray) -> jnp.ndarray:
     def loop_body_diag(j, val):
         val = lax.cond(state[j] == 1,
-                        lambda x: (k2d1t(p=x[0], theta=jnp.exp(log_d_pt[j])),
-                                  k2d1t(p=x[1], theta=jnp.exp(log_d_mt[j]))),
+                        lambda x: (k2d1t(p=x[0], theta=jnp.exp(log_d_p[j])),
+                                  k2d1t(p=x[1], theta=jnp.exp(log_d_m[j]))),
                        lambda x: x,
                        operand=val
                        )
         return val
-    n = log_d_mt.shape[0]
+    n = log_d_m.shape[0]
     p = lax.fori_loop(lower=0, upper=n-1, 
                       body_fun=loop_body_diag, init_val=(vec, vec))
-    return k2d10(p[0]) + k2d0t(p[1], jnp.exp(log_d_mt[-1]))
+    return k2d10(p[0]) , k2d0t(p[1], jnp.exp(log_d_m[-1]))
+
+
+def _d_scal_d_pt(log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, state: jnp.ndarray, 
+              vec: jnp.ndarray, i: int) -> jnp.ndarray:
+    def loop_body_diag(j, val):
+        val = lax.cond(state[j] == 1,
+                        lambda x: (k2d1t(p=x[0], theta=jnp.exp(log_d_p[j])),
+                                  k2d1t(p=x[1], theta=jnp.exp(log_d_m[j]))),
+                       lambda x: x,
+                       operand=val
+                       )
+        return val
+    n = log_d_m.shape[0] - 1
+    p = lax.fori_loop(lower=0, upper=i, 
+                      body_fun=loop_body_diag, init_val=(vec, vec))
+    d_p = k2d0t(p[0], jnp.exp(log_d_p[i]))
+    d_m = k2d0t(p[1], jnp.exp(log_d_m[i]))
     
+    p = lax.fori_loop(lower=i+1, upper=n, 
+                      body_fun=loop_body_diag, init_val=(d_p, d_m))
     
+    return k2d10(p[0]),  k2d0t(p[1], jnp.exp(log_d_m[-1]))
+
+
+def d_scal_d_pt(log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, state: jnp.ndarray, 
+              vec: jnp.ndarray, i:int) -> jnp.ndarray:
+    n = log_d_p.shape[0]-1
+    return lax.switch(state[i] + (i==n),
+                    [lambda: (0*vec, 0*vec),
+                    lambda: _d_scal_d_pt(log_d_p, log_d_m, state, vec, i),
+                    lambda: (0*vec, scal_d_pt(log_d_p, log_d_m, state, vec)[1])]
+    )
+
+
+def x_partial_D_y(log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, state: jnp.ndarray, 
+              x: jnp.ndarray, y:jnp.array):
+    def body_fun(i, carry):
+        d_dp, d_dm = d_scal_d_pt(log_d_p, log_d_m, state, y, i)
+        a = carry[0].at[i].set(jnp.dot(x, d_dp))
+        b = carry[1].at[i].set(jnp.dot(x, d_dm))
+        return (a,b)
+    n = log_d_p.shape[0]
+    d_p, d_m = lax.fori_loop(0, n, body_fun,(jnp.zeros_like(log_d_p), jnp.zeros_like(log_d_m)))
+    return d_p, d_m
+
+
 @jit
 def kron_diag_i(
         log_theta: jnp.ndarray,
@@ -338,7 +383,7 @@ def gradient(log_theta: jnp.ndarray,
     """
     p_theta = R_inv_vec(log_theta=log_theta, x=p_0, state=state)
     x = jnp.zeros_like(p_theta)
-    x = x.at[-1].set(1/p_theta.at[-1].get())
+    x = x.at[-1].set(1/p_theta[-1])
     x = R_inv_vec(log_theta=log_theta, x=x,
                   state=state, transpose=True)
     d_th, d_diag = x_partial_Q_y(log_theta=log_theta, x=x, y=p_theta, state=state)
