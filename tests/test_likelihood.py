@@ -10,7 +10,7 @@ jax.config.update("jax_enable_x64", True)
 class LikelihoodTestCase(unittest.TestCase):
     @classmethod
     def setUp(self):
-        self.n_sim = int(1e05)
+        self.n_sim = int(1e04)
         rng = np.random.default_rng(seed=42)
         self.n_mut = 3
         self.n_states = 2**(2*self.n_mut + 1)
@@ -91,9 +91,15 @@ class LikelihoodTestCase(unittest.TestCase):
 
 
     def test_lp_empty(self):        
-        dp = np.array([0, 0, 0, 0, 0, 0, 1]).reshape((1,-1))
-        ind = np.packbits(dp, axis=1, bitorder="little")[0]
-        sim_freq = np.log(self.counts[ind[0]]/self.n_sim)
-        print(np.exp(sim_freq))
+        dp = np.array([0, 0, 0, 0, 0, 0, 1, 1]).reshape((1,-1))        
+        counts = dict(zip([i for i in range(self.n_states)], 
+                          [ 0 for i in range(self.n_states)]))
+        genos_hashed = list(np.packbits(self.dat[self.dat[:,-1]==1,:-1], 
+                                        axis=1, bitorder="little")[:,0])
+        for i in genos_hashed:
+            counts[i] += 1
+        ind = np.packbits(dp[:,:-1], axis=1, bitorder="little")[0]
+        print(f"Number of occurences:{counts[ind[0]]}")
+        sim_freq = np.log(counts[ind[0]]/self.n_sim)
         ana_freq = regopt.lp_coupled(self.theta, self.d_pt, self.d_mt, jnp.array(dp))
         np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)

@@ -91,19 +91,16 @@ def lp_coupled(log_theta: jnp.ndarray, log_d_p: jnp.ndarray,
         n_prim = int(state_joint[::2].sum())
         n_met = int(state_joint[1::2].sum() + 1)
         order = dat[i,2*n_muts+1]
-        if (n_prim + n_met) > 2:
-            if order == 0:
-                score += ssr._lp_coupled_0(log_theta, log_d_p, log_d_m, state_joint,
+        if order == 0:
+            score += ssr._lp_coupled_0(log_theta, log_d_p, log_d_m, state_joint,
                                         n_prim, n_met)
-            elif order == 1:
-                score += ssr._lp_coupled_1(log_theta, log_d_p, log_d_m, state_joint,
-                                        n_prim, n_met)
-            else:
-                score += ssr._lp_coupled_2(log_theta, log_d_p, log_d_m, state_joint,
+        elif order == 1:
+            score += ssr._lp_coupled_1(log_theta, log_d_p, log_d_m, state_joint,
                                         n_prim, n_met)
         else:
-            score += one._lp_coupled(log_theta, log_d_m, order)
-    
+            score += ssr._lp_coupled_2(log_theta, log_d_p, log_d_m, state_joint,
+                                        n_prim, n_met)
+
     return score
 
 
@@ -161,7 +158,7 @@ def grad_prim_only(log_theta:jnp.ndarray, log_d_p: jnp.ndarray,
     d_p = jnp.zeros(n_total)
     score = 0.0
     for i in range(dat.shape[0]):
-        state_obs = dat.at[i, 0:2*n_total-1:2].get()
+        state_obs = dat[i, 0:2*n_total-1:2]
         n_prim = int(state_obs.sum())      
         s, g_, fd_ = ssr._grad_prim_obs(log_theta, log_d_p, state_obs, n_prim)
         g += g_
@@ -227,16 +224,21 @@ def grad_coupled(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndar
         state = dat[i, 0:2*n_mut+1]
         n_prim = int(state[::2].sum())
         n_met = int(state[1::2].sum() + 1)
-        if (n_prim + n_met) > 2:      
-            lik, dtheta, fd_, sd_ = ssr._g_coupled(log_theta, log_d_p, log_d_m,
-                                                   state, n_prim, n_met)
+        order = dat[i,2*n_mut+1]
+        if order == 0:
+            lik, d_th, d_d_p, d_d_m = ssr._g_coupled_0(log_theta, log_d_p, log_d_m, state,
+                                                             n_prim, n_met)
+        elif order == 1:
+            lik, d_th, d_d_p, d_d_m = ssr._g_coupled_1(log_theta, log_d_p, log_d_m, state,
+                                                            n_prim, n_met)
         else:
-            lik, dtheta, fd_, sd_ = one._g_coupled(log_theta, log_d_p, log_d_m[-1])
+            lik, d_th, d_d_p, d_d_m = ssr._g_coupled_2(log_theta, log_d_p, log_d_m, state,
+                                                            n_prim, n_met)
         
         score += lik
-        g += dtheta
-        d_p += fd_
-        d_m += sd_
+        g += d_th
+        d_p += d_d_p
+        d_m += d_d_m
 
     return score, jnp.concatenate((g.flatten(), d_p, d_m)) 
 
