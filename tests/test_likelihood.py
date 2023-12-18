@@ -10,14 +10,13 @@ jax.config.update("jax_enable_x64", True)
 class LikelihoodTestCase(unittest.TestCase):
     @classmethod
     def setUp(self):
-        self.n_sim = int(1e04)
+        self.n_sim = int(1e05)
         rng = np.random.default_rng(seed=42)
         self.n_mut = 3
         self.n_states = 2**(2*self.n_mut + 1)
         
         self.theta = jnp.array(utils.random_theta(self.n_mut, 0.2))
-        self.d_pt = jnp.array(rng.normal(0, 1, size=self.n_mut))
-        self.d_pt = jnp.append(self.d_pt, 0)
+        self.d_pt = jnp.array(rng.normal(0, 1, size=self.n_mut+1))
         self.d_mt = jnp.array(rng.normal(0, 1, size=self.n_mut+1))
         self.dat, _ = simul.simulate_dat(np.array(self.theta), self.d_pt, 
                                          self.d_mt, self.n_sim, rng)

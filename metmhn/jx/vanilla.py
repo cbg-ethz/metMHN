@@ -38,11 +38,11 @@ def _kronvec(
     def loop_body_diag(j, val):
 
         val = lax.switch(
-            index=state.at[j].get(),
+            index=state[j],
             branches=[
                 lambda x: x,
                 lambda x: k2d1t(p=x, theta=jnp.exp(
-                    log_theta.at[i, j].get()))
+                    log_theta[i, j]))
             ],
             operand=val
         )
@@ -55,11 +55,11 @@ def _kronvec(
 
     # Non-diagonal Kronecker factor
     p = lax.switch(
-        index=state.at[i].get(),
+        index=state[i],
         branches=[
-            lambda x: -jnp.exp(log_theta.at[i, i].get()) * x,
-            lambda x: k2ntt(p=x, theta=jnp.exp(
-                log_theta.at[i, i].get()), diag=diag, transpose=transpose),
+            lambda x: -jnp.exp(log_theta[i, i]) * x,
+            lambda x: k2ntt(p=x, theta=jnp.exp(log_theta[i, i]),
+                            diag=diag, transpose=transpose),
         ],
         operand=p
     )
@@ -165,7 +165,7 @@ def _d_scal_d_pt(log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, state: jnp.ndarray,
     
     return k2d10(p[0]),  k2d0t(p[1], jnp.exp(log_d_m[-1]))
 
-
+@jit 
 def d_scal_d_pt(log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, state: jnp.ndarray, 
               vec: jnp.ndarray, i:int) -> jnp.ndarray:
     n = log_d_p.shape[0]-1
@@ -175,7 +175,7 @@ def d_scal_d_pt(log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, state: jnp.ndarray,
                     lambda: (0*vec, scal_d_pt(log_d_p, log_d_m, state, vec)[1])]
     )
 
-
+@jit
 def x_partial_D_y(log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, state: jnp.ndarray, 
               x: jnp.ndarray, y:jnp.array):
     def body_fun(i, carry):
@@ -188,7 +188,6 @@ def x_partial_D_y(log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, state: jnp.ndarray
     return d_p, d_m
 
 
-@jit
 def kron_diag_i(
         log_theta: jnp.ndarray,
         i: int,
@@ -199,7 +198,7 @@ def kron_diag_i(
 
     def loop_body(j, val):
         val = lax.switch(
-            index=state.at[j].get(),
+            index=state[j],
             branches=[
                 lambda val: val,
                 lambda val: k2d1t(val, jnp.exp(log_theta[i, j])),
@@ -216,7 +215,7 @@ def kron_diag_i(
     )
 
     diag = lax.switch(
-        index=state.at[i].get(),
+        index=state[i],
         branches=[
             lambda val: -jnp.exp(log_theta[i, i]) * val,
             lambda val: k2dt0(val, jnp.exp(log_theta[i, i])),
@@ -323,7 +322,7 @@ def x_partial_Q_y(
         def body_fun(j, val):
 
             z, _val = lax.switch(
-                state.at[j].get(),
+                state[j],
                 [
                     lambda x: (x, 0.),
                     lambda x: f(x)
@@ -341,7 +340,7 @@ def x_partial_Q_y(
         )
 
         z, _val = lax.switch(
-            state.at[i].get(),
+            state[i],
             [
                 lambda z: (z, z.sum()),
                 lambda z: t(z)

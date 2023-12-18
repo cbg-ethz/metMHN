@@ -120,25 +120,36 @@ def log_lik(params: np.ndarray, dat_prim_only: jnp.ndarray, dat_prim_met: jnp.nd
     Returns:
         np.array: - log. likelihood
     """
-    n_dat = dat_coupled.shape[0] + dat_met.shape[0] + dat_prim_met.shape[0] + dat_prim_only.shape[0]
     n_mut = (dat_prim_only.shape[1]-1)//2
     n_total = n_mut + 1
+    n_m_o, n_p_m, n_c = dat_met.shape[0], dat_prim_met.shape[0], dat_coupled.shape[0]
+    n_p_o = dat_prim_only.shape[0]
+
     log_theta = jnp.array(params[0:n_total**2]).reshape((n_total, n_total))
     log_d_p = jnp.array(params[n_total**2:n_total*(n_total + 1)])
     log_d_m = jnp.array(params[n_total*(n_total+1):])
     
     l1 = L1(log_theta) + L1(log_d_p) + L1(log_d_m)
-    score_prim, score_coupled, score_prim_met, score_met = 0., 0., 0., 0.
+
     score_prim = lp_prim_only(log_theta, log_d_p, dat_prim_only)
     score_prim_met = lp_prim_only(log_theta, log_d_p, dat_prim_met)
-    score_met = lp_met_only(log_theta, log_d_p, log_d_m, dat_met)
+    score_met_only = lp_met_only(log_theta, log_d_p, log_d_m, dat_met)
     score_coupled = lp_coupled(log_theta, log_d_p, log_d_m, dat_coupled)
+    
+    #w_m_o = n_c/n_m_o
+    #w_p_m = n_c/n_p_m
+    #score_mets = score_coupled + w_p_m * score_prim_met + w_m_o*score_met_only
+    score_mets = score_coupled + score_prim_met + score_met_only
+    #n_mets = n_c + w_m_o * n_m_o + w_p_m * n_p_m
+    n_mets = n_c + n_m_o + n_p_m
+    
+    w = (1-perc_met)*n_mets/(perc_met * n_p_o)
+    n_dat = w * n_p_o + n_mets 
+    score = np.array(-(w * score_prim + score_mets) + penal1 * n_dat * l1)
 
-    score_met = score_prim_met + score_coupled + score_met
-    score = (1 - perc_met) * score_prim + perc_met*score_met
-    logging.info(f"score {score}, score_prim {score_prim}, score_c {score_coupled}, score_pm {score_prim_met}")
+    logging.info(f"score {score}, score_prim {score_prim}, score_c {score_coupled}, score_pm {score_prim_met}, score_mo {score_met_only}")
     # The SciPy-Optimizer only takes np.arrays as input
-    return np.array(-score + penal1 * n_dat * l1)
+    return score
 
 
 def grad_prim_only(log_theta:jnp.ndarray, log_d_p: jnp.ndarray, 
@@ -263,22 +274,28 @@ def grad(params: np.ndarray, dat_prim_only: jnp.ndarray, dat_prim_met:jnp.ndarra
     n_dat = dat_coupled.shape[0] + dat_met.shape[0] + dat_prim_met.shape[0] + dat_prim_only.shape[0]
     n_mut = (dat_prim_only.shape[1]-1)//2
     n_total = n_mut + 1
+    n_m_o, n_p_m, n_c = dat_met.shape[0], dat_prim_met.shape[0], dat_coupled.shape[0]
+    n_p_o = dat_prim_only.shape[0]
+    
     log_theta = jnp.array(params[0:n_total**2]).reshape((n_total, n_total))
     log_d_p = jnp.array(params[n_total**2:n_total*(n_total + 1)])
     log_d_m = jnp.array(params[n_total*(n_total+1):])
 
     # Derivatives of penalties
     l1_ = np.concatenate((L1_(log_theta), L1_(log_d_p), L1_(log_d_m)))
-    
-    g_prim, g_coupled = jnp.zeros(n_total*(n_total + 2)), jnp.zeros(n_total*(n_total + 2))
-    g_prim_met, g_met = jnp.zeros(n_total*(n_total + 2)), jnp.zeros(n_total*(n_total + 2))
-
     _, g_prim = grad_prim_only(log_theta, log_d_p, dat_prim_only)
     _, g_prim_met = grad_prim_only(log_theta, log_d_p, dat_prim_met)
     _, g_met_only = grad_met_only(log_theta, log_d_p, log_d_m, dat_met)
     _, g_coupled = grad_coupled(log_theta, log_d_p, log_d_m, dat_coupled)
-    g_mets = g_prim_met + g_met_only + g_coupled
-    g = (1 - perc_met) * g_prim + perc_met*g_mets
+    #w_m_o = n_c/n_m_o
+    #w_p_m = n_c/n_p_m
+    #g_mets = g_coupled + w_p_m * g_prim_met + w_m_o * g_met_only
+    g_mets = g_coupled + g_prim_met + g_met_only
+    #n_mets = n_c + w_m_o * n_m_o + w_p_m * n_p_m
+    n_mets = n_c + n_m_o + n_p_m
+    w = (1-perc_met)*n_mets/(perc_met * n_p_o)
+    n_dat = w*n_p_o + n_mets
+    g = w*g_prim + g_mets
     # The SciPy-Optimizer only takes np.arrays as input
     return np.array(-g + penal * n_dat * l1_)
 

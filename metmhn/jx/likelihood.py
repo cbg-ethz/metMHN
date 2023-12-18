@@ -105,7 +105,7 @@ def t3(s: jnp.ndarray, p: jnp.ndarray, m: jnp.ndarray
     return s, p, m, z
 
 
-def z0(s: jnp.array) -> tuple[jnp.ndarray, float]: 
+def z0(s: jnp.ndarray) -> tuple[jnp.ndarray, float]: 
     return s, 0.
 
 
@@ -281,7 +281,8 @@ def _lp_coupled_0(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.nda
     p0 = p0.at[0].set(1.)
     if joint_size == 1:
         d_m_le = jnp.exp(log_d_m[-1])
-        pTh1_joint = one.R_i_inv_vec(log_theta, p0, d_m_le) * jnp.array([1, 1+d_m_le])
+        d_p_le = jnp.exp(log_d_p[-1])
+        pTh1_joint = one.R_i_inv_vec(log_theta, p0, d_p_le, d_m_le) * jnp.array([1, d_p_le+d_m_le])
     else:
         pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p0, state_joint, joint_size)
         pTh1_joint = diag_scal_p(log_d_p, state_joint, pTh1_joint) + diag_scal_m(log_d_m, state_joint, pTh1_joint)
@@ -308,8 +309,9 @@ def _lp_coupled_1(log_theta:jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndar
     p0 = p0.at[0].set(1.)
     if joint_size == 1:
         d_m_le = jnp.exp(log_d_m[-1])
-        pTh1_joint = one.R_i_inv_vec(log_theta, p0, d_m_le)
-        pTh1_cond_obs = jnp.append(jnp.zeros(1), pTh1_joint[-1])
+        d_p_le = jnp.exp(log_d_p[-1])
+        pTh1_joint = one.R_i_inv_vec(log_theta, p0, d_p_le, d_m_le)
+        pTh1_cond_obs = jnp.append(jnp.zeros(1), pTh1_joint[-1] * d_p_le)
     else:
         pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p0, state_joint, joint_size)
         pTh1_joint = diag_scal_p(log_d_p, state_joint, pTh1_joint)
@@ -346,7 +348,8 @@ def _lp_coupled_2(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.nda
     p0 = p0.at[0].set(1.)
     if joint_size == 1:
         d_m_le = jnp.exp(log_d_m[-1])
-        pTh1_joint = one.R_i_inv_vec(log_theta, p0, d_m_le)
+        d_p_le = jnp.exp(log_d_p[-1])
+        pTh1_joint = one.R_i_inv_vec(log_theta, p0, d_p_le, d_m_le)
         pTh1_cond_obs = jnp.append(jnp.zeros(1), pTh1_joint[-1]*d_m_le)
     else:
         pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p0, state_joint, joint_size)
@@ -359,8 +362,8 @@ def _lp_coupled_2(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.nda
         pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_prim-1)), pTh1_cond_obs)
     
     prim = state_joint[0::2]
-    pt_scal = diagnosis_theta(log_theta, log_d_p)
-    theta_pt = pt_scal.at[:-1,-1].set(0.)
+    theta_pt = log_theta.at[:-1,-1].set(0.)
+    theta_pt = diagnosis_theta(theta_pt, log_d_p)
     pTh2 = mhn.R_inv_vec(theta_pt, pTh1_cond_obs, prim)
     return jnp.log(pTh2[-1])
 
@@ -378,11 +381,11 @@ def _lp_prim_obs(log_theta: jnp.ndarray, log_d_p: jnp.ndarray,
     Returns:
         jnp.ndarray: log(P(state_pt| \theta))
     """
-    log_theta_pt = diagnosis_theta(log_theta, log_d_p)
-    log_theta_pt = log_theta_pt.at[:-1,-1].set(0.)
+    log_theta_pt = log_theta.at[:-1,-1].set(0.)
+    log_theta_pt = diagnosis_theta(log_theta_pt, log_d_p)
     p0 = jnp.zeros(2**n_prim)
     p0 = p0.at[0].set(1.)
-    pTh = mhn.R_inv_vec(log_theta_pt, p0, state_pt)
+    pTh = mhn.R_inv_vec(log_theta_pt, p0, state_pt, jnp.ones_like(p0))
     return jnp.log(pTh[-1])
 
 
@@ -423,10 +426,9 @@ def _grad_prim_obs(log_theta: jnp.ndarray, log_d_p: jnp.ndarray,
     """
     p0 = jnp.zeros(2**n_prim)
     p0 = p0.at[0].set(1.)
-    log_theta_s = diagnosis_theta(log_theta, log_d_p)
-    log_theta_pt = log_theta_s.at[:-1, -1].set(0.0)
+    log_theta_pt = log_theta.at[:-1, -1].set(0.0)
+    log_theta_pt = diagnosis_theta(log_theta_pt, log_d_p)
     d_th, d_dp, pTh2 = mhn.gradient(log_theta_pt, state_prim, p0)
-    d_dp = d_dp.at[-1].set(0.0)
     d_th = d_th.at[:-1, -1].set(0.0)
     return jnp.log(pTh2[-1]), d_th, d_dp
 
@@ -488,17 +490,24 @@ def _g_coupled_0(log_theta: jnp.ndarray, log_d_p: jnp.array, log_d_m: jnp.ndarra
     # Joint and met-marginal distribution at first sampling
     if joint_size == 1:
         d_m_le = jnp.exp(log_d_m[-1])
-        pTh_joint = one.R_i_inv_vec(log_theta, p, d_m_le)
-        score =  pTh_joint[-1] * (1 + d_m_le)
+        d_p_le = jnp.exp(log_d_p[-1])
+        pTh_joint = one.R_i_inv_vec(log_theta, p, d_p_le, d_m_le)
+        score =  pTh_joint[-1] * (d_p_le + d_m_le)
         q = jnp.array([0, 1/score])
+        # q D'(D-Q)^{-1}p0
+        d_d_p = jnp.dot(q*d_p_le, pTh_joint)
         d_d_m = jnp.dot(q*d_m_le, pTh_joint)
         q = q.at[-1].set(1/pTh_joint[-1])
-        q = one.R_i_inv_vec(log_theta, q, d_m_le, True)
+        q = one.R_i_inv_vec(log_theta, q, d_p_le, d_m_le, True)
         grad_th = one.x_partial_Q_y(log_theta, q, pTh_joint)
+        
+        d_d_p -= jnp.dot(q*jnp.array([0,d_p_le]), pTh_joint)
+        d_p = jnp.zeros_like(log_d_p)
+        d_p = d_p.at[-1].set(d_d_p)
+        
         d_d_m -= jnp.dot(q*jnp.array([0,d_m_le]), pTh_joint)
         d_m = jnp.zeros_like(log_d_m)
         d_m = d_m.at[-1].set(d_d_m)
-        d_p = jnp.zeros_like(log_d_p)
 
     else:
         pTh_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p, state_joint, 
@@ -542,9 +551,10 @@ def _g_coupled_1(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndar
     p = p.at[0].set(1.)
     
     if n_joint == 1:
+        d_p_le = jnp.exp(log_d_p[-1])
         d_m_le = jnp.exp(log_d_m[-1])
-        pTh1_joint = one.R_i_inv_vec(log_theta, p, d_m_le)
-        pTh1_cond_obs = jnp.append(jnp.zeros(1), pTh1_joint[-1])
+        pTh1_joint = one.R_i_inv_vec(log_theta, p, d_p_le, d_m_le)
+        pTh1_cond_obs = jnp.append(jnp.zeros(1), pTh1_joint[-1])*d_p_le
     else:
         # Joint distribution at first sampling
         pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p, state_joint, 
@@ -568,13 +578,18 @@ def _g_coupled_1(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndar
     p = p * 0. 
 
     if n_joint == 1:
-        p = q*jnp.array([0, 1])
-        p = one.R_i_inv_vec(log_theta, p, d_m_le, True)
+        p = q*jnp.array([0, d_p_le])
+        d_dp_1 = jnp.zeros_like(log_d_p)
+        d_dp_1 = d_dp_1.at[-1].set(jnp.dot(p, pTh1_joint))
+        p = one.R_i_inv_vec(log_theta, p, d_p_le, d_m_le, True)
         g_2 = one.x_partial_Q_y(log_theta, p, pTh1_joint)
+        
         d_dm_2 = jnp.zeros_like(log_d_m)
         d_dm_2 = d_dm_2.at[-1].set(jnp.dot(p*jnp.array([0, d_m_le]), pTh1_joint))
         d_dm = d_dm_1 - d_dm_2
-        d_dp = jnp.zeros_like(log_d_p)
+        d_dp_2 = jnp.zeros_like(log_d_p)
+        d_dp_2 = d_dp_2.at[-1].set(jnp.dot(p*jnp.array([0, d_p_le]), pTh1_joint))
+        d_dp = d_dp_1 - d_dp_2
     else:
         # Derivative of pth1_cond
         p = p.at[poss_states_inds].set(q[2**(n_met - 1):])
@@ -614,8 +629,9 @@ def _g_coupled_2(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndar
     p = p.at[0].set(1.)
 
     if n_joint == 1:
+        d_p_le = jnp.exp(log_d_p[-1])
         d_m_le = jnp.exp(log_d_m[-1])
-        pTh1_joint = one.R_i_inv_vec(log_theta, p, d_m_le)
+        pTh1_joint = one.R_i_inv_vec(log_theta, p, d_p_le, d_m_le)
         pTh1_cond_obs = jnp.append(jnp.zeros(1), pTh1_joint[-1]*d_m_le)
     else:
         pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p, state_joint, 
@@ -627,11 +643,11 @@ def _g_coupled_2(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndar
         pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_prim-1)), pTh1_cond_obs)
 
     # Derivative of pTh2 = M(I-Q_sd)^(-1)pth1_cond
-    log_theta_dp = diagnosis_theta(log_theta, log_d_p)
-    log_theta_pt = log_theta_dp.at[:-1,-1].set(0.)
+    log_theta_dp = log_theta.at[:-1,-1].set(0.)
+    log_theta_pt = diagnosis_theta(log_theta_dp, log_d_p)
+
     g_1, d_dp_1, pTh2 = mhn.gradient(log_theta_pt, prim, pTh1_cond_obs)
     g_1 = g_1.at[:-1,-1].set(0.0)
-    d_dp_1 = d_dp_1.at[-1].set(0.0)
     exp_score = pTh2[-1]
     
     # q = (pD/score)^T (I-Q D_met^{-1})^{-1} S(x)
@@ -641,12 +657,15 @@ def _g_coupled_2(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndar
 
     if n_joint == 1:
         p = q*jnp.array([0, d_m_le])
-        d_d_m1 = jnp.dot(p, pTh1_joint)
-        p = one.R_i_inv_vec(log_theta, p, d_m_le, True)
+        d_dm_1 = jnp.dot(p, pTh1_joint)
+        p = one.R_i_inv_vec(log_theta, p, d_p_le, d_m_le, True)
         g_2 = one.x_partial_Q_y(log_theta, p, pTh1_joint)
         d_dm = jnp.zeros_like(log_d_m)
-        d_dm = d_dm.at[-1].set(d_d_m1-jnp.dot(p*jnp.array([0, d_m_le]), pTh1_joint))
-        d_dp = jnp.zeros_like(log_d_p)
+        d_dm = d_dm.at[-1].set(d_dm_1-jnp.dot(p*jnp.array([0, d_m_le]), pTh1_joint))
+        
+        d_dp_2 = jnp.zeros_like(log_d_p)
+        d_dp_2 = d_dp_2.at[-1].set(jnp.dot(p*jnp.array([0, d_p_le]), pTh1_joint))
+        d_dp = d_dp_1 - d_dp_2
     else:
         p = p * 0.
         p = p.at[poss_states_inds].set(q[2**(n_prim - 1):])

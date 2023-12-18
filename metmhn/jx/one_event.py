@@ -1,7 +1,4 @@
-import numpy as np
 import jax.numpy as jnp
-import metmhn.jx.vanilla as mhn
-from metmhn.jx.kronvec import diagnosis_theta
 
 # This contains the important functions for the case that state_size = 1
 # This needs to be done separately, as otherwise reshape(-1, 4) throws an error
@@ -11,7 +8,7 @@ from metmhn.jx.kronvec import diagnosis_theta
 def small_Q(log_theta: jnp.ndarray) -> jnp.ndarray:
     base_r =  jnp.diagonal(log_theta)
     b_r = jnp.exp(base_r[:-1])
-    e_seed = jnp.exp(log_theta.at[:-1, -1].get()) + 1.
+    e_seed = jnp.exp(log_theta[:-1, -1]) + 1.
     
     row1 = [-jnp.exp(base_r).sum(), 0.]
     row2 = [jnp.exp(log_theta[-1, -1]), -jnp.sum(b_r*e_seed)]
@@ -35,7 +32,7 @@ def kronvec(log_theta: jnp.ndarray, p: jnp.ndarray,
             return jnp.array([p[1] * jnp.exp(log_theta[-1, -1]),0.])
 
 
-def R_i_inv_vec(log_theta: jnp.ndarray, x: jnp.ndarray, d_r: jnp.ndarray, 
+def R_i_inv_vec(log_theta: jnp.ndarray, x: jnp.ndarray, d_p_le : jnp.ndarray, d_m_le: jnp.ndarray, 
                 transpose: bool = False) -> jnp.ndarray:
     """returns (D-Q)^{-1} x  or x^T(D-Q)^{-1}
 
@@ -50,7 +47,7 @@ def R_i_inv_vec(log_theta: jnp.ndarray, x: jnp.ndarray, d_r: jnp.ndarray,
         jnp.ndarray: state vector
     """
     D = jnp.array([[1., 0.], [0., 1.]])
-    D = D.at[-1, -1].set(1+d_r)
+    D = D.at[-1, -1].set(d_p_le + d_m_le)
     R = D - small_Q(log_theta=log_theta)
 
     b = x.copy()

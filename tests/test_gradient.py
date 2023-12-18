@@ -79,7 +79,6 @@ class DerivativeTestCase(unittest.TestCase):
                                    rtol=self.tol)
     
     def test_coupled_deriv(self):
-        print(self.state_coupled)
         params = [self.theta, self.d_p, self.d_m, self.state_coupled]
         g_num = finite_difference(regopt.lp_coupled, params, self.n_mut+1, self.h)
         np.testing.assert_allclose(g_num, 
