@@ -119,10 +119,9 @@ def p_shared_mut_pre_seed(theta: np.ndarray,
     i = 0
     while i < n_dat:
         datum, psp, _ = single_traject(theta, pt_d_ef, mt_d_ef, rng)
-        print(datum[-2])
-        if datum[-2] == 1:
+        if datum[-1] == 1:
             both = (datum[:-2:2]+datum[1:-1:2]==2)
-            pre_seeded_muts += psp[:-2] * both
+            pre_seeded_muts += psp[:-1] * both
             total_muts += both
             i += 1
         else:

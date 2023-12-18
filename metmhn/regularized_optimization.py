@@ -1,7 +1,6 @@
 from metmhn.jx import likelihood as ssr
 from metmhn.jx.kronvec import diagnosis_theta
 from metmhn.jx.vanilla import R_inv_vec
-from metmhn.jx import one_event as one
 import logging 
 import jax.numpy as jnp
 import numpy as np
@@ -343,29 +342,28 @@ def learn_mhn(th_init: jnp.ndarray, dp_init: jnp.ndarray, dm_init: jnp.ndarray,
     return theta, d_p, d_m
 
 
-def p_unobs_seeding(log_theta: jnp.array, fd_effects: jnp.array,  dat: jnp.array) -> jnp.array:
-    """ Returns the probability that tumor dat_obs has spawned an unobserved metastasis
+def p_unobs_seeding(log_theta: jnp.ndarray, log_d_p: jnp.ndarray,  dat: jnp.ndarray) -> jnp.ndarray:
+    """This calculates the probability, that a MT is present given the genotype of the PT at the time of PT-diagnosis
 
     Args:
-        log_theta (jnp.array):  Theta matrix with logarithmic entries
-        fd_effects (jnp.array): Effects of mutations on first seeding
-        dat (jnp.array):        Dataset of PT observations
+        log_theta (jnp.ndarray): Theta matrix with logarithmic entries
+        log_d_p (jnp.ndarray): Log. effects of the muts in the PT on its diagnosis
+        dat (jnp.ndarray): Dataset of PT-observations
 
     Returns:
-        jnp.array:              Probability of unobserved seeding for each datapoint
+        jnp.ndarray: P(Seeding = 1|PT)
     """
-    dat_mod = dat.at[:,::2].get()
+    dat_mod = dat[:,::2]
     dat_mod = dat_mod.at[:,-1].set(1)
-    diag_theta = diagnosis_theta(log_theta, fd_effects)
-    diag_theta = diag_theta.at[:-1, -1].set(-1*fd_effects.at[-1].get())
+    log_theta_pt = log_theta.at[:-1, -1].set(0.)
+    log_theta_pt = diagnosis_theta(log_theta_pt, log_d_p)
     p_unobs = jnp.zeros(dat_mod.shape[0])
     for i in range(dat_mod.shape[0]):
         obs = dat_mod.at[i,:].get()
         m =  obs.sum()
         p0 = jnp.zeros(2**m)
         p0 = p0.at[0].set(1.)
-        pth = R_inv_vec(diag_theta, p0, 1.,  obs, False)
-        p_state = pth.reshape((-1, 2), order="F").at[-1,:].get()
-        p_unobs = p_unobs.at[i].set(p_state.at[1].get()/p_state.sum())
+        pth = R_inv_vec(log_theta_pt, p0, 1.,  obs, False)
+        p_state = pth.reshape((-1, 2), order="F")[-1,:]
+        p_unobs = p_unobs.at[i].set(p_state[1]/p_state.sum())
     return p_unobs
-    
