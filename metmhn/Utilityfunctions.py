@@ -115,6 +115,7 @@ def finite_sample(p_th: np.ndarray, k: int) -> np.ndarray:
     n = p_th.size
     return np.bincount(np.random.choice(n, k, replace=True, p=p_th), minlength=n) / k
 
+
 def categorize(x: pd.Series) -> int:
     if x['paired'] == 0:
         if x['metaStatus'] == "absent":
@@ -256,11 +257,11 @@ def cross_val(dat: pd.DataFrame, events: list, splits: jnp.ndarray, nfolds: int,
         
         for j in range(splits.size):
             th, fd, sd = learn_mhn(th_init, fd_init, sd_init, train_prim_only, 
-                                     train_prim_met, train_coupled, 
-                                     m_p_corr, jnp.ones(2), splits[j])
+                                     train_prim_met, train_met_only, train_coupled, 
+                                     m_p_corr, splits[j])
             params = np.concatenate((th.flatten(), fd, sd))
-            runs_constrained[i,j] = log_lik(params, test_prim_only, test_prim_met, 
-                                            test_coupled, 0., m_p_corr, jnp.ones(2))
+            runs_constrained[i,j] = log_lik(params, test_prim_only, test_prim_met, test_met_only,
+                                            test_coupled, 0., m_p_corr)
             
             logging.info(f"Split: {splits[j]}, Fold: {i}, Score: {runs_constrained[i,j]}")
 

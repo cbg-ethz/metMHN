@@ -27,6 +27,21 @@ def L1_(theta: jnp.ndarray, eps: float = 1e-05) -> jnp.ndarray:
     return theta_.flatten() / jnp.sqrt(theta_.flatten()**2 + eps)
 
 
+def sym_penal(log_theta: jnp.ndarray, eps: float = 1e-05) -> jnp.ndarray:
+    n = log_theta.shape[0]
+    theta_ = log_theta.at[jnp.diag_indices(n)].set(0.)
+    penal = jnp.sum(jnp.sqrt(theta_**2 + theta_.T**2 - theta_ * theta_.T + eps))
+    return 0.5*(penal - n*jnp.sqrt(eps))
+
+
+def sym_penal_(log_theta: jnp.ndarray, eps: float = 1e-05) -> jnp.ndarray:
+    n = log_theta.shape[0]
+    theta_ = log_theta.at[jnp.diag_indices(n)].set(0.)
+    penal_denom = 2*jnp.sqrt(theta_**2 + theta_.T**2 - theta_ * theta_.T + eps)
+    penal_num = 2*theta_ - theta_.T
+    return (penal_num/penal_denom).flatten()
+
+
 def lp_prim_only(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, 
                  dat: jnp.ndarray) -> jnp.ndarray:
     """Calculates the marginal likelihood of observing unpaired primary tumors
@@ -128,7 +143,7 @@ def log_lik(params: np.ndarray, dat_prim_only: jnp.ndarray, dat_prim_met: jnp.nd
     log_d_p = jnp.array(params[n_total**2:n_total*(n_total + 1)])
     log_d_m = jnp.array(params[n_total*(n_total+1):])
     
-    l1 = L1(log_theta) + L1(log_d_p) + L1(log_d_m)
+    l1 = sym_penal(log_theta) + L1(log_d_p) + L1(log_d_m)
 
     score_prim = lp_prim_only(log_theta, log_d_p, dat_prim_only)
     score_prim_met = lp_prim_only(log_theta, log_d_p, dat_prim_met)
@@ -281,7 +296,7 @@ def grad(params: np.ndarray, dat_prim_only: jnp.ndarray, dat_prim_met:jnp.ndarra
     log_d_m = jnp.array(params[n_total*(n_total+1):])
 
     # Derivatives of penalties
-    l1_ = np.concatenate((L1_(log_theta), L1_(log_d_p), L1_(log_d_m)))
+    l1_ = np.concatenate((sym_penal_(log_theta), L1_(log_d_p), L1_(log_d_m)))
     _, g_prim = grad_prim_only(log_theta, log_d_p, dat_prim_only)
     _, g_prim_met = grad_prim_only(log_theta, log_d_p, dat_prim_met)
     _, g_met_only = grad_met_only(log_theta, log_d_p, log_d_m, dat_met)
