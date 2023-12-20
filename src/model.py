@@ -1,9 +1,6 @@
 from MetaMHN.perf import order_to_int, int_to_order, append_to_int_order
 from collections import deque
 from np.kronvec import kron_diag as get_diag_paired
-import itertools
-import networkx as nx
-from math import factorial
 from scipy.linalg.blas import dcopy, dscal, daxpy
 import numpy as np
 
@@ -11,7 +8,22 @@ append_to_int_order = np.vectorize(
     append_to_int_order, excluded=["numbers", "new_event"])
 
 
-def tuple_max_2(x: np.array, y: np.array) -> tuple[np.array]:
+def tuple_max(x: np.array, y: np.array) -> tuple[np.array]:
+    """If given two values x_i and y_i for each i, we want to find i
+    s.t. for all non-negative linear factors a and b we have 
+    ax_i + by_i >= ax_j + by_j
+    There will in general not be a unique i that satisfies this,
+    therefore we just return all possible candidates i that could
+    fulfill this for the right values a and b. 
+
+    Args:
+        x (np.array): x
+        y (np.array): y
+
+    Returns:
+        tuple[np.array, np.array]: Vectors that only contain the
+        maximizing candidates. 
+    """
     x.sort(order="order")
     y.sort(order="order")
     indices = (x["prob"] >= x["prob"][np.argmax(y["prob"])]) \
@@ -52,31 +64,6 @@ def reachable(bin_state: int, n: int, state: np.array) -> bool:
         return not (full_bin ^ (full_bin >> 1)) & int("01"*n, base=2)
 
 
-def tuple_max(x: dict, y: dict) -> tuple[dict, dict]:
-    """If given two values x_i and y_i for each i, we want to find i
-    s.t. for all non-negative linear factors a and b we have 
-    ax_i + by_i >= ax_j + by_j
-    There will in general not be a unique i that satisfies this,
-    therefore we just return all possible candidates i that could
-    fulfill this for the right values a and b. 
-
-    Args:
-        x (dict): First dictionary
-        y (dict): Second dictionary, should have the same keys as x
-
-    Returns:
-        tuple[dict, dict]: Subdictionaries that only contain the
-        maximizing candidates. 
-    """
-    argmax_x = max(x, key=x.get)
-    argmax_y = max(y, key=y.get)
-    keys = [k for k in x if x[k] >= x[argmax_y] and y[k] >= y[argmax_x]]
-    return (
-        {k: x[k] for k in keys},
-        {k: y[k] for k in keys}
-    )
-
-
 def met(bin_state: int, pt) -> int:
     """Get the metastasis part of a state, both binary and state-space
     restricted to some state vector x.
@@ -94,6 +81,29 @@ def met(bin_state: int, pt) -> int:
         "".join(
             i for i, pt_ev in zip(bin(bin_state)[2:], pt[::-1]) if not pt_ev),
         base=2)
+
+
+def get_combos(order: np.array, n: int) -> list[tuple[np.array]]:
+    """For a order of events in PT and Met, there are usually multiple
+    timepoints at which the first observation could have happened.
+    This function returns all possible combinations of pre- and past-
+    first-observation events.
+
+    Args:
+        order (np.array): Sequence of PT and Met events as integers
+        n (int): number of events in total
+
+    Returns:
+        list[tuple[np.array]]: List of combinations of pre- and past-
+    first-observation events.
+    """
+    seeding = np.where(order == 2*n)[0]
+    combos = list()
+    for i in range(len(order)-seeding[0]):
+        combos.append(np.split(order, [len(order)-i]))
+        if not order[-i - 1] % 2:
+            break
+    return combos
 
 
 class bits_fixed_n:
@@ -268,11 +278,14 @@ class MetMHN:
 
                     if pt_terminal:
 
+                        obs1 = np.exp(self.obs1[
+                            events[state_events][pt[state_events]]].sum())
                         obs2 = np.exp(self.obs2[
                             events[state_events][~pt[state_events]]].sum())
+
                         denom2 = 1 / \
                             (obs2 - diag_unpaired[met(current_state, pt)])
-                        start_factor = obs2 * denom2
+                        start_factor = obs1 * denom2
 
                     # iterate over all previous states
                     for pre_state, pre_orders1 in A1[1].items():
@@ -296,7 +309,7 @@ class MetMHN:
                                 events[state_events][pt[state_events]]].sum())
                         else:  # new event is met
                             denom1 = 1 / (np.exp(self.obs1[
-                                events[state_events][~pt[state_events]]].sum())
+                                events[state_events][pt[state_events]]].sum())
                                 - diag_paired[current_state])
                             num = np.exp(self.log_theta[
                                 events[new_event],
@@ -372,7 +385,7 @@ class MetMHN:
                     # stand a chance to be maximal
                     if pt_terminal:
                         A1[2][current_state], A2[1][current_state] = \
-                            tuple_max_2(
+                            tuple_max(
                                 A1[2][current_state],
                                 A2[1][current_state])
 
@@ -435,57 +448,121 @@ class MetMHN:
         bin_state = int("1" * k, base=2)
         arg_max = np.argmax(A2[0][bin_state]["prob"])
         o, p = A2[0][bin_state][arg_max]
+        p *= np.exp(self.obs2[events[state_events][~pt[state_events]]].sum())
         return int_to_order(o, np.nonzero(state)[0].tolist()), p
 
-    # def likeliest_order_unpaired(self, state: np.array, tau: int) -> tuple[float, np.array]:
-    #     """For a given state, this returns the order in which the events
-    #     were most likely to accumulate.
-    #     So far, this only works for an unpaired state which was observed
-    #     at a timepoint that is an exponentially distributed random
-    #     variable with rate tau1 or tau2.
+    def _likelihood_two_orders(self, order_1: np.array, order_2: np.array) -> float:
+        """ Compute the likelihood of two orders of events happening before the first
+        and the second observation 
 
-    #     Args:
-    #         state (np.array): Binary unpaired state vector. Shape (n,)
-    #         with n the number of events including seeding.
-    #         tau (int): Which rate parameter to use, tau1 or tau2. Must
-    #         be either 1 or 2.
+        Args:
+            order_1 (np.array): Order of events (2i and 2i+1 encode the ith events happening in PT and Met respectively)
+            that have happened when the first observation has been made. Note that these do not correspond to the actual PT
+            observation, as it is possible that events have happened in the metastasis that are not visible in the PT 
+            observation.
+            order_2 (np.array): Order of events (2i and 2i+1 encode the ith events happening in PT and Met respectively)
+            that have happened when the second observation has been made. Note that these do not correspond to the actual Met
+            observation, as it is possible that events have happened in the primary tumor that are not visible in the Met 
+            observation.
 
-    #     Returns:
-    #         float: likelihood of the order.
-    #         np.array likeliest order.
-    #     """
-    #     restr_diag = self.get_diag_unpaired(state=state)
-    #     log_theta = self.log_theta[state.astype(bool)][:, state.astype(bool)]
-    #     if tau not in [1, 2]:
-    #         raise ValueError("tau must be either 1 or 2.")
-    #     tau = self.tau1 if tau == 1 else self.tau2
+        Returns:
+            float: likelihood of these two orders happening
+        """
+        # translate first observation to state
+        state = np.zeros(2 * self.n + 1, dtype=int)
+        if len(order_1) > 0:
+            state[order_1] = 1
+        diag = get_diag_paired(log_theta=self.log_theta, n=self.n, state=state)
 
-    #     k = state.sum()
-    #     # {state: highest path probability to this state}
-    #     A = {0: tau / (tau - restr_diag[0])}
-    #     # {state: path with highest probability to this state}
-    #     B = {0: []}
-    #     for i in range(1, k+1):         # i is the number of events
-    #         A_new = dict()
-    #         B_new = dict()
-    #         for st in bits_fixed_n(n=i, k=k):  # all states with i events
-    #             A_new[st] = -1
-    #             state_events = np.array(
-    #                 # events in state
-    #                 [i for i in range(k) if (1 << i) | st == st])
-    #             for e in state_events:
-    #                 pre_st = st - (1 << e)  # pre state
-    #                 # numerator of additional factor
-    #                 num = np.exp(log_theta[e, state_events].sum())
-    #                 if A[pre_st] * num > A_new[st]:
-    #                     A_new[st] = A[pre_st] * num
-    #                     B_new[st] = B[pre_st].copy()
-    #                     B_new[st].append(e)
-    #             A_new[st] /= (tau - restr_diag[st])
-    #         A = A_new
-    #         B = B_new
-    #     i = (1 << k) - 1
-    #     return (A[i], np.arange(self.log_theta.shape[0])[state.astype(bool)][B[i]])
+        event_to_bin = {e: 1 << i for i, e in enumerate(np.sort(order_1))}
+
+        p = 1 / (1 - diag[0])
+
+        current_state = np.zeros(2 * self.n + 1)
+        current_state_bin = 0  # binary state
+        seeded = False
+        for i, e in enumerate(order_1):
+            if not seeded:
+                if i % 2:  # if the seeding has not happened yet, every second event is just the second part of the joint development
+                    continue
+                if e == 2 * self.n:  # seeding
+                    seeded = True
+                    current_state[-1] = 1
+                    current_state_bin += event_to_bin[2 * self.n]
+                    p *= (np.exp(self.log_theta[
+                        self.n, current_state[::2].astype(bool)].sum())
+                        / (np.exp(self.obs1[
+                            np.append(current_state[:-1:2].astype(bool), False)].sum())
+                           - diag[current_state_bin]))
+                else:
+                    current_state[[e, e + 1]] = 1
+                    current_state_bin += (event_to_bin[e] +
+                                          event_to_bin[e + 1])
+                    p *= (np.exp(self.log_theta[
+                        e // 2, current_state[::2].astype(bool)].sum())
+                        / (np.exp(self.obs1[
+                            np.append(current_state[:-1:2].astype(bool), False)].sum())
+                           - diag[current_state_bin]))
+            else:
+                current_state[e] = 1
+                current_state_bin += event_to_bin[e]
+                if not e % 2:  # PT event
+                    p *= (np.exp(self.log_theta[
+                        e//2, np.append(
+                            current_state[:-1:2].astype(bool), False)].sum())
+                          / (np.exp(self.obs1[
+                              np.append(current_state[:-1:2].astype(bool), False)].sum())
+                             - diag[current_state_bin]))
+                else:  # Met event
+                    p *= (np.exp(self.log_theta[
+                        e//2, np.append(
+                            current_state[1::2].astype(bool), True)].sum())
+                          / (np.exp(self.obs1[
+                              np.append(current_state[:-1:2].astype(bool), False)].sum())
+                             - diag[current_state_bin]))
+            pass
+
+        p *= np.exp(self.obs1[
+            np.append(current_state[:-1:2].astype(bool), False)].sum())
+        current_state = np.append(state[1::2], [1])  # reduce to met events
+        k = len(order_2) + current_state.sum()
+        state = current_state.copy()
+        if len(order_2) > 0:
+            state[order_2 // 2] = 1
+        event_to_bin = {e: 1 << i for i, e in enumerate(np.nonzero(state)[0])}
+        current_state_bin = (
+            current_state[state.astype(bool)] << np.arange(k)).sum()
+        diag = self.get_diag_unpaired(state=state)
+        p /= (np.exp(self.obs2[current_state.astype(bool)].sum())
+              - diag[current_state_bin])
+
+        for i, e in enumerate(order_2):
+            e = e//2
+            current_state[e] = 1
+            current_state_bin += event_to_bin[e]
+            p *= (np.exp(self.log_theta[e, current_state.astype(bool)].sum())
+                  / (np.exp(self.obs2[current_state.astype(bool)].sum())
+                     - diag[current_state_bin]))
+            pass
+
+        p *= np.exp(self.obs2[current_state.astype(bool)].sum())
+
+        return p
+
+    def likelihood(self, order: tuple[int]) -> float:
+        """This function returns the probability of observing a specific
+        order of events after two observations (timepoint of first
+        observation does not matter)
+
+        Args:
+            order (tuple[int]): Sequence of events
+
+        Returns:
+            float: Probability of observing this order.
+        """
+        return sum(
+            self._likelihood_two_orders(o1, o2) for o1, o2 in get_combos(
+                order=np.array(order), n=self.n))
 
     def simulate(self, timepoint: int) -> tuple[np.array, float]:
         """This function simulates one sample according to the metMHN.
@@ -535,6 +612,7 @@ if __name__ == "__main__":
     log_theta.drop(index=[0, 1], inplace=True)
     mmhn = MetMHN(log_theta=log_theta.to_numpy(), obs1=obs1, obs2=obs2)
     state = np.zeros(2 * mmhn.n + 1, dtype=int)
-    state[[0, 1, 4, 5, 8, 20, 23, 30, 31, -1]] = 1
+    state[[0, 1, -1, 3]] = 1
 
+    mmhn.likelihood(order_1=np.array([0, 1, 42, 3]), order_2=np.array([]))
     print(mmhn.likeliest_order_paired(state))
