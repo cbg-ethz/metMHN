@@ -1,6 +1,6 @@
-from MetaMHN.perf import order_to_int, int_to_order, append_to_int_order
+from metmhn.perf import order_to_int, int_to_order, append_to_int_order
 from collections import deque
-from np.kronvec import kron_diag as get_diag_paired
+from metmhn.np.kronvec import kron_diag as get_diag_paired
 from scipy.linalg.blas import dcopy, dscal, daxpy
 import numpy as np
 
@@ -451,19 +451,24 @@ class MetMHN:
         p *= np.exp(self.obs2[events[state_events][~pt[state_events]]].sum())
         return int_to_order(o, np.nonzero(state)[0].tolist()), p
 
-    def _likelihood_two_orders(self, order_1: np.array, order_2: np.array) -> float:
-        """ Compute the likelihood of two orders of events happening before the first
-        and the second observation 
+    def _likelihood_two_orders(self, order_1: np.array, order_2: np.array
+                               ) -> float:
+        """ Compute the likelihood of two orders of events happening
+        before the first and the second observation 
 
         Args:
-            order_1 (np.array): Order of events (2i and 2i+1 encode the ith events happening in PT and Met respectively)
-            that have happened when the first observation has been made. Note that these do not correspond to the actual PT
-            observation, as it is possible that events have happened in the metastasis that are not visible in the PT 
-            observation.
-            order_2 (np.array): Order of events (2i and 2i+1 encode the ith events happening in PT and Met respectively)
-            that have happened when the second observation has been made. Note that these do not correspond to the actual Met
-            observation, as it is possible that events have happened in the primary tumor that are not visible in the Met 
-            observation.
+            order_1 (np.array): Order of events (2i and 2i+1 encode the
+            ith events happening in PT and Met respectively) that have
+            happened when the first observation has been made. Note that
+            these do not correspond to the actual PT observation, as it
+            is possible that events have happened in the metastasis that
+            are not visible in the PT observation.
+            order_2 (np.array): Order of events (2i and 2i+1 encode the
+            ith events happening in PT and Met respectively) that have
+            happened when the second observation has been made. Note
+            that these do not correspond to the actual Metobservation,
+            as it is possible that events have happened in the primary
+            tumor that are not visible in the Met observation.
 
         Returns:
             float: likelihood of these two orders happening
@@ -483,7 +488,9 @@ class MetMHN:
         seeded = False
         for i, e in enumerate(order_1):
             if not seeded:
-                if i % 2:  # if the seeding has not happened yet, every second event is just the second part of the joint development
+                # if the seeding has not happened yet, every second
+                # event is just the second part of the joint development
+                if i % 2:
                     continue
                 if e == 2 * self.n:  # seeding
                     seeded = True
@@ -491,8 +498,8 @@ class MetMHN:
                     current_state_bin += event_to_bin[2 * self.n]
                     p *= (np.exp(self.log_theta[
                         self.n, current_state[::2].astype(bool)].sum())
-                        / (np.exp(self.obs1[
-                            np.append(current_state[:-1:2].astype(bool), False)].sum())
+                        / (np.exp(self.obs1[np.append(
+                            current_state[:-1:2].astype(bool), False)].sum())
                            - diag[current_state_bin]))
                 else:
                     current_state[[e, e + 1]] = 1
@@ -500,8 +507,8 @@ class MetMHN:
                                           event_to_bin[e + 1])
                     p *= (np.exp(self.log_theta[
                         e // 2, current_state[::2].astype(bool)].sum())
-                        / (np.exp(self.obs1[
-                            np.append(current_state[:-1:2].astype(bool), False)].sum())
+                        / (np.exp(self.obs1[np.append(
+                            current_state[:-1:2].astype(bool), False)].sum())
                            - diag[current_state_bin]))
             else:
                 current_state[e] = 1
@@ -510,15 +517,15 @@ class MetMHN:
                     p *= (np.exp(self.log_theta[
                         e//2, np.append(
                             current_state[:-1:2].astype(bool), False)].sum())
-                          / (np.exp(self.obs1[
-                              np.append(current_state[:-1:2].astype(bool), False)].sum())
+                          / (np.exp(self.obs1[np.append(
+                              current_state[:-1:2].astype(bool), False)].sum())
                              - diag[current_state_bin]))
                 else:  # Met event
                     p *= (np.exp(self.log_theta[
                         e//2, np.append(
                             current_state[1::2].astype(bool), True)].sum())
-                          / (np.exp(self.obs1[
-                              np.append(current_state[:-1:2].astype(bool), False)].sum())
+                          / (np.exp(self.obs1[np.append(
+                              current_state[:-1:2].astype(bool), False)].sum())
                              - diag[current_state_bin]))
             pass
 
@@ -587,8 +594,11 @@ class MetMHN:
         t = np.random.exponential(-1 /
                                   self.get_diag_unpaired(state=state)[-1])
         while t < t_obs:
-            probs = [np.exp(self.log_theta[e, events[state.astype(bool)]].sum(
-            ) + self.log_theta[e, e]) for e in events[~state.astype(bool)]]
+            probs = [
+                np.exp(self.log_theta[
+                    e, events[state.astype(bool)]].sum()
+                    + self.log_theta[e, e])
+                for e in events[~state.astype(bool)]]
             ps = sum(probs)
             probs = [p/ps for p in probs]
             e = np.random.choice(events[~state.astype(bool)], p=probs)
@@ -614,5 +624,5 @@ if __name__ == "__main__":
     state = np.zeros(2 * mmhn.n + 1, dtype=int)
     state[[0, 1, -1, 3]] = 1
 
-    mmhn.likelihood(order_1=np.array([0, 1, 42, 3]), order_2=np.array([]))
+    print(mmhn.likelihood((0, 1, 42, 3)))
     print(mmhn.likeliest_order_paired(state))
