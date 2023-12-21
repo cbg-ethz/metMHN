@@ -4,5 +4,5 @@ from Cython.Build import cythonize
 setup(
     name='metmhn',
     packages=find_packages(),
-    ext_modules = cythonize("src/perf.pyx")
+    ext_modules = cythonize("metmhn/perf.pyx")
 )
