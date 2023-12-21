@@ -451,6 +451,192 @@ class MetMHN:
         p *= np.exp(self.obs2[events[state_events][~pt[state_events]]].sum())
         return int_to_order(o, np.nonzero(state)[0].tolist()), p
 
+    def most_probable_order(self, state: np.array, first_obs: str
+                            ) -> tuple[tuple[int, ...], float]:
+        """Returns the most probable order for a coupled observation 
+        consisting of PT and Met
+
+        Args:
+            state (np.array): state describing the coupled observation, 
+            shape (2*n + 1).
+            first_obs (str): Which was the first observation. Must be 
+            one of "Met", "PT" or "sync"
+
+        Returns:
+            tuple[tuple[int, ...], float]: most probable order and its 
+            probability
+        """
+        pass
+
+    def _most_probable_order_sync(self, state: np.array
+                                  ) -> tuple[tuple[int, ...], float]:
+        """Returns the most probable order for a coupled observation 
+        consisting of PT and Met if they were observed at the same time
+
+        Args:
+            state (np.array): state describing the coupled observation, 
+            shape (2*n + 1).
+
+        Returns:
+            tuple[tuple[int, ...], float]: most probable order and its 
+            probability
+        """
+        raise NotImplementedError
+
+        k = state.sum()
+        if not reachable(
+                bin_state=int("1" * k, base=2), n=self.n, state=state):
+            raise ValueError("This state is not reachable by mhn.")
+
+        # whether active events belong to pt
+        pt = np.nonzero(state)[0] % 2 == 0
+        pt[-1] = False
+
+        # get the numbers of events
+        events = np.nonzero(state)[0] // 2
+
+        # get the positions of the pt 1s
+        pt_events = np.nonzero(pt.astype(int))[0]
+        diag_paired = get_diag_paired(
+            log_theta=self.log_theta, n=self.n, state=state)
+
+        # In A[i][state][order], the probabilities to reach a state with
+        # a given order are stored. Here, i can be 0, 1 or 2, where A[2]
+        # holds the states that have n_events events and A[1] and A[0]
+        # hold the ones with 1 and 2 events less, respectively.
+        order_type = [("order", int), ("prob", float)]
+        A = deque([
+            dict(),
+            {0: np.array(
+                [(0, 1 / (1 - diag_paired[0]))],
+                dtype=order_type)}])
+
+        for n_events in range(1, k + 1):
+            # create dicts to hold the probs and orders to reach states
+            # with n_events events
+            A.append(dict())
+
+            # iterate over all states with n_events events
+            for current_state in bits_fixed_n(n=n_events, k=k):
+
+                # check whether state is reachable
+                if not reachable(
+                        bin_state=current_state, state=state, n=self.n):
+                    continue
+
+                # whether seeding has happened
+                if current_state & (1 << (k - 1)):
+
+                    # get the positions of the 1s
+                    state_events = [
+                        i for i in range(k)
+                        if (1 << i) | current_state == current_state]
+
+                    # initialize empty numpy struct array for probs and
+                    # orders to reach current_state
+                    A[2][current_state] = np.empty([0], dtype=order_type)
+
+                    obs1 = np.exp(self.obs1[
+                        events[state_events][pt[state_events]]].sum())
+                    obs2 = np.exp(self.obs2[
+                        events[state_events][~pt[state_events]]].sum())
+
+                    # iterate over all previous states
+                    for pre_state, pre_orders in A[1].items():
+
+                        # Skip pre_state if it is not a subset of
+                        # current_state
+                        if not (current_state | pre_state == current_state):
+                            continue
+
+                        # get the position of the new 1
+                        new_event = bin(current_state ^ pre_state)[
+                            :1:-1].index("1")
+
+                        # whether new event is pt
+                        if pt[new_event]:  # new event is pt
+                            num = np.exp(self.log_theta[
+                                events[new_event],
+                                events[state_events][pt[state_events]]].sum())
+                        else:  # new event is met
+                            num = np.exp(self.log_theta[
+                                events[new_event],
+                                events[state_events][~pt[state_events]]].sum())
+
+                        # Assign the probabilities for A1
+                        new_orders = pre_orders.copy()
+                        new_orders["prob"] *= (num * denom)
+                        new_orders["order"] = append_to_int_order(
+                            new_orders["order"],
+                            numbers=[
+                                e for e in state_events if e != new_event],
+                            new_event=new_event)
+                        A[2][current_state] = np.append(
+                            A[2][current_state],
+                            new_orders
+                        )
+
+                else:
+                    # seeding has not happened yet
+                    # get positions of 1s
+                    state_events = [i for i in range(k) if (
+                        1 << i) | current_state == current_state]
+
+                    # initialize empty numpy struct array for probs and
+                    # orders to reach current_state
+                    A[2][current_state] = np.empty([0], dtype=order_type)
+
+                    denom = 1 / (np.exp(self.obs1[
+                        events[state_events][pt[state_events]]].sum()) -
+                        diag_paired[current_state])
+
+                    for pre_state, pre_orders in A[0].items():
+
+                        # Skip pre_state if it is not a subset of
+                        # current_state
+                        if not (current_state | pre_state == current_state):
+                            continue
+
+                        # get the position of the new 1
+                        new_event = bin(current_state ^ pre_state)[
+                            :1:-1].index("1")
+
+                        # get the numerator
+                        num = np.exp(self.log_theta[
+                            events[new_event],
+                            events[state_events][pt[state_events]]].sum())
+
+                        # Assign the probabilities for A1
+                        new_orders = pre_orders.copy()
+                        new_orders["prob"] *= num * denom
+                        new_orders["order"] = append_to_int_order(
+                            my_int=append_to_int_order(
+                                my_int=new_orders["order"],
+                                numbers=[e for e in state_events if e not in [
+                                    new_event, new_event + 1]],
+                                new_event=new_event
+                            ),
+                            numbers=[
+                                e for e in state_events if e != new_event],
+                            new_event=new_event + 1
+                        )
+                        A[2][current_state] = np.append(
+                            A[2][current_state],
+                            new_orders)
+
+                    # just keep the most likely order to reach
+                    # current_state
+                    A[2][current_state] = A[2][current_state][
+                        [np.argmax(A[2][current_state]["prob"])]]
+
+            # remove the orders and probs that we do not need anymore
+            A.popleft()
+
+        bin_state = int("1" * k, base=2)
+        o, p = A[1][bin_state]
+        p *= np.exp(self.obs2[events[state_events][~pt[state_events]]].sum())
+        return int_to_order(o, np.nonzero(state)[0].tolist()), p
+
     def _likelihood_two_orders(self, order_1: np.array, order_2: np.array
                                ) -> float:
         """ Compute the likelihood of two orders of events happening
