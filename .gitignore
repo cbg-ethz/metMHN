@@ -1,8 +1,9 @@
 __pycache__
-src/crossval.log
-.venv
+logs/*
+.vscode
 
 # package installation
 build
 dist
 *.egg-info
+env/*
