@@ -3,19 +3,19 @@
 metMHN is an extension to the MHN-algorithm by Schill et al. (2019) and Schill et al. (2023) to account for the joint evolution of primary tumor and metastasis pairs. It accounts for sampling bias and different primary/tumor metastasis diagnosis orders (i.e. synchroneous vs. metachronous diagnosis)
 
 ## Installation
-We advise to use a virtual environment.
+we advise to use a virtual environment.
 Create a new virtual environment
 
 ```bash
 python3 -m venv .venv
 ```
 
-Activate the virtual environment:
+Activate the virtual environment
 
 ```bash
 source .venv/bin/activate
 ```
-We rely on the [JAX](https://github.com/google/jax) library for our computations. If you **don't have access to a gpu** please install the cpu-only version of the libraries by running: 
+We rely on the [JAX] (https://github.com/google/jax) library for our computations. If you **don't have access to a gpu** please install the cpu-only version of the libraries by running: 
 
 ```bash
 pip3 install -r requirements.txt
