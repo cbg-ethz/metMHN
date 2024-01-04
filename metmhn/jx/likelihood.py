@@ -407,10 +407,11 @@ def _lp_met_obs(log_theta: jnp.ndarray, log_d_pt: jnp.ndarray, log_d_mt: jnp.nda
     p0 = p0.at[0].set(1.)
     d_p, d_m = mhn.scal_d_pt(log_d_pt, log_d_mt, state_mt, jnp.ones(2**n_met))
     d_rates = d_p + d_m
-    pTh = mhn.R_inv_vec(log_theta, p0, state_mt, d_rates, False) * d_rates
-    return jnp.log(pTh[-1])
+    pTh = mhn.R_inv_vec(log_theta, p0, state_mt, d_rates, False)
+    return jnp.log(pTh[-1] * d_rates[-1])
 
  
+@partial(jit, static_argnames=["n_prim"])
 def _grad_prim_obs(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, 
                    state_prim: jnp.ndarray, n_prim: int) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """This computes log prob to observe a PT and its gradients wrt. theta, d_p
@@ -433,6 +434,7 @@ def _grad_prim_obs(log_theta: jnp.ndarray, log_d_p: jnp.ndarray,
     return jnp.log(pTh2[-1]), d_th, d_dp
 
 
+@partial(jit, static_argnames=["n_met"])
 def _grad_met_obs(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, 
                    state_met: jnp.ndarray, n_met: int
                    ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
@@ -466,7 +468,7 @@ def _grad_met_obs(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.nda
     return jnp.log(score*d_rates[-1]), d_th, -d_dp, d_dm_1 - d_dm_2
 
 
-def _g_coupled_0(log_theta: jnp.ndarray, log_d_p: jnp.array, log_d_m: jnp.ndarray, 
+def _g_coupled_0(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, 
                state_joint: jnp.ndarray, n_prim: int, n_met: int
                ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """This computes the log. prob to observe a PT and MT at the same time in the same patient and 

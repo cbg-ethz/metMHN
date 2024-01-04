@@ -269,8 +269,9 @@ def grad_coupled(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndar
 
 
 def grad(params: np.ndarray, dat_prim_only: jnp.ndarray, dat_prim_met:jnp.ndarray, 
-         dat_met: jnp.ndarray, dat_coupled: jnp.ndarray, penal: float, perc_met: float) -> np.array:
-    """Calculates the gradient of log_lik wrt. to all log(\theta_ij)
+         dat_met: jnp.ndarray, dat_coupled: jnp.ndarray, penal: float, 
+         perc_met: float) -> tuple[np.array, np.array]:
+    """Calculates the gradient and log_lik wrt. to all log(\theta_ij)
 
     Args:
         params (np.array):          Array of size n*(n+2), holding all parameters of the model 
@@ -291,27 +292,35 @@ def grad(params: np.ndarray, dat_prim_only: jnp.ndarray, dat_prim_met:jnp.ndarra
     n_m_o, n_p_m, n_c = dat_met.shape[0], dat_prim_met.shape[0], dat_coupled.shape[0]
     n_p_o = dat_prim_only.shape[0]
     
+    # Transfer parameters to the device
     log_theta = jnp.array(params[0:n_total**2]).reshape((n_total, n_total))
     log_d_p = jnp.array(params[n_total**2:n_total*(n_total + 1)])
     log_d_m = jnp.array(params[n_total*(n_total+1):])
 
-    # Derivatives of penalties
+    # Penalties and their derivatives
     l1_ = np.concatenate((sym_penal_(log_theta), L1_(log_d_p), L1_(log_d_m)))
-    _, g_prim = grad_prim_only(log_theta, log_d_p, dat_prim_only)
-    _, g_prim_met = grad_prim_only(log_theta, log_d_p, dat_prim_met)
-    _, g_met_only = grad_met_only(log_theta, log_d_p, log_d_m, dat_met)
-    _, g_coupled = grad_coupled(log_theta, log_d_p, log_d_m, dat_coupled)
+    l1 = sym_penal(log_theta) + L1(log_d_p) + L1(log_d_m)
+    
+    # Scores and gradients of all datasets
+    score_prim, g_prim = grad_prim_only(log_theta, log_d_p, dat_prim_only)
+    score_prim_met, g_prim_met = grad_prim_only(log_theta, log_d_p, dat_prim_met)
+    score_met_only, g_met_only = grad_met_only(log_theta, log_d_p, log_d_m, dat_met)
+    score_coupled, g_coupled = grad_coupled(log_theta, log_d_p, log_d_m, dat_coupled)
+    
     #w_m_o = n_c/n_m_o
     #w_p_m = n_c/n_p_m
     #g_mets = g_coupled + w_p_m * g_prim_met + w_m_o * g_met_only
+    score_mets = score_prim_met + score_met_only + score_coupled
     g_mets = g_coupled + g_prim_met + g_met_only
     #n_mets = n_c + w_m_o * n_m_o + w_p_m * n_p_m
     n_mets = n_c + n_m_o + n_p_m
     w = (1-perc_met)*n_mets/(perc_met * n_p_o)
     n_dat = w*n_p_o + n_mets
     g = w*g_prim + g_mets
+    score = w * score_prim + score_mets
     # The SciPy-Optimizer only takes np.arrays as input
-    return np.array(-g + penal * n_dat * l1_)
+    logging.info(f"score {score}, score_prim {score_prim}, score_c {score_coupled}, score_pm {score_prim_met}, score_mo {score_met_only}")
+    return np.array(-score + penal * n_dat * l1), np.array(-g + penal * n_dat * l1_)
 
 
 def learn_mhn(th_init: jnp.ndarray, dp_init: jnp.ndarray, dm_init: jnp.ndarray, 
@@ -348,7 +357,7 @@ def learn_mhn(th_init: jnp.ndarray, dp_init: jnp.ndarray, dm_init: jnp.ndarray,
     """
     n_total = th_init.shape[0]
     start_params = np.concatenate((th_init.flatten(), dp_init, dm_init))
-    x = opt.minimize(fun=log_lik, jac=grad, x0=start_params, method="L-BFGS-B",  
+    x = opt.minimize(fun=grad, jac=True, x0=start_params, method="L-BFGS-B",  
                      args=(dat_prim_only, dat_prim_met, dat_met, dat_coupled, penal, perc_met), 
                      options={"maxiter":opt_iter, "disp": opt_v, "ftol": opt_ftol})
     theta = jnp.array(x.x[:n_total**2]).reshape((n_total, n_total))

@@ -4,28 +4,20 @@ from metmhn.jx.kronvec import (k2d1t,
                                k2d10,
                                k2d0t
                                )
-import numpy as np
 import jax.numpy as jnp
 from jax import jit, lax, vmap
 from functools import partial
 
 
-
-@jit
-def t(z: jnp.ndarray) -> tuple[jnp.ndarray, float]:
-    z = z.reshape((-1, 2), order="C")
-    val = z.sum()
-    return z.flatten(order="F"), val
+def k1d1(p: jnp.ndarray, theta: jnp.ndarray) -> jnp.ndarray:
+    return p
 
 
-@jit
-def f(z: jnp.ndarray) -> tuple[jnp.ndarray, float]:
-    z = z.reshape((-1, 2), order="C")
-    val = z[:, 1].sum()
-    return z.flatten(order="F"), val
+def k1dt(p: jnp.ndarray, theta: jnp.ndarray, 
+         diag: bool = True, transpose: bool = True) -> jnp.ndarray:
+    return -theta*p
 
 
-@partial(jit, static_argnames=["diag", "transpose"])
 def _kronvec(
     log_theta: jnp.ndarray,
     p: jnp.ndarray,
@@ -36,39 +28,34 @@ def _kronvec(
     ) -> jnp.ndarray:
 
     def loop_body_diag(j, val):
-
-        val = lax.switch(
-            index=state[j],
-            branches=[
-                lambda x: x,
-                lambda x: k2d1t(p=x, theta=jnp.exp(
-                    log_theta[i, j]))
-            ],
-            operand=val
-        )
+        val = lax.cond(
+            state[j] == 0,
+            k1d1, k2d1t,
+            val, theta_i[j])
         return val
     
     n = log_theta.shape[0]
+    theta_i = jnp.exp(log_theta[i,:])
     # Diagonal Kronecker factors
     p = lax.fori_loop(lower=0, upper=i,
                       body_fun=loop_body_diag, init_val=p)
 
     # Non-diagonal Kronecker factor
-    p = lax.switch(
-        index=state[i],
-        branches=[
-            lambda x: -jnp.exp(log_theta[i, i]) * x,
-            lambda x: k2ntt(p=x, theta=jnp.exp(log_theta[i, i]),
-                            diag=diag, transpose=transpose),
-        ],
-        operand=p
-    )
+    p = lax.cond(
+        state[i] == 0,
+        k1dt, k2ntt,
+        p, theta_i[i], diag, transpose)
 
     # Diagonal Kronecker factors
     p = lax.fori_loop(lower=i+1, upper=n,
                       body_fun=loop_body_diag, init_val=p)
 
     return p
+
+
+def zero_fun(log_theta: jnp.ndarray, p: jnp.ndarray, i: int, state: jnp.ndarray, 
+             diag: bool, transpose: bool) -> jnp.ndarray:
+    return 0.*p
 
 
 @partial(jit, static_argnames=["diag", "transpose"])
@@ -82,16 +69,10 @@ def kronvec_i(
     ) -> jnp.ndarray:
     return lax.cond(
         not diag and state[i] != 1,
-        lambda: jnp.zeros_like(p),
-        lambda: _kronvec(
-            log_theta=log_theta,
-            p=p,
-            i=i,
-            state=state,
-            diag=diag,
-            transpose=transpose
-        ),
-    )
+        zero_fun,
+        _kronvec,
+        log_theta, p, i, state, diag, transpose
+        )
 
 
 @partial(jit, static_argnames=["diag", "transpose"])
@@ -112,80 +93,114 @@ def kronvec(log_theta: jnp.ndarray, p: jnp.ndarray, state: jnp.ndarray,
         jnp.array: Q p or p^T Q
     """
 
-    def body_fun(i, val):
-
-        val += kronvec_i(log_theta=log_theta, p=p, i=i,
-                         state=state, diag=diag, transpose=transpose)
-
-        return val
+    #def body_fun(i, val):
+    #
+    #    val += kronvec_i(log_theta=log_theta, p=p, i=i,
+    #                     state=state, diag=diag, transpose=transpose)
+    #
+    #    return val
+    
     n = log_theta.shape[0]
-    state_size = np.log2(p.shape[0]).astype(int)
-    return lax.fori_loop(
-        lower=0,
-        upper=n,
-        body_fun=body_fun,
-        init_val=jnp.zeros(shape=2**state_size)
-    )
+    return jnp.sum(
+        vmap(kronvec_i, (None, None, 0, None, None, None), 0)(log_theta, p, jnp.arange(n, dtype=int), state, diag, transpose), 
+        0)
+    #return lax.fori_loop(
+    #    lower=0,
+    #    upper=n,
+    #    body_fun=body_fun,
+    #    init_val=jnp.zeros_like(p)
+    #)
+
+
+def _scal_p_d(x: tuple[jnp.ndarray, jnp.ndarray], d_p: jnp.ndarray, 
+              d_m: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+    return (k2d1t(x[0], d_p), k2d1t(x[1], d_m))
+
+
+def _scal_p_1(x: tuple[jnp.ndarray, jnp.ndarray], d_p: jnp.ndarray, 
+              d_m: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+    return x
+
 
 @jit
 def scal_d_pt(log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, state: jnp.ndarray, 
-              vec: jnp.ndarray) -> jnp.ndarray:
+              vec: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+    
     def loop_body_diag(j, val):
         val = lax.cond(state[j] == 1,
-                        lambda x: (k2d1t(p=x[0], theta=jnp.exp(log_d_p[j])),
-                                  k2d1t(p=x[1], theta=jnp.exp(log_d_m[j]))),
-                       lambda x: x,
-                       operand=val
+                       _scal_p_d,
+                       _scal_p_1,
+                       val, d_p[j], d_m[j]
                        )
         return val
+    
     n = log_d_m.shape[0]
+    d_p = jnp.exp(log_d_p)
+    d_m = jnp.exp(log_d_m)
     p = lax.fori_loop(lower=0, upper=n-1, 
                       body_fun=loop_body_diag, init_val=(vec, vec))
-    return k2d10(p[0]) , k2d0t(p[1], jnp.exp(log_d_m[-1]))
+    return k2d10(p[0]) , k2d0t(p[1], d_m[-1])
 
 
 def _d_scal_d_pt(log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, state: jnp.ndarray, 
-              vec: jnp.ndarray, i: int) -> jnp.ndarray:
+              vec: jnp.ndarray, i: int) -> tuple[jnp.ndarray, jnp.ndarray]:
+    
     def loop_body_diag(j, val):
         val = lax.cond(state[j] == 1,
-                        lambda x: (k2d1t(p=x[0], theta=jnp.exp(log_d_p[j])),
-                                  k2d1t(p=x[1], theta=jnp.exp(log_d_m[j]))),
-                       lambda x: x,
-                       operand=val
+                       _scal_p_d,
+                       _scal_p_1,
+                       val, d_p[j], d_m[j]
                        )
         return val
+    
     n = log_d_m.shape[0] - 1
-    p = lax.fori_loop(lower=0, upper=i, 
+    d_p = jnp.exp(log_d_p)
+    d_m = jnp.exp(log_d_m)
+    dp_dd = lax.fori_loop(lower=0, upper=i, 
                       body_fun=loop_body_diag, init_val=(vec, vec))
-    d_p = k2d0t(p[0], jnp.exp(log_d_p[i]))
-    d_m = k2d0t(p[1], jnp.exp(log_d_m[i]))
     
-    p = lax.fori_loop(lower=i+1, upper=n, 
-                      body_fun=loop_body_diag, init_val=(d_p, d_m))
+    dp_dd = (k2d0t(dp_dd[0], d_p[i]), k2d0t(dp_dd[1], d_m[i]))
     
-    return k2d10(p[0]),  k2d0t(p[1], jnp.exp(log_d_m[-1]))
+    dp_dd = lax.fori_loop(lower=i+1, upper=n, 
+                      body_fun=loop_body_diag, init_val=dp_dd)
+    
+    return k2d10(dp_dd[0]),  k2d0t(dp_dd[1], d_m[-1])
+
+
+def zero_tuple_fun(log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, state: jnp.ndarray, 
+              vec: jnp.ndarray, i:int) -> tuple[jnp.ndarray, jnp.ndarray]:
+    return (0. * vec, 0. * vec)
+
+
+def tuple_0_ddm(log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, state: jnp.ndarray, 
+              vec: jnp.ndarray, i:int) -> tuple[jnp.ndarray, jnp.ndarray]:
+    return (0*vec, scal_d_pt(log_d_p, log_d_m, state, vec)[1])
+
 
 @jit 
 def d_scal_d_pt(log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, state: jnp.ndarray, 
-              vec: jnp.ndarray, i:int) -> jnp.ndarray:
+              vec: jnp.ndarray, i:int) -> tuple[jnp.ndarray, jnp.ndarray]:
     n = log_d_p.shape[0]-1
     return lax.switch(state[i] + (i==n),
-                    [lambda: (0*vec, 0*vec),
-                    lambda: _d_scal_d_pt(log_d_p, log_d_m, state, vec, i),
-                    lambda: (0*vec, scal_d_pt(log_d_p, log_d_m, state, vec)[1])]
-    )
+                      [zero_tuple_fun, _d_scal_d_pt, tuple_0_ddm],
+                      log_d_p, log_d_m, state, vec, i
+                    )
+
 
 @jit
 def x_partial_D_y(log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, state: jnp.ndarray, 
-              x: jnp.ndarray, y:jnp.array):
-    def body_fun(i, carry):
+              x: jnp.ndarray, y:jnp.array) -> tuple[jnp.ndarray, jnp.ndarray]:
+    
+    def body_fun(i, log_d_p, log_d_m, state, x, y):
         d_dp, d_dm = d_scal_d_pt(log_d_p, log_d_m, state, y, i)
-        a = carry[0].at[i].set(jnp.dot(x, d_dp))
-        b = carry[1].at[i].set(jnp.dot(x, d_dm))
-        return (a,b)
+        a = jnp.dot(x, d_dp)
+        b = jnp.dot(x, d_dm)
+        return jnp.array([a,b])
+    
     n = log_d_p.shape[0]
-    d_p, d_m = lax.fori_loop(0, n, body_fun,(jnp.zeros_like(log_d_p), jnp.zeros_like(log_d_m)))
-    return d_p, d_m
+    res = vmap(body_fun, (0, None, None, None, None, None), 0)(jnp.arange(n), log_d_p, log_d_m, state, x, y)
+    #d_p, d_m = lax.fori_loop(0, n, body_fun,(jnp.zeros_like(log_d_p), jnp.zeros_like(log_d_m)))
+    return res[:,0], res[:,1]
 
 
 def kron_diag_i(
@@ -193,19 +208,18 @@ def kron_diag_i(
         i: int,
         state: jnp.ndarray,
         diag: jnp.ndarray) -> jnp.ndarray:
-
-    n = log_theta.shape[0]
-
+    
     def loop_body(j, val):
-        val = lax.switch(
-            index=state[j],
-            branches=[
-                lambda val: val,
-                lambda val: k2d1t(val, jnp.exp(log_theta[i, j])),
-            ],
-            operand=val
+        val = lax.cond(
+            state[j] == 0,
+            k1d1, 
+            k2d1t,
+            val, theta_i[j]
         )
         return val
+    
+    n = log_theta.shape[0]
+    theta_i = jnp.exp(log_theta[i, :])
 
     diag = lax.fori_loop(
         lower=0,
@@ -214,14 +228,12 @@ def kron_diag_i(
         init_val=diag
     )
 
-    diag = lax.switch(
-        index=state[i],
-        branches=[
-            lambda val: -jnp.exp(log_theta[i, i]) * val,
-            lambda val: k2dt0(val, jnp.exp(log_theta[i, i])),
-        ],
-        operand=diag
-    )
+    diag = lax.cond(
+        state[i] == 0,
+        k1dt,
+        k2dt0,
+        diag, theta_i[i]
+        )
 
     diag = lax.fori_loop(
         lower=i+1,
@@ -240,18 +252,18 @@ def kron_diag(
         diag: jnp.ndarray
         ) -> jnp.ndarray:
 
-    def body_fun(i, val):
-        val += kron_diag_i(log_theta=log_theta, i=i, state=state, diag=diag)
-        return val
+    #def body_fun(i, val):
+    #    val += kron_diag_i(log_theta=log_theta, i=i, state=state, diag=diag)
+    #    return val
 
     n = log_theta.shape[0]
-
-    return lax.fori_loop(
-        lower=0,
-        upper=n,
-        body_fun=body_fun,
-        init_val=jnp.zeros_like(diag)
-    )
+    return jnp.sum(vmap(kron_diag_i, (None, 0, None, None), 0)(log_theta, jnp.arange(n), state, diag), axis=0)
+    #return lax.fori_loop(
+    #    lower=0,
+    #    upper=n,
+    #    body_fun=body_fun,
+    #    init_val=jnp.zeros_like(diag)
+    #)
 
 
 @partial(jit, static_argnames=["transpose"])
@@ -273,6 +285,10 @@ def R_inv_vec(log_theta: jnp.ndarray,
     Returns:
         np.ndarray: R_i^{-1} x or x^T R_i^{-1}
     """
+
+    def body_fun(j, val):
+        return lidg * (kronvec(log_theta, val, state, False, transpose) + x)
+    
     state_size = jnp.log2(x.shape[0]).astype(int)
 
     lidg = -1 / (kron_diag(log_theta=log_theta,
@@ -282,12 +298,31 @@ def R_inv_vec(log_theta: jnp.ndarray,
     y = lax.fori_loop(
         lower=0,
         upper=state_size+1,
-        body_fun=lambda _, val: lidg * (kronvec(log_theta=log_theta, p=val,
-                                                state=state, diag=False, transpose=transpose) + x),
+        body_fun=body_fun,
         init_val=y
     )
 
     return y
+
+
+def t_x_0(z: jnp.ndarray) -> tuple[jnp.ndarray, float]:
+    return (z, 0.)
+
+
+def t(z: jnp.ndarray) -> tuple[jnp.ndarray, float]:
+    z = z.reshape((-1, 2), order="C")
+    val = z.sum()
+    return z.flatten(order="F"), val
+
+
+def f(z: jnp.ndarray) -> tuple[jnp.ndarray, float]:
+    z = z.reshape((-1, 2), order="C")
+    val = z[:, 1].sum()
+    return z.flatten(order="F"), val
+
+
+def t_x_sum(z: jnp.ndarray) -> tuple[jnp.ndarray, float]:
+    return (z, z.sum())
 
 
 @jit
@@ -315,51 +350,45 @@ def x_partial_Q_y(
     val = jnp.zeros(shape=(n, n))
 
     def body_fun(i, val):
+        
+        def inner_fun(j, val):
+            z, _val = lax.cond(
+                state[j] == 0,
+                t_x_0, 
+                f,
+                val[0]
+                )
+            return z, val[1].at[j].set(_val)
 
         z = x * kronvec_i(log_theta=log_theta,
                           p=y, i=i, state=state)
 
-        def body_fun(j, val):
-
-            z, _val = lax.switch(
-                state[j],
-                [
-                    lambda x: (x, 0.),
-                    lambda x: f(x)
-                ],
-                val[0],
-
-            )
-            return z, val[1].at[j].set(_val)
-
         z, val = lax.fori_loop(
             lower=0,
             upper=i,
-            body_fun=body_fun,
+            body_fun=inner_fun,
             init_val=(z, val)
         )
 
-        z, _val = lax.switch(
-            state[i],
-            [
-                lambda z: (z, z.sum()),
-                lambda z: t(z)
-            ],
-            z,
-        )
+        z, _val = lax.cond(
+            state[i] == 0,
+            t_x_sum,
+            t,
+            z
+            )
+        
         val = val.at[i].set(_val)
 
         z, val = lax.fori_loop(
             lower=i+1,
             upper=n,
-            body_fun=body_fun,
+            body_fun=inner_fun,
             init_val=(z, val)
         )
 
         return val
 
-    val = vmap(body_fun, in_axes=(0, 0), out_axes=0)(
-        jnp.arange(n, dtype=int), val)
+    val = vmap(body_fun, (0,0),0) (jnp.arange(n, dtype=int), val)
     d_diag = -jnp.sum(val, axis=0) + jnp.diagonal(val)
     return val, d_diag
 
