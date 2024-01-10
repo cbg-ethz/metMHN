@@ -558,7 +558,7 @@ class MetMHN:
                         if pre_order[1] * num > A[2][current_state][1]:
                             A[2][current_state][1] = pre_order[1] * num
                             A[2][current_state][0] = append_to_int_order(
-                                pre_order[1],
+                                pre_order[0],
                                 numbers=[
                                     e for e in state_events if e != new_event],
                                 new_event=new_event)
@@ -601,7 +601,7 @@ class MetMHN:
                                 ),
                                 numbers=[
                                     e for e in state_events if e != new_event],
-                                new_event=new_event)
+                                new_event=new_event + 1)
 
                     A[2][current_state][1] /= \
                         (np.exp(self.obs1[
@@ -785,8 +785,14 @@ class MetMHN:
                 obs2 = np.exp(self.obs2[np.append(
                     current_state[1::2].astype(bool), True)].sum())
                 p *= (np.exp(self.log_theta[
-                    event // 2, np.append(
-                        current_state[1::2].astype(bool), True)
+                    event // 2,
+                    np.append(
+                        current_state[1::2].astype(bool),
+                        True)
+                    if event % 2 else
+                    np.append(
+                        current_state[:-1:2].astype(bool),
+                        False)
                 ].sum())
                     / (obs1 + obs2 - diag[current_state_bin]))
         obs1 = np.exp(self.obs1[
@@ -844,10 +850,10 @@ if __name__ == "__main__":
     obs1 = log_theta.iloc[0].to_numpy()
     obs2 = log_theta.iloc[1].to_numpy()
 
-    log_theta.drop(index=[0, 1], inplace=True)
-    mmhn = MetMHN(log_theta=log_theta.to_numpy(), obs1=obs1, obs2=obs2)
+    log_theta = log_theta.drop(index=[0, 1]).to_numpy()
+    mmhn = MetMHN(log_theta=log_theta, obs1=obs1, obs2=obs2)
     state = np.zeros(2 * mmhn.n + 1, dtype=int)
-    state[[0, 1, 42, 3, 4, 33]] = 1
+    state[[0, 1, 42, 3, 4, 33, 6, 5]] = 1
 
-    # print(mmhn.likelihood_sync(np.array([0, 1, 3, 4, 42, 33])))
+    print(mmhn.likelihood_sync(np.array([0, 1, 4, 5, 42, 6, 3, 33])))
     print(mmhn._most_probable_order_sync(state))
