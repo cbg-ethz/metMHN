@@ -761,8 +761,7 @@ class MetMHN:
                     seeded = True
                     current_state[-1] = 1
                     current_state_bin += event_to_bin[2 * self.n]
-                    obs1 = np.exp(self.obs1[np.append(
-                        current_state[:-1:2].astype(bool), False)].sum())
+                    obs1 = np.exp(self.obs1[current_state[::2].astype(bool)].sum())
                     obs2 = np.exp(self.obs2[np.append(
                         current_state[1::2].astype(bool), True)].sum())
 
@@ -773,16 +772,16 @@ class MetMHN:
                     current_state[[event, event + 1]] = 1
                     current_state_bin += (event_to_bin[event] +
                                           event_to_bin[event + 1])
-                    obs1 = np.exp(self.obs1[np.append(
-                        current_state[:-1:2].astype(bool), False)].sum())
+                    obs1 = np.exp(self.obs1[
+                        current_state[::2].astype(bool)].sum())
                     p *= (np.exp(self.log_theta[
                         event // 2, current_state[::2].astype(bool)].sum())
                         / (obs1 - diag[current_state_bin]))
             else:
                 current_state[event] = 1
                 current_state_bin += event_to_bin[event]
-                obs1 = np.exp(self.obs1[np.append(
-                    current_state[:-1:2].astype(bool), False)].sum())
+                obs1 = np.exp(self.obs1[
+                    current_state[::2].astype(bool)].sum())
                 obs2 = np.exp(self.obs2[np.append(
                     current_state[1::2].astype(bool), True)].sum())
                 p *= (np.exp(self.log_theta[
@@ -790,8 +789,8 @@ class MetMHN:
                         current_state[1::2].astype(bool), True)
                 ].sum())
                     / (obs1 + obs2 - diag[current_state_bin]))
-        obs1 = np.exp(self.obs1[np.append(
-            current_state[:-1:2].astype(bool), False)].sum())
+        obs1 = np.exp(self.obs1[
+            current_state[::2].astype(bool)].sum())
         obs2 = np.exp(self.obs2[np.append(
             current_state[1::2].astype(bool), True)].sum())
         p *= (obs1 + obs2)
