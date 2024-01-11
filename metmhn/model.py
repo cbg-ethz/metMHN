@@ -481,7 +481,6 @@ class MetMHN:
             tuple[tuple[int, ...], float]: most probable order and its 
             probability
         """
-        # raise NotImplementedError
 
         k = state.sum()
         if not reachable(
@@ -490,6 +489,7 @@ class MetMHN:
 
         # whether active events belong to pt
         pt = np.nonzero(state)[0] % 2 == 0
+        pt_s = pt.copy()
         pt[-1] = False
 
         # get the numbers of events
@@ -564,7 +564,7 @@ class MetMHN:
                                 new_event=new_event)
 
                     obs1 = np.exp(self.obs1[
-                        events[state_events][pt[state_events]]].sum())
+                        events[state_events][pt_s[state_events]]].sum())
                     obs2 = np.exp(self.obs2[
                         events[state_events][~pt[state_events]]].sum())
                     A[2][current_state][1] /= \
@@ -614,7 +614,7 @@ class MetMHN:
         bin_state = int("1" * k, base=2)
         o, p = A[1][bin_state]
 
-        obs1 = np.exp(self.obs1[events[pt]].sum())
+        obs1 = np.exp(self.obs1[events[pt_s]].sum())
         obs2 = np.exp(self.obs2[events[~pt]].sum())
 
         p *= (obs1 + obs2)
@@ -761,7 +761,8 @@ class MetMHN:
                     seeded = True
                     current_state[-1] = 1
                     current_state_bin += event_to_bin[2 * self.n]
-                    obs1 = np.exp(self.obs1[current_state[::2].astype(bool)].sum())
+                    obs1 = np.exp(
+                        self.obs1[current_state[::2].astype(bool)].sum())
                     obs2 = np.exp(self.obs2[np.append(
                         current_state[1::2].astype(bool), True)].sum())
 
