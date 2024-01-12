@@ -96,10 +96,9 @@ def get_pt(bin_state: int, pt) -> int:
     Returns:
         int: PT 
     """
-    return int(
-        "".join(
-            i for i, pt_ev in zip(bin(bin_state)[2:], pt[::-1]) if pt_ev),
-        base=2)
+    bitstring = "".join(
+        i for i, pt_ev in zip(bin(bin_state)[2:], pt[::-1]) if pt_ev)
+    return int(bitstring, base=2) if len(bitstring) != 0 else 0
 
 
 def get_combos(order: np.array, n: int, first_obs: str) -> list[tuple[np.array]]:
@@ -1248,21 +1247,21 @@ class MetMHN:
         return order, t_obs
 
 
-# if __name__ == "__main__":
-#     import pandas as pd
+if __name__ == "__main__":
+    import pandas as pd
 
-#     log_theta = pd.read_csv(
-#         R"results\luad\luad_16_muts_5_cnvs_0028.csv", index_col=0)
-#     obs1 = log_theta.iloc[0].to_numpy()
-#     obs2 = log_theta.iloc[1].to_numpy()
+    log_theta = pd.read_csv(
+        R"results/luad/luad_16_muts_5_cnvs_0028.csv", index_col=0)
+    obs1 = log_theta.iloc[0].to_numpy()
+    obs2 = log_theta.iloc[1].to_numpy()
 
-#     log_theta = log_theta.drop(index=[0, 1]).to_numpy()
-#     mmhn = MetMHN(log_theta=log_theta, obs1=obs1, obs2=obs2)
-#     state = np.zeros(2 * mmhn.n + 1, dtype=int)
-#     state[[0, 1, 42, 2, 6, 4, 5, 33, 32, 40, 31, 15]] = 1
+    log_theta = log_theta.drop(index=[0, 1]).to_numpy()
+    mmhn = MetMHN(log_theta=log_theta, obs1=obs1, obs2=obs2)
+    state = np.zeros(2 * mmhn.n + 1, dtype=int)
+    state[[0, 1, 42, 2, 6, 4, 5]] = 1
 
-#     x = mmhn._likeliest_order_mt_pt(state)
-#     print(x)
-#     print(mmhn._likelihood_mt_pt(x[0]))
-#     # print(get_combos(np.array([0, 1, 42, 2]), n=mmhn.n, first_obs="Met"))
-#     # print(mmhn._likelihood_mt_pt_timed(np.array([ 0,  1, 42,  2]), np.array([])))
+    x = mmhn._likeliest_order_mt_pt(state)
+    print(x)
+    print(mmhn._likelihood_mt_pt(x[0]))
+    # print(get_combos(np.array([0, 1, 42, 2]), n=mmhn.n, first_obs="Met"))
+    # print(mmhn._likelihood_mt_pt_timed(np.array([ 0,  1, 42,  2]), np.array([])))
