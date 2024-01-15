@@ -74,8 +74,8 @@ for elem in cleaned.columns[:-3].to_list()[::2]:
 events_plot.append("Seeding")
 
 if config['cv']:
-    log_lams = np.linspace(np.log(config['cv_start']), 
-                           np.log(config['cv_end']), 
+    log_lams = np.linspace(np.log10(config['cv_start']), 
+                           np.log10(config['cv_end']), 
                            config['cv_splits'])
     lams = 10**log_lams
     penal = utils.cross_val(cleaned.copy(), events_data, lams, 

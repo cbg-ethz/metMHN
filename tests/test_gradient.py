@@ -111,7 +111,7 @@ class DerivativeTestCase(unittest.TestCase):
             g_num[i] = (score_h - score)/self.h
         np.testing.assert_allclose(g_num, 
                                    np.array(regopt.grad(params, self.state_prim_only, self.state_prim_met, self.state_met,
-                                                        self.state_coupled, 0., 0.8)),
+                                                        self.state_coupled, 0., 0.8)[1]),
                                    rtol=self.tol)
 
 if __name__ == "__main__":

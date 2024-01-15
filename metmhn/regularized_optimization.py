@@ -182,13 +182,16 @@ def grad_prim_only(log_theta:jnp.ndarray, log_d_p: jnp.ndarray,
     g = jnp.zeros((n_total, n_total))
     d_p = jnp.zeros(n_total)
     score = 0.0
-    for i in range(dat.shape[0]):
-        state_obs = dat[i, 0:2*n_total-1:2]
-        n_prim = int(state_obs.sum())      
-        s, g_, fd_ = ssr._grad_prim_obs(log_theta, log_d_p, state_obs, n_prim)
-        g += g_
-        d_p += fd_
-        score += s
+    if (dat.shape[0]) > 1 & jnp.all(jnp.isnan(dat[0,:])):
+        for i in range(dat.shape[0]):
+            state_obs = dat[i, 0:2*n_total-1:2]
+            n_prim = int(state_obs.sum())      
+            s, g_, fd_ = ssr._grad_prim_obs(log_theta, log_d_p, state_obs, n_prim)
+            g += g_
+            d_p += fd_
+            score += s
+    else:
+        pass 
     return score, jnp.concatenate((g.flatten(), d_p, jnp.zeros(n_total)))
 
 
@@ -212,16 +215,18 @@ def grad_met_only(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.nda
     d_p = jnp.zeros(n_mut+1)
     d_m = jnp.zeros(n_mut+1)
     score = 0.0
-    
-    for i in range(dat.shape[0]):
-        state = dat.at[i, 0:2*n_mut+1].get()
-        state_met = jnp.append(state.at[1:2*n_mut+1:2].get(), 1)
-        n_met = int(state_met.sum())
-        s, g_, fd_, sd_ = ssr._grad_met_obs(log_theta, log_d_p, log_d_m, state_met, n_met)
-        score += s
-        g += g_
-        d_p += fd_
-        d_m += sd_
+    if (dat.shape[0]) > 1 & jnp.all(jnp.isnan(dat[0,:])):
+        for i in range(dat.shape[0]):
+            state = dat.at[i, 0:2*n_mut+1].get()
+            state_met = jnp.append(state.at[1:2*n_mut+1:2].get(), 1)
+            n_met = int(state_met.sum())
+            s, g_, fd_, sd_ = ssr._grad_met_obs(log_theta, log_d_p, log_d_m, state_met, n_met)
+            score += s
+            g += g_
+            d_p += fd_
+            d_m += sd_
+    else:
+        pass
     return score, jnp.concatenate((g.flatten(), d_p, d_m))
 
 
@@ -244,27 +249,28 @@ def grad_coupled(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndar
     d_p = jnp.zeros(n_mut+1)
     d_m = jnp.zeros(n_mut+1)
     score = 0.0
-
-    for i in range(dat.shape[0]):
-        state = dat[i, 0:2*n_mut+1]
-        n_prim = int(state[::2].sum())
-        n_met = int(state[1::2].sum() + 1)
-        order = dat[i,2*n_mut+1]
-        if order == 0:
-            lik, d_th, d_d_p, d_d_m = ssr._g_coupled_0(log_theta, log_d_p, log_d_m, state,
+    if (dat.shape[0]) > 1 & jnp.all(jnp.isnan(dat[0,:])):
+        for i in range(dat.shape[0]):
+            state = dat[i, 0:2*n_mut+1]
+            n_prim = int(state[::2].sum())
+            n_met = int(state[1::2].sum() + 1)
+            order = dat[i,2*n_mut+1]
+            if order == 0:
+                lik, d_th, d_d_p, d_d_m = ssr._g_coupled_0(log_theta, log_d_p, log_d_m, state,
                                                              n_prim, n_met)
-        elif order == 1:
-            lik, d_th, d_d_p, d_d_m = ssr._g_coupled_1(log_theta, log_d_p, log_d_m, state,
+            elif order == 1:
+                lik, d_th, d_d_p, d_d_m = ssr._g_coupled_1(log_theta, log_d_p, log_d_m, state,
                                                             n_prim, n_met)
-        else:
-            lik, d_th, d_d_p, d_d_m = ssr._g_coupled_2(log_theta, log_d_p, log_d_m, state,
+            else:
+                lik, d_th, d_d_p, d_d_m = ssr._g_coupled_2(log_theta, log_d_p, log_d_m, state,
                                                             n_prim, n_met)
         
-        score += lik
-        g += d_th
-        d_p += d_d_p
-        d_m += d_d_m
-
+            score += lik
+            g += d_th
+            d_p += d_d_p
+            d_m += d_d_m
+    else:
+        pass
     return score, jnp.concatenate((g.flatten(), d_p, d_m)) 
 
 
