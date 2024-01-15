@@ -152,7 +152,7 @@ def split_data(dat: pd.DataFrame, events: list) -> tuple[jnp.ndarray, jnp.ndarra
     Returns:
         tuple: tuple of 4 subsets
     """
-    prim_only = jnp.array(dat.loc[dat["type"] == 0, events].to_numpy(dtype=np.int8, na_value = -10))
+    prim_only = jnp.array(dat.loc[dat["type"] == 0, events].to_numpy(dtype=np.int8, na_value = -99))
     prim_met = jnp.array(dat.loc[dat["type"] == 1, events].to_numpy(dtype=np.int8, na_value = -10))
     met_only = jnp.array(dat.loc[dat["type"] == 2, events].to_numpy(dtype=np.int8, na_value = -10))
     coupled = jnp.array(dat.loc[dat["type"] == 3, events].to_numpy(dtype=np.int8, na_value = -10))
