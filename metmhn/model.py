@@ -3,6 +3,7 @@ from collections import deque
 from metmhn.np.kronvec import kron_diag as get_diag_paired
 from scipy.linalg.blas import dcopy, dscal, daxpy
 import numpy as np
+from omhn.model import oMHN
 
 append_to_int_order = np.vectorize(
     append_to_int_order, excluded=["numbers", "new_event"])
@@ -186,6 +187,12 @@ class MetMHN:
         self.obs2 = obs2
         self.n = log_theta.shape[1] - 1
 
+        _pt_log_theta = log_theta.copy()
+        _pt_log_theta[:-1, -1] = 0
+        self._pt_omhn = oMHN(
+            log_theta=np.vstack([_pt_log_theta, self.obs1])
+        )
+
     def get_diag_unpaired(self, state: np.array, seeding: bool = True) -> np.array:
         """This returns the diagonal of the restricted rate matrix of
         the metMHN's Markov chain.
@@ -236,14 +243,25 @@ class MetMHN:
             daxpy(n=nx, a=1, x=subdiag, incx=1, y=diag, incy=1)
         return diag
 
-    def likeliest_order(self, state: np.array, first_obs: str
-                        ) -> tuple[tuple[int, ...], float]:
+    def likeliest_order(
+        self,
+        state: np.array,
+        met_status: str,
+        first_obs: str = None
+    ) -> tuple[tuple[int, ...], float]:
         """Returns the most probable order for a coupled observation 
         consisting of PT and Met
 
         Args:
             state (np.array): state describing the coupled observation, 
             shape (2*n + 1).
+            met_status (str): Must be one of
+                - "isMetastasis" for an unpaired metastasis
+                - "present" for an unpaired primary tumor that at some
+                    point develops a metastasis
+                - "absent" for an unpaired primary tumor that does not
+                    develop a metastasis
+                - "isPaired" for a paired sample
             first_obs (str): Which was the first observation. Must be 
             one of "Met", "PT" or "sync"
 
@@ -251,14 +269,77 @@ class MetMHN:
             tuple[tuple[int, ...], float]: most probable order and its 
             probability
         """
-        if first_obs == "PT":
-            return self._likeliest_order_pt_mt(state)
-        elif first_obs == "Met":
-            return self._likeliest_order_mt_pt(state)
-        elif first_obs == "sync":
-            return self._likeliest_order_sync(state)
-        else:
-            raise ValueError("first_obs must be one of 'PT', 'Met', 'sync'")
+
+        match met_status:
+            case "isMetastasis":
+                return self._likeliest_order_unpaired_met(state=state)
+            case "absent":
+                p, o = self._pt_omhn.likeliest_order(
+                    state=state[::2]
+                )
+                return p, 2 * o
+            case "present":
+                p, o = self._pt_omhn.likeliest_order(
+                    state=state[::2]
+                )
+                return p, 2 * o
+            case "isPaired":
+                match first_obs:
+                    case"PT":
+                        return self._likeliest_order_pt_mt(state)
+                    case "Met":
+                        return self._likeliest_order_mt_pt(state)
+                    case "sync":
+                        return self._likeliest_order_sync(state)
+                    case _:
+                        raise ValueError(
+                            "first_obs must be one of 'PT', 'Met', 'sync'")
+            case _:
+                raise ValueError(
+                    "met_status must be one of 'isMetastasis', 'absent', 'present', 'isPaired")
+
+    def _likeliest_order_unpaired_met(self, state: np.array) -> tuple[tuple[int, ...], float]:
+
+        state = np.append(state[1::2], state[-1])
+
+        diag = self.get_diag_unpaired(state=state, seeding=True)
+        log_theta = self.log_theta[state.astype(bool)][:, state.astype(bool)]
+        obs1 = self.obs1[state.astype(bool)]
+        obs2 = self.obs2[state.astype(bool)]
+
+        k = state.sum()
+        # {state: highest path probability to this state}
+        A = {0: 1/(1-diag[0])}
+        # {state: path with highest probability to this state}
+        B = {0: []}
+        for i in range(1, k+1):         # i is the number of events
+            A_new = dict()
+            B_new = dict()
+            for st in bits_fixed_n(n=i, k=k):
+                A_new[st] = -1
+                state_events = np.array(
+                    [i for i in range(k) if (1 << i) | st == st])  # events in state
+                for e in state_events:
+                    # numerator in Gotovos formula
+                    num = np.exp(log_theta[e, state_events].sum())
+                    pre_st = st - (1 << e)
+                    if A[pre_st] * num > A_new[st]:
+                        A_new[st] = A[pre_st] * num
+                        B_new[st] = B[pre_st].copy()
+                        B_new[st].append(e)
+                # obs1 if seeding has not happened yet, else obs2
+                obs = np.exp(obs1[state_events].sum()) \
+                    if not (1 << (k - 1)) & st \
+                    else np.exp(obs2[state_events].sum())
+                A_new[st] /= (obs - diag[st])
+            A = A_new
+            B = B_new
+        i = (1 << k) - 1
+        A[i] *= np.exp(obs2.sum())
+        order = np.arange(self.log_theta.shape[1])[state.astype(bool)][B[i]]
+        order = 2 * order + 1
+        order[np.where(order == self.n * 2 + 1)] -= 1
+        return (A[i], order)
 
     def _likeliest_order_pt_mt(
         self, state: np.array, verbose: bool = False
@@ -1258,10 +1339,8 @@ if __name__ == "__main__":
     log_theta = log_theta.drop(index=[0, 1]).to_numpy()
     mmhn = MetMHN(log_theta=log_theta, obs1=obs1, obs2=obs2)
     state = np.zeros(2 * mmhn.n + 1, dtype=int)
-    state[[0, 1, 42, 2, 6, 4, 5]] = 1
+    state[[1, 3, 11, 13, 42]] = 1
 
-    x = mmhn._likeliest_order_mt_pt(state)
-    print(x)
-    print(mmhn._likelihood_mt_pt(x[0]))
+    x = mmhn.likeliest_order(state, met_status="isMetastasis")
     # print(get_combos(np.array([0, 1, 42, 2]), n=mmhn.n, first_obs="Met"))
     # print(mmhn._likelihood_mt_pt_timed(np.array([ 0,  1, 42,  2]), np.array([])))
