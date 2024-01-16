@@ -3,13 +3,18 @@ from metmhn.model import MetMHN
 import os
 
 # set paths
-log_theta_path = R"results/prad/prad_g14_0001.csv"
-data_path = R"data/prad/G14_PRAD_events.csv"
+log_theta_path = R"results\luad\luad_full_0003.csv"
+data_path = R"data\luad\G13_LUAD_PM_v2_Events_19and11_Full.csv"
+sample_selection_path = R"data\luad\G13_LUAD_PM_v2_sampleSelection_19and11.csv"
 output_path = log_theta_path[:-4] + "orders.txt"
 
+sample_selection = pd.read_csv(sample_selection_path, index_col=0)
+
+already_processed = []
 # get patient ids of already processed patients
 if os.path.isfile(output_path):
-    already_processed = pd.read_table(output_path, index_col=0).index.to_list()
+    already_processed = pd.read_table(
+        output_path, index_col=0, names=["order"]).index.to_list()
 
 # setup MetMHN
 log_theta = pd.read_csv(
@@ -33,6 +38,10 @@ paired = paired.loc[[i for i in paired.index if i not in already_processed]]
 
 for i, (pat, row) in enumerate(paired.sort_values("n_events").iterrows()):
     print(f"{i:4}/{len(paired)}. {row['n_events']:2} events.", end="\r")
+
+    if row['n_events'] > 12:
+        break
+
     with open(output_path, "a") as file:
         if row["first_obs"] == 0:
             first_obs = "sync"
@@ -43,5 +52,24 @@ for i, (pat, row) in enumerate(paired.sort_values("n_events").iterrows()):
         file.write(pat + "\t"
                    + str(mmhn.likeliest_order(
                        state=row[paired.columns[:-4]].to_numpy(),
+                       met_status="isPaired",
                        first_obs=first_obs
                    )[0]) + "\n")
+
+unpaired = data[sample_selection["metaStatus"].isin(
+    ["present", "absent", "isMetastasis"])]
+# %%
+unpaired = unpaired.loc[[
+    i for i in unpaired.index if i not in already_processed]]
+unpaired = unpaired[unpaired.columns[:-3]]
+unpaired["Seeding"] = (sample_selection["metaStatus"].isin(
+    ["present", "isMetastasis"])).astype(int)
+# %%
+for i, (pat, row) in enumerate(unpaired.iterrows()):
+    print(f"{i:4}/{len(unpaired)}.              ", end="\r")
+    with open(output_path, "a") as file:
+        file.write(pat + "\t"
+                   + str(tuple(mmhn.likeliest_order(
+                       state=row.to_numpy(),
+                       met_status=sample_selection["metaStatus"][pat]
+                   )[1])) + "\n")
