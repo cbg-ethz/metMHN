@@ -785,22 +785,22 @@ plot(hist(metAgeMinusPrimAge, breaks = 50))
 
 ## add to table
 
-pmForm$P.AgeAtSeqRep <- ""
-pmForm$M.AgeAtSeqRep <- ""
+pmFormOmitted$P.AgeAtSeqRep <- ""
+pmFormOmitted$M.AgeAtSeqRep <- ""
 
 
 for (ssRow in 1:nrow(selectionRecord)) {
   
   if (!is.na(selectionRecord[ssRow, "primID"])) {
-    pmForm[selectionRecord[ssRow, "patientID"], "P.AgeAtSeqRep"] <- sampleData[which(sampleData$SAMPLE_ID == selectionRecord[ssRow, "primID"]), "AGE_AT_SEQ_REPORT"]
+    pmFormOmitted[selectionRecord[ssRow, "patientID"], "P.AgeAtSeqRep"] <- sampleData[which(sampleData$SAMPLE_ID == selectionRecord[ssRow, "primID"]), "AGE_AT_SEQ_REPORT"]
   } else {
-    pmForm[selectionRecord[ssRow, "patientID"], "P.AgeAtSeqRep"] <- "No primary included"
+    pmFormOmitted[selectionRecord[ssRow, "patientID"], "P.AgeAtSeqRep"] <- "No primary included"
   }
   
   if (!is.na(selectionRecord[ssRow, "metaID"])) {
-    pmForm[selectionRecord[ssRow, "patientID"], "M.AgeAtSeqRep"] <- sampleData[which(sampleData$SAMPLE_ID == selectionRecord[ssRow, "metaID"]), "AGE_AT_SEQ_REPORT"]
+    pmFormOmitted[selectionRecord[ssRow, "patientID"], "M.AgeAtSeqRep"] <- sampleData[which(sampleData$SAMPLE_ID == selectionRecord[ssRow, "metaID"]), "AGE_AT_SEQ_REPORT"]
   } else {
-    pmForm[selectionRecord[ssRow, "patientID"], "M.AgeAtSeqRep"] <- "No metastasis included"
+    pmFormOmitted[selectionRecord[ssRow, "patientID"], "M.AgeAtSeqRep"] <- "No metastasis included"
   }
   
 }
