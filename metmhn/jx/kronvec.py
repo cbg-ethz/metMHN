@@ -3,14 +3,16 @@ from jax import jit, lax
 import jax.numpy as jnp
 import jax
 
-def diagnosis_theta(log_theta: jnp.array, log_diag_rates: jnp.array) -> jnp.array:
-    """"Generate a log. theta that is used in the diagnosis formalism. scale all offdiagonals by their effect on the diagnosis
+
+def diagnosis_theta(log_theta: jnp.ndarray, log_diag_rates: jnp.ndarray) -> jnp.ndarray:
+    """"Generate a log. theta that is used in the diagnosis formalism. 
+    Columnwise scale all off diagonals entries by the mutations effect on the diagnosis.
 
     Args:
-        log_theta (jnp.array): theta matrix of size n+1 x n+1
-        log_diag_rates (jnp.arrays): logarithmic effects of muts on diagnosis of size n+1
+        log_theta (jnp.ndarray): Theta matrix with logarithmic entries
+        log_diag_rates (jnp.ndarray): Log. effects of muts on diagnosis
     Returns:
-        jnp.array: scaled theta matrix of size n+1 x n+1
+        jnp.array: scaled theta matrix
     """
     diagonal = jnp.diagonal(log_theta)
     scaled_theta = jnp.apply_along_axis(lambda x,y:(x-y), 1, log_theta, log_diag_rates)
@@ -19,231 +21,222 @@ def diagnosis_theta(log_theta: jnp.array, log_diag_rates: jnp.array) -> jnp.arra
     return scaled_theta
 
 
+def mult_t_x(t, x):
+    return t*x
+
+mult_t_x_vec = jax.vmap(mult_t_x, (None, 0), 0)
+
 # Kronecker factors
-def k2dt0(p: jnp.array, theta: float) -> jnp.array:
+
+def k1d00(p: jnp.ndarray, theta:float=1.) -> jnp.ndarray:
+    return p
+
+
+def k2dt0(p: jnp.ndarray, theta: float, 
+          diag: bool = True, transpose: bool = True) -> jnp.ndarray:
     p = p.reshape((-1, 2), order="C")
     theta_slice = jnp.array([-theta, 0.])
-    p = jax.vmap(lambda a, x: a * x, (None, 0), 0)(theta_slice, p)
+    p = mult_t_x_vec(theta_slice, p)
     return p.flatten(order="F")
 
 
-def k2d0t(p: jnp.array, theta: float) -> jnp.array:
+def k2d0t(p: jnp.ndarray, theta: float) -> jnp.ndarray:
     p = p.reshape((-1, 2), order="C")
     theta_slice = jnp.array([0., theta])
-    p = jax.vmap(lambda a, x: a * x, (None, 0), 0)(theta_slice, p)
+    p = mult_t_x_vec(theta_slice, p)
     return p.flatten(order="F")
 
 
-def k2dtt(p: jnp.array, theta: float) -> jnp.array:
+def k2dtt(p: jnp.ndarray, theta: float, diag: bool = True, 
+          transpose: bool = True) -> jnp.ndarray:
     p = p.reshape((-1, 2), order="C")
-    p = jax.vmap(lambda x: -theta * x, 0, 0)(p)
-    return p.flatten(order="F")
+    return -theta * p.flatten(order="F")
 
 
-def k2d1t(p: jnp.array, theta: float) -> jnp.array:
+def k2d1t(p: jnp.ndarray, theta: float) -> jnp.ndarray:
     p = p.reshape((-1, 2), order="C")
     theta_slice = jnp.array([1., theta])
-    p = jax.vmap(lambda a, x: a * x, (None, 0), 0)(theta_slice, p)
+    p = mult_t_x_vec(theta_slice, p)
     return p.flatten(order="F")
 
 
-def k2d10(p: jnp.array) -> jnp.array:
+def k2d10(p: jnp.ndarray, theta: float=1.) -> jnp.ndarray:
     p = p.reshape((-1, 2), order="C")
     theta_slice = jnp.array([1., 0.])
-    p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
+    p = mult_t_x_vec(theta_slice, p)
     return p.flatten(order="F")
 
 
-def k2d01(p: jnp.array) -> jnp.array:
+def k2d01(p: jnp.ndarray) -> jnp.ndarray:
     p = p.reshape((-1, 2), order="C")
     theta_slice = jnp.array([0., 1.])
-    p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
+    p = mult_t_x_vec(theta_slice, p)
     return p.flatten(order="F")
 
 
-def k2d11(p: jnp.array) -> jnp.array:
+def k2d11(p: jnp.ndarray, theta: float=1.) -> jnp.ndarray:
     p = p.reshape((-1, 2), order="C")
     return p.flatten(order="F")
 
 
-def k2ntt(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False) -> jnp.array:
+def k2ntt(p: jnp.ndarray, theta: float, 
+          diag: bool = True, transpose: bool = False
+          ) -> jnp.ndarray:
+    t = lax.select_n(2*diag+transpose, 
+                     jnp.array([[0., theta], [0., 0.]]),
+                     jnp.array([[0., 0.], [theta, 0.]]),
+                     jnp.array([[-theta, theta], [0., 0.]]),
+                     jnp.array([[-theta, 0.], [theta, 0.]]),
+                     )
     p = p.reshape((-1, 2), order="C")
-    p = lax.cond(
-        diag,
-        lambda p: lax.cond(
-            transpose,
-            lambda x: x @ jnp.array([[-theta, 0.], [theta, 0.]]),
-            lambda x: x @ jnp.array([[-theta, theta], [0., 0.]]),
-            operand=p
-        ),
-        lambda p: lax.cond(
-            transpose,
-            lambda x: x @ jnp.array([[0., 0.], [theta, 0.]]),
-            lambda x: x @ jnp.array([[0., theta], [0., 0.]]),
-            operand=p
-        ),
-        operand=p
-    )
+    p = p @ t
     return p.flatten(order="F")
 
 
-def k4ns(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False) -> jnp.array:
+def k4ns(p: jnp.ndarray, theta: float, 
+         diag: bool = True, transpose: bool = False
+         ) -> jnp.ndarray:
+    t = lax.select_n(2*diag+transpose,
+                     jnp.array([[0., 0., 0., theta],[0., 0., 0., 0.], 
+                                [0., 0., 0., 0.], [0., 0., 0., 0.]]),
+                     jnp.array([[0., 0., 0., 0.], [0., 0., 0., 0.],
+                                [0., 0., 0., 0.], [theta, 0., 0., 0.]]),
+                     jnp.array([[-theta, 0., 0., theta], [0., 0., 0., 0.],
+                                [0., 0., 0., 0.], [0., 0., 0., 0.]]),
+                     jnp.array([[-theta, 0., 0., 0.], [0., 0., 0., 0.],
+                                [0., 0., 0., 0.], [theta, 0., 0., 0.]])
+                    )
     p = p.reshape((-1, 4), order="C")
-    p = lax.cond(
-        diag,
-        lambda p: lax.cond(
-            transpose,
-            lambda x: x @ jnp.array([[-theta, 0., 0., 0.],
-                                    [0., 0., 0., 0.], [0., 0., 0., 0.], [theta, 0., 0., 0.]]),
-            lambda x: x @ jnp.array([[-theta, 0., 0., theta],
-                                    [0., 0., 0., 0.], [0., 0., 0., 0.], [0., 0., 0., 0.]]),
-            operand=p),
-        lambda p: lax.cond(
-            transpose,
-            lambda x: x @ jnp.array([[0., 0., 0., 0.], [0., 0., 0., 0.],
-                                    [0., 0., 0., 0.], [theta, 0., 0., 0.]]),
-            lambda x: x @ jnp.array([[0., 0., 0., theta],
-                                    [0., 0., 0., 0.], [0., 0., 0., 0.], [0., 0., 0., 0.]]),
-            operand=p
-        ),
-        operand=p
-    )
+    p = p @ t
     return p.flatten(order="F")
 
 
-def k4np(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False) -> jnp.array:
+def k4np(p: jnp.ndarray, theta: float, 
+         diag: bool = True, transpose: bool = False
+         ) -> jnp.ndarray:
     p = p.reshape((-1, 4), order="C")
-    p = lax.cond(
-        diag,
-        lambda p: lax.cond(
-            transpose,
-            lambda x: x @ jnp.array([[-theta, 0., 0., 0.], [theta,
-                                    0., 0., 0.], [0., 0., -theta, 0.], [0., 0., theta, 0.]]),
-            lambda x: x @ jnp.array([[-theta, theta, 0., 0.],
-                                    [0., 0., 0., 0.], [0., 0., -theta, theta], [0., 0., 0., 0.]]),
-            operand=p
-        ),
-        lambda p: lax.cond(
-            transpose,
-            lambda x: x @ jnp.array([[0., 0., 0., 0.], [theta,
-                                    0., 0., 0.], [0., 0., 0., 0.], [0., 0., theta, 0.]]),
-            lambda x: x @ jnp.array([[0., theta, 0., 0.],
-                                    [0., 0., 0., 0.], [0., 0., 0., theta], [0., 0., 0., 0.]]),
-            operand=p
-        ),
-        operand=p
-    )
+    t = lax.select_n(2*diag+transpose,
+                     jnp.array([[0., theta, 0., 0.], [0., 0., 0., 0.], 
+                                [0., 0., 0., theta], [0., 0., 0., 0.]]),
+                     jnp.array([[0., 0., 0., 0.], [theta,0., 0., 0.],
+                                [0., 0., 0., 0.], [0., 0., theta, 0.]]),
+                     jnp.array([[-theta, theta, 0., 0.], [0., 0., 0., 0.],
+                                [0., 0., -theta, theta], [0., 0., 0., 0.]]),
+                     jnp.array([[-theta, 0., 0., 0.], [theta, 0., 0., 0.], 
+                                [0., 0., -theta, 0.], [0., 0., theta, 0.]])
+        )
+    p = p @ t
     return p.flatten(order="F")
 
 
-def k4nm(p: jnp.array, theta: float, diag: bool = True, transpose: bool = False) -> jnp.array:
+def k4nm(p: jnp.ndarray, theta: float, 
+         diag: bool = True, transpose: bool = False
+         ) -> jnp.ndarray:
     p = p.reshape((-1, 4), order="C")
-    p = lax.cond(
-        diag,
-        lambda p: lax.cond(
-            transpose,
-            lambda x: x @ jnp.array([[-theta, 0., 0., 0.], [0., -
-                                    theta, 0., 0.], [theta, 0., 0., 0.], [0., theta, 0., 0.]]),
-            lambda x: x @ jnp.array([[-theta, 0., theta, 0.],
-                                    [0., -theta, 0., theta], [0., 0., 0., 0.], [0., 0., 0., 0.]]),
-            operand=p
-        ),
-        lambda p: lax.cond(
-            transpose,
-            lambda x: x @ jnp.array([[0., 0., 0., 0.], [0., 0., 0., 0.],
-                                    [theta, 0., 0., 0.], [0., theta, 0., 0.]]),
-            lambda x: x @ jnp.array([[0., 0., theta, 0.],
-                                    [0., 0., 0., theta], [0., 0., 0., 0.], [0., 0., 0., 0.]]),
-            operand=p
-        ),
-        operand=p
-    )
+    t = lax.select_n(2*diag+transpose,
+                     jnp.array([[0., 0., theta, 0.], [0., 0., 0., theta], 
+                                [0., 0., 0., 0.], [0., 0., 0., 0.]]),
+                     jnp.array([[0., 0., 0., 0.], [0., 0., 0., 0.],
+                                [theta, 0., 0., 0.], [0., theta, 0., 0.]]),
+                     jnp.array([[-theta, 0., theta, 0.], [0., -theta, 0., theta], 
+                                [0., 0., 0., 0.], [0., 0., 0., 0.]]),
+                     jnp.array([[-theta, 0., 0., 0.], [0., -theta, 0., 0.], 
+                                [theta, 0., 0., 0.], [0., theta, 0., 0.]])
+        )
+    p = p @ t
     return p.flatten(order="F")
 
 
-def k4d100t(p: jnp.array, theta: float) -> jnp.array:
+def k4d100t(p: jnp.ndarray, theta: float, diag:bool=True, transpose:bool=False) -> jnp.ndarray:
     p = p.reshape((-1, 4), order="C")
-    # p = p.at[:, 3].multiply(theta).at[:, [1, 2]].set(0.)
     theta_slice = jnp.array([1., 0., 0., theta])
-    p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
+    p = mult_t_x(theta_slice, p)
     return p.flatten(order="F")
 
 
-def k4dt000(p: jnp.array, theta: float) -> jnp.array:
+def k4dt000(p: jnp.ndarray, theta: float, diag: bool = True, 
+            transpose: bool = True) -> jnp.ndarray:
     p = p.reshape((-1, 4), order="C")
     theta_slice = jnp.array([-theta, 0., 0., 0.])
-    p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
+    p = mult_t_x(theta_slice, p)
     return p.flatten(order="F")
 
 
-def k4dtt00(p: jnp.array, theta: float) -> jnp.array:
+def k4dtt00(p: jnp.ndarray, theta: float, 
+            diag: bool = True, transpose: bool= True) -> jnp.ndarray:
     p = p.reshape((-1, 4), order="C")
     theta_slice = jnp.array([-theta, -theta, 0., 0.])
-    p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
+    p = mult_t_x(theta_slice, p)
     return p.flatten(order="F")
 
 
-def k4dt0t0(p: jnp.array, theta: float) -> jnp.array:
+def k4d00tt(p: jnp.ndarray, theta: float) -> jnp.ndarray:
+    p = p.reshape((-1, 4), order="C")
+    theta_slice = jnp.array([0, 0, theta, theta])
+    p = mult_t_x(theta_slice, p)
+    return p.flatten(order="F")
+
+
+def k4dt0t0(p: jnp.ndarray, theta: float, diag: bool = True,
+            transpose: bool = True) -> jnp.ndarray:
     p = p.reshape((-1, 4), order="C")
     theta_slice = jnp.array([-theta, 0., -theta, 0.])
-    p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
+    p = mult_t_x(theta_slice, p)
     return p.flatten(order="F")
 
 
-def k4d1t1t(p: jnp.array, theta: float) -> jnp.array:
+def k4d0t0t(p: jnp.ndarray, theta: float) -> jnp.ndarray:
     p = p.reshape((-1, 4), order="C")
-    # p = p.at[:, [1, 3]].multiply(theta)
-    theta_slice = jnp.array([1., theta, 1., theta])
-    p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
+    theta_slice = jnp.array([0, theta, 0, theta])
+    p = mult_t_x(theta_slice, p)
     return p.flatten(order="F")
 
 
-def k4d11tt(p: jnp.array, theta: float) -> jnp.array:
+def k4d1t1t(p: jnp.ndarray, theta: float) -> jnp.ndarray:
+    p = p.reshape((-1, 4), order="C")
+    theta_slice = jnp.array([1., theta, 1., theta])
+    p = mult_t_x(theta_slice, p)
+    return p.flatten(order="F")
+
+
+def k4d11tt(p: jnp.ndarray, theta: float) -> jnp.ndarray:
     p = p.reshape((-1, 4), order="C")
     theta_slice = jnp.array([1., 1., theta, theta])
-    p = jax.vmap(lambda t, x: t * x, (None, 0), 0)(theta_slice, p)
-    # p = p.at[:, [2, 3]].multiply(theta)
+    p = mult_t_x(theta_slice, p)
     return p.flatten(order="F")
+
+
+def k1ns(p:jnp.ndarray, theta: float,
+         diag: bool = True, transpose: bool = True):
+    return -theta * p
 
 
 def _kronvec_sync(
-    log_theta: jnp.array,
-    p: jnp.array,
+    log_theta: jnp.ndarray,
+    p: jnp.ndarray,
     i: int,
-    state: jnp.array,
+    state: jnp.ndarray,
     diag: bool = True,
     transpose: bool = False
-) -> jnp.array:
+    ) -> jnp.ndarray:
 
     def loop_body_diag(j, val):
         val = lax.switch(
-            index=state.at[2*j].get() + 2 * state.at[2*j+1].get(),
-            branches=[
-                lambda x: x,
-                lambda x: k2d10(x),
-                lambda x: k2d10(x),
-                lambda x: k4d100t(p=x, theta=jnp.exp(
-                    log_theta.at[i, j].get()))
-            ],
-            operand=val)
+            state[2*j] + 2 * state[2*j+1],
+            [k1d00, k2d10, k2d10, k4d100t],
+            val, theta_i[j])
         return val
 
     # Diagonal Kronecker factors
+    theta_i = jnp.exp(log_theta[i,:])
     p = lax.fori_loop(lower=0, upper=i,
                       body_fun=loop_body_diag, init_val=p)
 
     # Non-diagonal Kronecker factor
     p = lax.switch(
-        index=state.at[2*i].get() + 2 * state.at[2*i+1].get(),
-        branches=[
-            lambda x: -jnp.exp(log_theta.at[i, i].get()) * x,
-            lambda x: k2dt0(p=x, theta=jnp.exp(log_theta.at[i, i].get())),
-            lambda x: k2dt0(p=x, theta=jnp.exp(log_theta.at[i, i].get())),
-            lambda x: k4ns(p=x, theta=jnp.exp(
-                log_theta.at[i, i].get()), diag=diag, transpose=transpose)
-        ],
-        operand=p
-    )
+        state[2*i] + 2 * state[2*i+1],
+        [k1ns, k2dt0, k2dt0, k4ns],
+        p, theta_i[i], diag, transpose)
 
     # Diagonal Kronecker factors
     p = lax.fori_loop(lower=i+1, upper=log_theta.shape[0]-1,
@@ -252,195 +245,146 @@ def _kronvec_sync(
     # Last Kronecker factor
     p = lax.cond(
         state[-1] == 1,
-        lambda: k2d10(p),
-        lambda: p
-    )
+        k2d10, k1d00,
+        p, 0.
+        )
 
     return p
 
 
+def zero_fun(log_theta, p, i, state, diag, transp):
+        return p*0.0
+
+
 @partial(jit, static_argnames=["diag", "transpose"])
 def kronvec_sync(
-    log_theta: jnp.array,
-    p: jnp.array,
+    log_theta: jnp.ndarray,
+    p: jnp.ndarray,
     i: int,
-    state: jnp.array,
+    state: jnp.ndarray,
     diag: bool = True,
     transpose: bool = False
-) -> jnp.array:
+    ) -> jnp.ndarray:
     """This computes the restricted version of the product of the synchronized part of the ith Q summand
     Q_i with a vector Q_i p.
 
     Args:
-        log_theta (jnp.array): Log values of the theta matrix
-        p (jnp.array): Vector to multiply with from the right. Length must equal the number of
-        nonzero entries in the state vector.
+        log_theta (jnp.ndarray): Log values of the theta matrix
+        p (jnp.ndarray): Vector to multiply with from the right. Length must equal the number of
+            nonzero entries in the state vector.
         i (int): Index of the summand.
-        n (int): Total number of events in the MHN.
-        state (jnp.array): Binary state vector, representing the current sample's events.
+        state (jnp.ndarray): Binary state vector, representing the current sample's events.
         diag (bool, optional): Whether to use the diagonal of Q_i (and not set it to 0). Defaults to True.
         transpose (bool, optional): Whether to transpose Q_i before multiplying. Defaults to False.
 
     Returns:
-        jnp.array: Q_i p
-    """
+        jnp.ndarray: Q_i p
+    """    
     return lax.cond(
         not diag and lax.dynamic_slice(state, [2*i], [2]).sum() != 2,
-        lambda: p*0.0,
-        lambda: _kronvec_sync(
-            log_theta=log_theta,
-            p=p,
-            i=i,
-            state=state,
-            diag=diag,
-            transpose=transpose
-        ),
-    )
+        zero_fun,
+        _kronvec_sync,
+        log_theta, p, i, state, diag, transpose)
 
 
-#@partial(jit, static_argnames=["diag", "transpose"])
 def _kronvec_prim(
-    log_theta: jnp.array,
-    p: jnp.array,
+    log_theta: jnp.ndarray,
+    p: jnp.ndarray,
     i: int,
-    state: jnp.array,
-    d_e: jnp.array,
+    state: jnp.ndarray,
     diag: bool = True,
     transpose: bool = False
-) -> jnp.array:
+    ) -> jnp.ndarray:
 
     def loop_body_diag(j, val):
         val = lax.switch(
-            index=state.at[2*j].get() + 2 * state.at[2*j+1].get(),
-            branches=[
-                lambda x: x,
-                lambda x: k2d1t(x, theta=jnp.exp(
-                    log_theta.at[i, j].get())),
-                lambda x: k2d11(x),
-                lambda x: k4d1t1t(p=x, theta=jnp.exp(
-                    log_theta.at[i, j].get()))
-            ],
-            operand=val)
+            state[2*j] + 2 * state[2*j+1],
+            [k1d00, k2d1t, k2d11, k4d1t1t],
+            val, theta_i[j])
         return val
 
     n = log_theta.shape[0]-1
+    theta_i = jnp.exp(log_theta[i, :])
     # Diagonal Kronecker factors
     p = lax.fori_loop(lower=0, upper=i,
                       body_fun=loop_body_diag, init_val=p)
 
     # Non-diagonal Kronecker factor
     p = lax.switch(
-        index=state.at[2*i].get() + 2 * state.at[2*i+1].get(),
-        branches=[
-            lambda x: -jnp.exp(log_theta.at[i, i].get()) * x,
-            lambda x: k2ntt(p=x, theta=jnp.exp(
-                log_theta.at[i, i].get()), diag=diag, transpose=transpose),
-            lambda x: k2dtt(p=x, theta=jnp.exp(log_theta.at[i, i].get())),
-            lambda x: k4np(p=x, theta=jnp.exp(
-                log_theta.at[i, i].get()), diag=diag, transpose=transpose)
-        ],
-        operand=p)
+        state[2*i] + 2 * state[2*i+1],
+        [k1ns, k2ntt, k2dtt, k4np],
+        p, theta_i[i], diag, transpose)
 
     # Diagonal Kronecker factors
-    p = lax.fori_loop(lower=i+1, upper=log_theta.shape[0]-1,
+    p = lax.fori_loop(lower=i+1, upper=n,
                       body_fun=loop_body_diag, init_val=p)
 
     # Last Kronecker factor
-    #p = k2d01(p)
-    p = k2d0t(p, theta=jnp.exp(-d_e))
-
+    p = k2d01(p)
     return p
 
 
 @partial(jit, static_argnames=["diag", "transpose"])
 def kronvec_prim(
-    log_theta: jnp.array,
-    p: jnp.array,
+    log_theta: jnp.ndarray,
+    p: jnp.ndarray,
     i: int,
-    state: jnp.array,
-    d_e: jnp.array,
+    state: jnp.ndarray,
     diag: bool = True,
     transpose: bool = False
-) -> jnp.array:
+    ) -> jnp.ndarray:
     """This computes the restricted version of the product of the asynchronous primary tumour
     part of the ith Q summand Q_i with a vector Q_i p.
 
     Args:
-        log_theta (jnp.array): Log values of the theta matrix
-        p (jnp.array): Vector to multiply with from the right. Length must equal the number of
-        nonzero entries in the state vector.
+        log_theta (jnp.ndarray): Log values of the theta matrix
+        p (jnp.ndarray): Vector to multiply with from the right. Length must equal the number of
+            nonzero entries in the state vector.
         i (int): Index of the summand.
         n (int): Total number of events in the MHN.
-        state (jnp.array): Binary state vector, representing the current sample's events.
-        d_e (jnp.array): Effect of the Seeding on the diagnosis.
+        state (jnp.ndarray): Binary state vector, representing the current sample's events.
         diag (bool, optional): Whether to use the diagonal of Q_i (and not set it to 0). Defaults to True.
         transpose (bool, optional): Whether to transpose Q_i before multiplying. Defaults to False.
 
     Returns:
-        jnp.array: Q_i p
+        jnp.ndarray: Q_i p
     """
     # there are no non-diagonal entries if event i is not mutated in prim
+    flag = not diag and state[2 * i] == 0
     return lax.cond(
-        not diag and state[2 * i] == 0,
-        lambda: jnp.zeros_like(p),
-        lambda: lax.cond(
-            state[-1] == 0,
-            lambda: p*0.0,
-            lambda: _kronvec_prim(
-                log_theta=log_theta,
-                p=p,
-                i=i,
-                state=state,
-                d_e=d_e,
-                diag=diag,
-                transpose=transpose
-            ),
+        flag + (state[-1] == 0)*(1-flag),
+        zero_fun, 
+        _kronvec_prim,
+        log_theta, p, i, state, diag,transpose
         )
-    )
 
 
-#@partial(jit, static_argnames=["diag", "transpose"])
 def _kronvec_met(
-    log_theta: jnp.array,
-    p: jnp.array,
+    log_theta: jnp.ndarray,
+    p: jnp.ndarray,
     i: int,
-    state: jnp.array,
+    state: jnp.ndarray,
     diag: bool = True,
     transpose: bool = False
-) -> jnp.array:
+    ) -> jnp.ndarray:
     def loop_body_diag(j, val):
-
         val = lax.switch(
-            index=state.at[2*j].get() + 2 * state.at[2*j+1].get(),
-            branches=[
-                lambda x: x,
-                lambda x: k2d11(x),
-                lambda x: k2d1t(x, theta=jnp.exp(
-                    log_theta.at[i, j].get())),
-                lambda x: k4d11tt(p=x, theta=jnp.exp(
-                    log_theta.at[i, j].get()))
-            ],
-            operand=val
+            state[2*j] + 2 * state[2*j+1],
+            [k1d00, k2d11, k2d1t, k4d11tt],
+            val, theta_i[j]
         )
-
         return val
-
+    
     # Diagonal Kronecker factors
+    theta_i = jnp.exp(log_theta[i, :])
     p = lax.fori_loop(lower=0, upper=i,
                       body_fun=loop_body_diag, init_val=p)
 
     # Non-diagonal Kronecker factor
     p = lax.switch(
-        index=state.at[2*i].get() + 2 * state.at[2*i+1].get(),
-        branches=[
-            lambda x: x * -jnp.exp(log_theta.at[i, i].get()),
-            lambda x: k2dtt(p=x, theta=jnp.exp(log_theta.at[i, i].get())),
-            lambda x: k2ntt(p=x, theta=jnp.exp(
-                log_theta.at[i, i].get()), diag=diag, transpose=transpose),
-            lambda x: k4nm(p=x, theta=jnp.exp(
-                log_theta.at[i, i].get()), diag=diag, transpose=transpose)
-        ],
-        operand=p
+        state[2*i] + 2 * state[2*i+1],
+        [k1ns, k2dtt, k2ntt, k4nm],
+        p, theta_i[i], diag, transpose
     )
     n = log_theta.shape[0]-1
     # Diagonal Kronecker factors
@@ -448,79 +392,63 @@ def _kronvec_met(
                       body_fun=loop_body_diag, init_val=p)
 
     # Last Kronecker factor
-    p = k2d0t(p, theta=jnp.exp(log_theta.at[i, n].get()))
+    p = k2d0t(p, theta_i[n])
 
     return p
 
 
 @partial(jit, static_argnames=["diag", "transpose"])
 def kronvec_met(
-    log_theta: jnp.array,
-    p: jnp.array,
+    log_theta: jnp.ndarray,
+    p: jnp.ndarray,
     i: int,
-    state: jnp.array,
+    state: jnp.ndarray,
     diag: bool = True,
     transpose: bool = False
-) -> jnp.array:
+    ) -> jnp.ndarray:
     """This computes the restricted version of the product of the asynchronous metastasis
     part of the ith Q summand Q_i with a vector Q_i p.
 
     Args:
-        log_theta (jnp.array): Log values of the theta matrix
-        p (jnp.array): Vector to multiply with from the right. Length must equal the number of
-        nonzero entries in the state vector.
+        log_theta (jnp.ndarray): Log values of the theta matrix
+        p (jnp.ndarray): Vector to multiply with from the right. Length must equal the number of
+            nonzero entries in the state vector.
         i (int): Index of the summand.
-        n (int): Total number of events in the MHN.
-        state (jnp.array): Binary state vector, representing the current sample's events.
+        state (jnp.ndarray): Binary state vector, representing the current sample's events.
         diag (bool, optional): Whether to use the diagonal of Q_i (and not set it to 0). Defaults to True.
         transpose (bool, optional): Whether to transpose Q_i before multiplying. Defaults to False.
 
     Returns:
-        jnp.array: Q_i p
+        jnp.ndarray: Q_i p
     """
     # there are no non-diagonal entries if event i is not mutated in both prim and met
+    flag = not diag and state[2 * i + 1] == 0
     return lax.cond(
-        not diag and state[2 * i + 1] == 0,
-        lambda: p*0.0,
-        lambda: lax.cond(
-            state[-1] == 0,
-            lambda: p*0.0,
-            lambda: _kronvec_met(
-                log_theta=log_theta,
-                p=p,
-                i=i,
-                state=state,
-                diag=diag,
-                transpose=transpose
-            ),
-        ),
+        flag + (state[-1] == 0)*(1-flag),
+        zero_fun,
+        _kronvec_met,
+        log_theta, p, i, state, diag, transpose
     )
 
 
-#@partial(jit, static_argnames=["diag", "transpose"])
 def _kronvec_seed(
-    log_theta: jnp.array,
-    p: jnp.array,
-    state: jnp.array,
+    log_theta: jnp.ndarray,
+    p: jnp.ndarray,
+    state: jnp.ndarray,
     diag: bool = True,
     transpose: bool = False
-) -> jnp.array:
+    ) -> jnp.ndarray:
+    
     def loop_body_diag(j, val):
-
         val = lax.switch(
-            index=state.at[2*j].get() + 2 * state.at[2*j+1].get(),
-            branches=[
-                lambda x: x,
-                lambda x: k2d10(x),
-                lambda x: k2d10(x),
-                lambda x: k4d100t(p=x, theta=jnp.exp(
-                    log_theta.at[log_theta.shape[0], j].get()))
-            ],
-            operand=val
+            state[2*j] + 2 * state[2*j+1],
+            [k1d00, k2d10, k2d10, k4d100t],
+            val, theta_i[j]
         )
-
         return val
+    
     n = log_theta.shape[0]-1
+    theta_i = jnp.exp(log_theta[n,:])
     # Diagonal Kronecker factors
     p = lax.fori_loop(lower=0, upper=n,
                       body_fun=loop_body_diag, init_val=p)
@@ -528,10 +456,9 @@ def _kronvec_seed(
     # Non-diagonal Kronecker factor
     p = lax.cond(
         state[-1] == 1,
-        lambda x: k2ntt(x, theta=jnp.exp(
-            log_theta.at[n, n].get()), diag=diag, transpose=transpose),
-        lambda x: x * -jnp.exp(log_theta.at[n, n].get()),
-        operand=p
+        k2ntt,
+        k1ns,
+        p, theta_i[n], diag, transpose
     )
 
     return p
@@ -539,52 +466,48 @@ def _kronvec_seed(
 
 @partial(jit, static_argnames=["diag", "transpose"])
 def kronvec_seed(
-    log_theta: jnp.array,
-    p: jnp.array,
-    state: jnp.array,
+    log_theta: jnp.ndarray,
+    p: jnp.ndarray,
+    state: jnp.ndarray,
     diag: bool = True,
     transpose: bool = False
-) -> jnp.array:
+    ) -> jnp.ndarray:
     """This computes the restricted version of the product of the seeding summand of Q with a vector Q_M p.
     Args:
-        log_theta (jnp.array): Log values of the theta matrix
-        p (jnp.array): Vector to multiply with from the right. Length must equal the number of
-        nonzero entries in the state vector.
-        n (int): Total number of events in the MHN.
-        state (jnp.array): Binary state vector, representing the current sample's events.
+        log_theta (jnp.ndarray): Log values of the theta matrix
+        p (jnp.ndarray): Vector to multiply with from the right. Length must equal the number of
+            nonzero entries in the state vector.
+        state (jnp.ndarray): Binary state vector, representing the current sample's events.
         diag (bool, optional): Whether to use the diagonal of Q_M (and not set it to 0). Defaults to True.
         transpose (bool, optional): Whether to transpose Q_M before multiplying. Defaults to False.
 
     Returns:
-        jnp.array: Q_seed p
+        jnp.ndarray: Q_seed p
     """
     # there are no non-diagonal entries if event i is not mutated in both prim and met
+    def seed_zero(log_theta, p, state, diag, transpose):
+        return p * 0.
+    
     return lax.cond(
         not diag and state[-1] == 0,
-        lambda: p*0.0,
-        lambda: _kronvec_seed(
-            log_theta=log_theta,
-            p=p,
-            state=state,
-            diag=diag,
-            transpose=transpose
-        ),
-    )
+        seed_zero,
+        _kronvec_seed,
+        log_theta, p, state, diag, transpose
+        )
 
 
 @partial(jit, static_argnames=["diag", "transpose"])
-def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array, d_e: jnp.array,
-            diag: bool = True, transpose: bool = False) -> jnp.array:
+def kronvec(log_theta: jnp.ndarray, p: jnp.ndarray, state: jnp.ndarray,
+            diag: bool = True, transpose: bool = False
+            ) -> jnp.ndarray:
     """
     This computes the restricted version of the product of the rate matrix Q with a vector p.
 
     Args:
-        log_theta (jnp.array): Log values of the theta matrix
-        p (jnp.array): Vector to multiply with from the right. Length must equal the number of
-        nonzero entries in the state vector.
-        n (int): Total number of events in the MHN.
-        state (jnp.array): Binary state vector, representing the current sample's events.
-        d_e (jnp.array): Effect of the Seeding on the diagnosis.  
+        log_theta (jnp.ndarray): theta matrix with log. entries
+        p (jnp.ndarray): Vector to multiply with from the right. Length must equal the number of
+            nonzero entries in the state vector.
+        state (jnp.ndarray): Binary state vector, representing the current sample's events.
         diag (bool, optional): Whether to use the diagonal of Q (and not set it to 0). Defaults to True.
         transpose (bool, optional): Whether to transpose Q before multiplying. Defaults to False.
 
@@ -596,7 +519,7 @@ def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array, d_e: jnp.array
         val += kronvec_sync(log_theta=log_theta, p=p, i=i,
                             state=state, diag=diag, transpose=transpose)
         val += kronvec_prim(log_theta=log_theta, p=p, i=i,
-                            state=state, d_e=d_e, diag=diag, transpose=transpose)
+                            state=state, diag=diag, transpose=transpose)
         val += kronvec_met(log_theta=log_theta, p=p, i=i,
                            state=state, diag=diag, transpose=transpose)
 
@@ -617,200 +540,309 @@ def kronvec(log_theta: jnp.array, p: jnp.array, state: jnp.array, d_e: jnp.array
 
 
 @jit
+def diag_scal_p(log_d_p: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray) -> jnp.ndarray:
+    """Multiplies a vector p with the diagonal matrix of PT-diagnosis effects d_p
+
+    Args:
+        d_p (jnp.ndarray): Vector of PT-diagnosis effects
+        state (jnp.ndarray): Observed PT-MT tumor state
+        p (jnp.ndarray): Vector to multiply with d_p
+
+    Returns:
+        jnp.ndarray: d_p*P
+    """
+    def sync_loop(j, val):
+        val = lax.switch(
+            state[2*j] + 2 * state[2*j+1],
+            [k1d00, k2d1t, k2d11, k4d1t1t],
+            val, d_p[j]
+            )
+        return val
+
+    n = log_d_p.shape[0]-1
+    d_p = jnp.exp(log_d_p)
+    # Diagonal Kronecker factors
+    pt_d_rates = lax.fori_loop(lower=0, upper=n,
+                      body_fun=sync_loop, init_val=p)
+
+    #pt_d_rates = pt_d_rates.reshape((-1, 2), order="C").flatten(order="F")
+    pt_d_rates = k2d1t(pt_d_rates, d_p[-1])
+    return pt_d_rates
+
+
+def _partial_diag_scal_p(log_d_p: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray, i:int):
+    def sync_loop(j, val):
+        val = lax.switch(
+            state[2*j] + 2 * state[2*j+1],
+            [k1d00, k2d1t, k2d11, k4d1t1t],
+            val, d_p[j]
+            )
+        return val
+
+    n = log_d_p.shape[0]-1
+    d_p = jnp.exp(log_d_p)
+    # Diagonal Kronecker factors
+    pt_d_rates = lax.fori_loop(lower=0, upper=i, body_fun=sync_loop, init_val=p)
+    pt_d_rates = lax.cond(state[2*i] + state[2*i+1]==1,
+                          k2d0t,
+                          k4d0t0t,
+                          pt_d_rates, d_p[i])
+    pt_d_rates = lax.fori_loop(lower=i+1, upper=n, body_fun=sync_loop, init_val=pt_d_rates)
+    pt_d_rates = k2d1t(pt_d_rates, d_p[-1])
+    return pt_d_rates
+
+
+def scal_zero_fun(log_d_p, state, p, i):
+    return p*0.
+
+@jit
+def partial_diag_scal_p(log_d_p: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray, 
+                        i:int) -> jnp.ndarray:
+    n = log_d_p.shape[0] - 1
+
+    def partial_le(log_d_p, state, p, i):
+        d_p_d = diag_scal_p(log_d_p, state, p)
+        d_p_d = d_p_d.reshape((-1, 2), order="F")
+        d_p_d = d_p_d.at[:,0].set(0.)
+        return d_p_d.ravel(order="F")
+
+    return lax.switch(state[2*i]+(i==n),
+                    [scal_zero_fun, _partial_diag_scal_p, partial_le],
+                    log_d_p, state, p, i
+                    )
+ 
+@jit
+def diag_scal_m(log_d_m: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray, i: int = 0
+                ) -> jnp.ndarray:
+    """Multiplies a vector p with the diagonal matrix of MT-diagnosis effects d_m
+
+    Args:
+        d_m (jnp.ndarray): Vector of MT-diagnosis effects
+        state (jnp.ndarray): Observed PT-MT tumor state
+        p (jnp.ndarray): Vector to multiply with d_m
+
+    Returns:
+        jnp.ndarray: d_m*p
+    """
+    def met_loop(j, val):
+        val = lax.switch(
+            state[2*j] + 2 * state[2*j+1],
+            [k1d00, k2d11, k2d1t, k4d11tt],
+            val, d_m[j]
+        )
+        return val
+    n = log_d_m.shape[0] - 1
+    d_m = jnp.exp(log_d_m)
+    mt_d_rates = lax.fori_loop(lower=0, upper=n,
+                           body_fun=met_loop, init_val=p)
+    mt_d_rates = k2d0t(mt_d_rates, d_m[-1])
+    return mt_d_rates
+
+
+def _partial_diag_scal_m(log_d_m: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray, 
+                         i:int) -> jnp.ndarray:
+    """Multiplies a vector p with the diagonal matrix of MT-diagnosis effects d_m
+
+    Args:
+        d_m (jnp.ndarray): Vector of MT-diagnosis effects
+        state (jnp.ndarray): Observed PT-MT tumor state
+        p (jnp.ndarray): Vector to multiply with d_m
+
+    Returns:
+        jnp.ndarray: d_m*p
+    """
+    def met_loop(j, val):
+        val = lax.switch(
+            state[2*j] + 2 * state[2*j+1],
+            [k1d00, k2d11, k2d1t, k4d11tt],
+            val, d_m[j]
+        )
+        return val
+    n = log_d_m.shape[0] - 1
+    d_m = jnp.exp(log_d_m)
+    mt_d_rates = lax.fori_loop(lower=0, upper=i, body_fun=met_loop, init_val=p)
+    mt_d_rates = lax.cond(state[2*i]+state[2*i+1]==1, 
+                          k2d0t, 
+                          k4d00tt,
+                          mt_d_rates, d_m[i])
+    mt_d_rates = lax.fori_loop(lower=i+1, upper=n, body_fun=met_loop, init_val=mt_d_rates)
+    return k2d0t(mt_d_rates, d_m[-1])
+
+
+@jit
+def partial_diag_scal_m(log_d_m: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray, 
+                        i:int) -> jnp.ndarray:
+    n = log_d_m.shape[0] - 1
+    return lax.switch((state[jnp.min(jnp.array([2*n, 2*i+1]))]) + (i==n),
+                      [scal_zero_fun, _partial_diag_scal_m, diag_scal_m],
+                      log_d_m, state, p, i)
+
+
 def kron_sync_diag(
-        log_theta: jnp.array,
+        log_theta: jnp.ndarray,
         i: int,
-        state: jnp.array,
-        diag: jnp.array) -> jnp.array:
+        state: jnp.ndarray,
+        n_state: int
+        ) -> jnp.ndarray:
     """This computes the diagonal of the synchronized part of the ith Q summand Q_i.
 
     Args:
         log_theta (jnp.array): Log values of the theta matrix
-        nonzero entries in the state vector.
         i (int): Index of the summand.
-        n (int): Total number of events in the MHN.
         state (jnp.array): Binary state vector, representing the current sample's events.
-        diag (jnp.array): Vector of ones of size 2 ** (number of 1s in state)
+        n_state (int): Number of non zero bits in state
 
     Returns:
         jnp.array: diag(Q_i_sync)
     """
     def loop_body(j, val):
         val = lax.switch(
-            index=state.at[2*j].get() + 2 * state.at[2*j+1].get(),
-            branches=[
-                lambda val: val,
-                lambda val: k2d10(val),
-                lambda val: k2d10(val),
-                lambda val: k4d100t(val, jnp.exp(log_theta[i, j]))
-            ],
-            operand=val
+            state[2*j] + 2 * state[2*j+1],
+            [k1d00, k2d10, k2d10, k4d100t],
+            val, theta_i[j]
         )
         return val
-
+    theta_i = jnp.exp(log_theta[i,:])
     n = log_theta.shape[0] - 1
+    diag = jnp.ones(2**n_state)
 
     diag = lax.fori_loop(
         lower=0,
         upper=i,
         body_fun=loop_body,
-        init_val=diag
-    )
+        init_val=diag)
 
     diag = lax.switch(
-        index=state.at[2*i].get() + 2 * state.at[2*i+1].get(),
-        branches=[
-            lambda val: -jnp.exp(log_theta[i, i]) * val,
-            lambda val: k2dt0(val, jnp.exp(log_theta[i, i])),
-            lambda val: k2dt0(val, jnp.exp(log_theta[i, i])),
-            lambda val: k4dt000(val, jnp.exp(log_theta[i, i]))
-        ],
-        operand=diag
+        state[2*i] + 2 * state[2*i+1],
+        [k1ns, k2dt0, k2dt0, k4dt000],
+        diag, theta_i[i]
     )
-
+    
     diag = lax.fori_loop(
         lower=i+1,
         upper=n,
         body_fun=loop_body,
-        init_val=diag
-    )
+        init_val=diag)
 
     diag = lax.cond(
         state[-1] == 1,
-        lambda x: k2d10(x),
-        lambda x: x,
-        operand=diag
-    )
+        k2d10,
+        k1d00,
+        diag, 1.)
+    
     return diag
 
 
 def _kron_prim_diag(
-        log_theta: jnp.array,
+        log_theta: jnp.ndarray,
+        diag: jnp.array,
         i: int,
-        state: jnp.array,
-        d_e: jnp.array,
-        diag: jnp.array) -> jnp.array:
+        state: jnp.ndarray,
+        ) -> jnp.ndarray:
 
+    # Single diagonal Kronecker vector product
     def loop_body(j, val):
         val = lax.switch(
-            index=state.at[2*j].get() + 2 * state.at[2*j+1].get(),
-            branches=[
-                lambda val: val,
-                lambda val: k2d1t(val, jnp.exp(log_theta[i, j])),
-                lambda val: k2d11(val),
-                lambda val: k4d1t1t(val, jnp.exp(log_theta[i, j]))
-            ],
-            operand=val
+            state[2*j] + 2 * state[2*j+1],
+            [k1d00, k2d1t, k2d11, k4d1t1t],
+            val, theta_i[j]
         )
         return val
 
     n = log_theta.shape[0] - 1
-
+    theta_i = jnp.exp(log_theta[i, :])
+    
+    # Diagonal Kronecker factors
     diag = lax.fori_loop(
         lower=0,
         upper=i,
         body_fun=loop_body,
-        init_val=diag
-    )
+        init_val=diag)
 
+    # Non diagonal Kronecker factors
     diag = lax.switch(
-        index=state.at[2*i].get() + 2 * state.at[2*i+1].get(),
-        branches=[
-            lambda val: -jnp.exp(log_theta[i, i]) * val,
-            lambda val: k2dt0(val, jnp.exp(log_theta[i, i])),
-            lambda val: k2dtt(val, jnp.exp(log_theta[i, i])),
-            lambda val: k4dt0t0(val, jnp.exp(log_theta[i, i]))
-        ],
-        operand=diag
-    )
-
+        state[2*i] + 2 * state[2*i+1],
+        [k1ns, k2dt0, k2dtt, k4dt0t0],
+        diag, theta_i[i])
+    
+    # Diagonal Kronecker factors
     diag = lax.fori_loop(
         lower=i+1,
         upper=n,
         body_fun=loop_body,
-        init_val=diag
-    )
-
-    #diag = k2d01(diag)
-    diag = k2d0t(diag, jnp.exp(-d_e))
+        init_val=diag)
+    
+    # Last Kronecker factor
+    diag = k2d01(diag)
     return diag
 
 
-@jit
+def diag_zero_fun(log_theta, diag, i, state):
+    return 0*diag
+
+
+@partial(jit, static_argnames=["n_state"])
 def kron_prim_diag(
-        log_theta: jnp.array,
+        log_theta: jnp.ndarray,
         i: int,
-        state: jnp.array,
-        d_e: jnp.array,
-        diag: jnp.array) -> jnp.array:
+        state: jnp.ndarray,
+        n_state: int
+        ) -> jnp.ndarray:
     """This computes the diagonal of the asynchronous primary tumour part of the ith
     Q summand Q_i.
 
     Args:
-        log_theta (jnp.array): Log values of the theta matrix
-        nonzero entries in the state vector.
+        log_theta (jnp.ndarray): Log values of the theta matrix
         i (int): Index of the summand.
-        n (int): Total number of events in the MHN.
-        state (jnp.array): Binary state vector, representing the current sample's events.
-        d_e (jnp.array): Effect of the Seeding on the diagnosis.
-        diag (jnp.array): Vector of ones of size 2 ** (number of 1s in state)
-
+        state (jnp.ndarray): Binary state vector, representing the current sample's events.
+        n_state(int): Number of non zero bits in state
+    
     Returns:
-        jnp.array: diag(Q_i_prim)
+        jnp.ndarray: diag(Q_i_prim)
     """
-
+    p = jnp.ones(2**n_state)
     return lax.cond(
         state[-1] == 0,
-        lambda: diag * 0.0,
-        lambda: _kron_prim_diag(
-            log_theta=log_theta,
-            i=i,
-            state=state,
-            d_e = d_e,
-            diag=diag,
-        ),
-    )
+        diag_zero_fun,
+        _kron_prim_diag,
+        log_theta, p, i, state
+        )
 
 
 def _kron_met_diag(
-        log_theta: jnp.array,
+        log_theta: jnp.ndarray,
+        diag: jnp.ndarray,
         i: int,
-        state: jnp.array,
-        diag: jnp.array) -> jnp.array:
+        state: jnp.ndarray,
+        ) -> jnp.ndarray:
 
+    # Single Kronecker vector product
     def loop_body(j, val):
-
         val = lax.switch(
-            index=state.at[2*j].get() + 2 * state.at[2*j+1].get(),
-            branches=[
-                lambda val: val,
-                lambda val: k2d11(val),
-                lambda val: k2d1t(val, jnp.exp(log_theta[i, j])),
-                lambda val: k4d11tt(val, jnp.exp(log_theta[i, j]))
-            ],
-            operand=val
+            state[2*j] + 2 * state[2*j+1],
+            [k1d00, k2d11, k2d1t, k4d11tt],
+            val, theta_i[j]
         )
         return val
+    
     n = log_theta.shape[0] - 1
+    theta_i = jnp.exp(log_theta[i, :])
 
+    # Diagonal Kronecker vector products
     diag = lax.fori_loop(
         lower=0,
         upper=i,
         body_fun=loop_body,
-        init_val=diag
-    )
+        init_val=diag)
 
+    # Non diagonal Kronecker vector products
     diag = lax.switch(
-        index=state.at[2*i].get() + 2 * state.at[2*i+1].get(),
-        branches=[
-            lambda val: -jnp.exp(log_theta[i, i]) * val,
-            lambda val: k2dtt(val, jnp.exp(log_theta[i, i])),
-            lambda val: k2dt0(val, jnp.exp(log_theta[i, i])),
-            lambda val: k4dtt00(val, jnp.exp(log_theta[i, i]))
-        ],
-        operand=diag
+        state[2*i] + 2 * state[2*i+1],
+        [k1ns, k2dtt, k2dt0, k4dtt00],
+        diag, theta_i[i]
     )
 
+    # diagonal Kronecker factors
     diag = lax.fori_loop(
         lower=i+1,
         upper=n,
@@ -818,74 +850,68 @@ def _kron_met_diag(
         init_val=diag
     )
 
-    diag = k2d0t(diag, jnp.exp(log_theta[i, n]))
+    # Last Kronecker factor
+    diag = k2d0t(diag, theta_i[n])
 
     return diag
 
 
-@jit
+@partial(jit, static_argnames=["n_state"])
 def kron_met_diag(
-        log_theta: jnp.array,
+        log_theta: jnp.ndarray,
         i: int,
-        state: jnp.array,
-        diag: jnp.array) -> jnp.array:
+        state: jnp.ndarray,
+        n_state: int
+        ) -> jnp.ndarray:
     """This computes the diagonal of the asynchronous metastasis part of the ith
-    Q summand Q_i.
+        Q summand Q_i.
 
     Args:
-        log_theta (jnp.array): Log values of the theta matrix
-        nonzero entries in the state vector.
+        log_theta (jnp.ndarray): Log values of the theta matrix
         i (int): Index of the summand.
-        n (int): Total number of events in the MHN.
-        state (jnp.array): Binary state vector, representing the current sample's events.
-        diag (jnp.array): Vector of ones of size 2 ** (number of 1s in state)
+        state (jnp.ndarray): Binary state vector, representing the current sample's events.
+        n_state: Number of nonzero bits in state
 
     Returns:
-        jnp.array: diag(Q_i_met)
+        jnp.ndarray: diag(Q_i_met)
     """
+    diag = jnp.ones(2**n_state)
     return lax.cond(
         state[-1] == 0,
-        lambda: diag * 0.0,
-        lambda: _kron_met_diag(
-            log_theta=log_theta,
-            i=i,
-            state=state,
-            diag=diag,
-        ),
-    )
+        diag_zero_fun,
+        _kron_met_diag,
+        log_theta, diag, i, state
+        )
 
 
-@jit
 def kron_seed_diag(
-        log_theta: jnp.array,
-        state: jnp.array,
-        diag: jnp.array) -> jnp.array:
+        log_theta: jnp.ndarray,
+        state: jnp.ndarray,
+        n_state: int
+        ) -> jnp.ndarray:
     """This computes the diagonal of the seeding summand of Q.
 
     Args:
         log_theta (jnp.array): Log values of the theta matrix
         n (int): Total number of events in the MHN.
         state (jnp.array): Binary state vector, representing the current sample's events.
-        diag (jnp.array): Vector of ones of size 2 ** (number of 1s in state)
+        n_state (int): Number of non zero bits in state
 
     Returns:
-        jnp.array: diag(Q_seed)
-    """
-    n = log_theta.shape[0] - 1
-
+        jnp.ndarray: diag(Q_seed)
+    """    
+    # Single Kronecker vector product
     def loop_body(j, val):
         val = lax.switch(
-            index=state.at[2*j].get() + 2 * state.at[2*j+1].get(),
-            branches=[
-                lambda val: val,
-                lambda val: k2d10(val),
-                lambda val: k2d10(val),
-                lambda val: k4d100t(val, jnp.exp(log_theta[n, j]))
-            ],
-            operand=val
-        )
+            state[2*j] + 2 * state[2*j+1],
+            [k1d00, k2d10, k2d10, k4d100t],
+            val, theta_i[j]
+            )
         return val
-
+    n = log_theta.shape[0] - 1
+    diag = jnp.ones(2**n_state)
+    theta_i = jnp.exp(log_theta[n,:])
+    # Diagonal Kronecker factors
     diag = lax.fori_loop(
         lower=0,
         upper=n,
@@ -893,46 +919,42 @@ def kron_seed_diag(
         init_val=diag
     )
 
+    # Last Kronecker factor
     diag = lax.cond(
         state[-1] == 1,
-        lambda x: k2dt0(x, jnp.exp(log_theta[-1, -1])),
-        lambda x: x * -jnp.exp(log_theta[-1, -1]),
-        operand=diag
+        k2dt0,
+        k1ns,
+        diag, theta_i[n]
     )
 
     return diag
 
-
-@jit
-def kron_diag(log_theta: jnp.array, state: jnp.array, d_e: jnp.array, p_in: jnp.array) -> jnp.array:
+@partial(jit, static_argnames=["n_state"])
+def kron_diag(log_theta: jnp.ndarray, state: jnp.ndarray, n_state: int) -> jnp.ndarray:
     """This computes diagonal of the rate matrix Q.
 
     Args:
-        log_theta (jnp.array): Log values of the theta matrix
-        n (int): Total number of events in the MHN.
-        state (jnp.array): Binary state vector, representing the current sample's events.
-        d_e (jnp.array): Effect of the seeding on the diagnosis.
-        p_in (jnp.array): Vector size 2 ** (number of 1s in state)
+        log_theta (jnp.ndarray): Theta matrix with log entries
+        state (jnp.ndarray): Binary state vector, representing the current sample's events.
+        n_state (int): Number of non zero bits in state
 
     Returns:
-        jnp.array: diag(Q)
+        jnp.ndarray: diag(Q)
     """
-    y = p_in * 0.0
-    diagonal = y + 1
 
     def body_fun(i, val):
 
         val += kron_sync_diag(log_theta=log_theta, i=i,
-                              state=state, diag=diagonal)
+                              state=state, n_state=n_state)
         val += kron_prim_diag(log_theta=log_theta, i=i,
-                              state=state, d_e=d_e, diag=diagonal)
+                              state=state, n_state=n_state)
         val += kron_met_diag(log_theta=log_theta, i=i,
-                             state=state, diag=diagonal)
+                             state=state, n_state=n_state)
 
         return val
 
     n = log_theta.shape[0] - 1
-
+    y = jnp.zeros(2**n_state)
     y = lax.fori_loop(
         lower=0,
         upper=n,
@@ -940,60 +962,64 @@ def kron_diag(log_theta: jnp.array, state: jnp.array, d_e: jnp.array, p_in: jnp.
         init_val=y
     )
 
-    y += kron_seed_diag(log_theta=log_theta,
-                        state=state, diag=diagonal)
+    y += kron_seed_diag(log_theta=log_theta, state=state, n_state=n_state)
 
     return y
 
 
-def shuffle_stride2(p: jnp.array) -> jnp.array:
+def shuffle_stride2(p: jnp.ndarray) -> jnp.ndarray:
     p = p.reshape((-1, 2), order="C")
     return p.ravel(order="F")
 
 
-def keep_col2(p: jnp.array) -> jnp.array:
+def keep_col2(p: jnp.ndarray) -> jnp.ndarray:
     p = p.reshape((-1, 2), order="C")
     p = p.at[:, 0].set(0.)
     return p.ravel(order="F")
 
 
-def keep_col1_3(p: jnp.array) -> jnp.array:
+def keep_col1_3(p: jnp.ndarray) -> jnp.ndarray:
     p = p.reshape((-1, 4), order="C")
     p = p.at[:, (0, 2)].set(0.)
     return p.ravel(order="F")
 
 
-def keep_col2_3(p: jnp.array) -> jnp.array:
+def keep_col2_3(p: jnp.ndarray) -> jnp.ndarray:
     p = p.reshape((-1, 4), order="C")
     p = p.at[:, (0, 1)].set(0.)
     return p.ravel(order="F")
 
-@partial(jit, static_argnames=["n_joint", "obs_prim"])
-def obs_states(n_joint: int, state: jnp.array, obs_prim: bool = True) -> jnp.array:
-    """
-    Selects all states that are compatible with state at first sampling. If obs_prim = true then primary part of state is
+def keep_all(p: jnp.ndarray) -> jnp.ndarray:
+    return p
+
+@partial(jit, static_argnames=["n_joint", "pt_first"])
+def obs_states(n_joint: int, state: jnp.ndarray, pt_first: bool = True) -> jnp.ndarray:
+    """Selects all states that are compatible with state at first sampling. If obs_prim = true then primary part of state is
     assumed to be observed and the metastasis part is latent. Returns a binary array with entry at index i set to 1 if the 
     corresponfing state is compatible. 
+    
     Args:
-        n_joint (int): number of events in state
-        state (jnp.array): bitstring, mutational state of prim and met of a patient
-        obs_prim (bool): If true return P(Prim = prim_obs, Met) else return P(Prim, Met = met_obs)
+        n_joint (int): Number of non zero bits in state
+        state (jnp.ndarray): Bitstring, mutational state of PT and MT states of a patient
+        pt_first (bool): If true return the distribution of potential MT-states for a fixed PT observation: P(Prim = prim_obs, Met) 
+            else return the distribution of potential PT-states for a fixed MT observation: P(Prim, Met = met_obs)
+    
     Returns:
-        jnp.array
+        jnp.ndarray
     """
     def loop_body(i, p):
-        ind = state.at[2*i].get() + 2*state.at[2*i+1].get() + (1 - obs_prim)*4
+        ind = state[2*i] + 2*state[2*i+1] + (1 - pt_first)*4
         p = lax.switch(
             index=ind,
             branches=[
-                lambda p: p,                        # 00 obs_prim=1
-                lambda p: keep_col2(p),             # 10 obs_prim=1
-                lambda p: shuffle_stride2(p),       # 01 obs_prim=1
-                lambda p: keep_col1_3(p),           # 11 obs_prim=1
-                lambda p: p,                        # 00 obs_prim=0
-                lambda p: shuffle_stride2(p),       # 10 obs_prim=0
-                lambda p: keep_col2(p),             # 01 obs_prim=0
-                lambda p: keep_col2_3(p),           # 11 obs_prim=0
+                keep_all,              # 00 obs_prim=1
+                keep_col2,             # 10 obs_prim=1
+                shuffle_stride2,       # 01 obs_prim=1
+                keep_col1_3,           # 11 obs_prim=1
+                keep_all,              # 00 obs_prim=0
+                shuffle_stride2,       # 10 obs_prim=0
+                keep_col2,             # 01 obs_prim=0
+                keep_col2_3,           # 11 obs_prim=0
             ],
             operand=p
         )
@@ -1001,8 +1027,8 @@ def obs_states(n_joint: int, state: jnp.array, obs_prim: bool = True) -> jnp.arr
 
     n = (state.shape[0] - 1)//2
     p = lax.fori_loop(0, n, loop_body, jnp.ones(2**n_joint))
-    p = lax.cond(state.at[-1].get() == 0,
-                lambda p: p,
-                lambda p: keep_col2(p),
-                operand = p)
+    p = lax.cond(state[-1] == 0,
+                keep_all,
+                keep_col2,
+                p)
     return p

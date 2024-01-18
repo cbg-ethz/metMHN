@@ -1,5 +1,4 @@
 from metmhn.regularized_optimization import learn_mhn, log_lik
-
 from itertools import chain, combinations
 import numpy as np
 import jax.numpy as jnp
@@ -16,7 +15,7 @@ my_color_gradient = LinearSegmentedColormap.from_list('my_gradient', (
     (1.000, (0.000, 0.620, 0.451)))
     )
 
-def state_space(n: int) -> np.array:
+def state_space(n: int) -> np.ndarray:
     """
     Generates all possible states of size n in lexicographic order
     Args:
@@ -29,7 +28,7 @@ def state_space(n: int) -> np.array:
     return ret
 
 
-def trunk_states(state: np.array) -> np.array:
+def trunk_states(state: np.ndarray) -> np.ndarray:
     """
     Enumerates all possible states that a tumor(pair) with genotype(s) "state" could have visited
     Args:
@@ -48,7 +47,7 @@ def trunk_states(state: np.array) -> np.array:
     return state_space(n)[inds.astype(bool), :]
 
 
-def ssr_to_fss(state: np.array) -> np.array:
+def ssr_to_fss(state: np.ndarray) -> np.ndarray:
     """This gives the indices of the rate matrix that are appearing in the
     state space restricted rate matrix.
 
@@ -63,7 +62,7 @@ def ssr_to_fss(state: np.array) -> np.array:
     return res.astype(bool)
 
 
-def random_theta(n: int, sparsity: float) -> np.array:
+def random_theta(n: int, sparsity: float) -> np.ndarray:
     """
     Generates a logarithmic theta with normal distributed entries
     Args:
@@ -84,7 +83,7 @@ def random_theta(n: int, sparsity: float) -> np.array:
     return log_theta
 
 
-def reachable_states(n: int) -> np.array:
+def reachable_states(n: int) -> np.ndarray:
     """This function returns the indices, w.r.t. to a lexicographical ordering, of the states
     of an MHN with n events, that can actually be reached.
 
@@ -103,7 +102,7 @@ def reachable_states(n: int) -> np.array:
     return reachable.astype(bool)
 
 
-def finite_sample(p_th: np.array, k: int) -> np.array:
+def finite_sample(p_th: np.ndarray, k: int) -> np.ndarray:
     """
     Generates k random samples drawn from a probability distribution p_th
     Code taken from https://github.com/spang-lab/LearnMHN/blob/main/mhn/original/UtilityFunctions.py
@@ -116,7 +115,8 @@ def finite_sample(p_th: np.array, k: int) -> np.array:
     n = p_th.size
     return np.bincount(np.random.choice(n, k, replace=True, p=p_th), minlength=n) / k
 
-def categorize(x: pd.DataFrame) -> int:
+
+def categorize(x: pd.Series) -> int:
     if x['paired'] == 0:
         if x['metaStatus'] == "absent":
             return 0
@@ -134,7 +134,7 @@ def categorize(x: pd.DataFrame) -> int:
         return -1
 
 
-def add_seeding(x: pd.DataFrame) -> int:
+def add_seeding(x: pd.Series) -> int:
     if x['type'] in [1,2,3]:
         return 1
     elif x['type'] == 0:
@@ -143,7 +143,7 @@ def add_seeding(x: pd.DataFrame) -> int:
         return -1
     
 
-def split_data(dat: pd.DataFrame, events: list) -> tuple:
+def split_data(dat: pd.DataFrame, events: list) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Splits the whole dataset into subsets, based on their type
 
     Args:
@@ -152,14 +152,27 @@ def split_data(dat: pd.DataFrame, events: list) -> tuple:
     Returns:
         tuple: tuple of 4 subsets
     """
-    prim_only = jnp.array(dat.loc[dat["type"] == 0, events].to_numpy(dtype=np.int8))
-    prim_met = jnp.array(dat.loc[dat["type"] == 1, events].to_numpy(dtype=np.int8))
-    met_only = jnp.array(dat.loc[dat["type"] == 2, events].to_numpy(dtype=np.int8))
-    coupled = jnp.array(dat.loc[dat["type"] == 3, events].to_numpy(dtype=np.int8))
+    prim_only = jnp.array(dat.loc[dat["type"] == 0, events].to_numpy(dtype=np.int8, na_value = -99))
+    prim_met = jnp.array(dat.loc[dat["type"] == 1, events].to_numpy(dtype=np.int8, na_value = -10))
+    met_only = jnp.array(dat.loc[dat["type"] == 2, events].to_numpy(dtype=np.int8, na_value = -10))
+    coupled = jnp.array(dat.loc[dat["type"] == 3, events].to_numpy(dtype=np.int8, na_value = -10))
     return prim_only, prim_met, met_only, coupled
 
 
-def marg_frequs(dat_prim_nomet, dat_prim_met, dat_met_only, dat_coupled, events):
+def marg_frequs(dat_prim_nomet: jnp.ndarray, dat_prim_met: jnp.ndarray, dat_met_only:jnp.ndarray, 
+                dat_coupled: jnp.ndarray, events: list) -> pd.DataFrame:
+    """This calculates the empirical marginal frequencies of mutations in the stratified datasets
+
+    Args:
+        dat_prim_nomet (jnp.ndarray): Dataset of unpaired never met. primary tumors
+        dat_prim_met (jnp.ndarray): Dataset of unpaired metastasized primary tumors
+        dat_met_only (jnp.ndarray): Dataset of unpaired metastases
+        dat_coupled (jnp.ndarray): Dataset of coupled PT-MT pairs
+        events (list): List of genomic events of interest
+
+    Returns:
+        pd.DataFrame: marginal probabilities
+    """
     n_mut = (dat_prim_nomet.shape[1]-1)//2
     n_tot = n_mut + 1
     arr = dat_coupled * np.array([1,2]*n_mut+[1])
@@ -185,15 +198,15 @@ def marg_frequs(dat_prim_nomet, dat_prim_met, dat_met_only, dat_coupled, events)
     return counts
 
 
-def indep(dat: jnp.array, n_coupled: int) -> tuple[np.array, np.array, np.array]:
-    """Generates an initialization for theta, fd_effects and sd_effects
+def indep(dat: jnp.ndarray, n_coupled: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """This function generates an initial estimate for theta and d_p and d_m
 
     Args:
-        dat (jnp.array): 2d array wof observations
+        dat (jnp.ndarray): Dataset
         n_coupled (int): Number of coupled datapoints
 
     Returns:
-        tuple[np.array, np.array, np.array]: independence model, init for fd_effects, init for sd_effects 
+        tuple[np.ndarray, np.ndarray, np.ndarray]: th_init, d_p_init, d_m_init
     """
     
     n = (dat.shape[1] - 1)//2
@@ -210,12 +223,12 @@ def indep(dat: jnp.array, n_coupled: int) -> tuple[np.array, np.array, np.array]
     return theta, np.zeros(n+1), np.zeros(n+1)
 
 
-def cross_val(dat: pd.DataFrame, events: list, splits: jnp.array, nfolds: int, m_p_corr: float) -> float:
+def cross_val(dat: pd.DataFrame, events: list, splits: jnp.ndarray, nfolds: int, m_p_corr: float) -> float:
     """Performs nfolds-crossvalidation across a parameter range in splits 
 
     Args:
         dat (pd.DataFrame):     Input data
-        splits (jnp.array):     Hyperparameter range to test
+        splits (jnp.ndarray):   Hyperparameter range to test
         nfolds (int):           Number of folds (subgroups) to split dat into
         m_p_corr (float):       Correction factor to account for poverrepresentation of mets
 
@@ -247,7 +260,7 @@ def cross_val(dat: pd.DataFrame, events: list, splits: jnp.array, nfolds: int, m
                                      train_prim_met, train_met_only, train_coupled, 
                                      m_p_corr, splits[j])
             params = np.concatenate((th.flatten(), fd, sd))
-            runs_constrained[i,j] = log_lik(params, test_prim_only, test_prim_met, test_met_only, 
+            runs_constrained[i,j] = log_lik(params, test_prim_only, test_prim_met, test_met_only,
                                             test_coupled, 0., m_p_corr)
             
             logging.info(f"Split: {splits[j]}, Fold: {i}, Score: {runs_constrained[i,j]}")
@@ -263,18 +276,19 @@ def cross_val(dat: pd.DataFrame, events: list, splits: jnp.array, nfolds: int, m
     return best_diag_penal
 
 
-def plot_theta(th_in: np.array, events: np.array, alpha: float, verbose=True) -> tuple:
-    """Plot theta matrix 
+def plot_theta(model: jnp.ndarray, events: jnp.ndarray, 
+               alpha: float, verbose=True, font_size=10) -> tuple:
+    """Visualize theta, d_m and d_p
 
     Args:
-        th_in (np.array):   Theta matrix with logarithmic entries
+        model (np.array):   Theta matrix with logarithmic entries
         events (np.array):  Array of event names excluding diagnosis
         alpha (float):      Threshold for effect size
 
     Returns:
         tuple: tuple of axis objects
     """
-    th = th_in.copy()
+    th = model.copy()
     n_total = th.shape[1]
     theta = th[2:, :]
     th_diag = np.diagonal(theta.copy())
@@ -290,7 +304,7 @@ def plot_theta(th_in: np.array, events: np.array, alpha: float, verbose=True) ->
                                 gridspec_kw={'width_ratios': [n_total, 1], 
                                              "top":1, "bottom": 0, "right":1, 
                                              "left":0, "hspace":0, "wspace":-0.48})
-    events_ext = np.concatenate((np.array(["FD", "SD"]), events))
+    events_ext = np.concatenate((np.array(["d_p", "d_m"]), events))
     # Plot off diagonals on one plot
     im1 = ax.matshow(th, cmap=my_color_gradient, vmin=-max_c, vmax=max_c)
     ax.set_xticks(range(n_total), events, fontsize=14, rotation=90)
@@ -315,13 +329,13 @@ def plot_theta(th_in: np.array, events: np.array, alpha: float, verbose=True) ->
        for i in range(n_total+2):
             for j in range(n_total):
                 if np.isnan(th[i,j]) == False:
-                    c = np.round(th[i,j].round(2), 2)
+                    c = np.round(th[i,j], 2)
                 else:
                     c = ""
-                ax.text(j, i, str(c), va='center', ha='center')
+                ax.text(j, i, str(c), va='center', ha='center', size=font_size)
             if np.isnan(th_diag[i,0]):
                 c = ""
             else:
-                c = np.round(th_diag[i,0],3)
-            ax2.text(0, i, str(c), va='center', ha='center')
+                c = np.round(th_diag[i,0], 2)
+            ax2.text(0, i, str(c), va='center', ha='center', size=font_size)
     return f
