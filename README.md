@@ -28,3 +28,5 @@ Finally install the metMHN package locally using
 ```bash
 pip install -e .
 ```
+
+We provide an example analysis of a reduced lung adeno carcinoma (LUAD) dataset, that can be run on a standard desktop, in `examples/example_analysis.ipynb`.
