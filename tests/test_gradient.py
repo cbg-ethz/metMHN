@@ -49,7 +49,7 @@ class DerivativeTestCase(unittest.TestCase):
         self.state_met = jnp.array(
             np.append(rng.binomial(1, 0.6, 2*self.n_mut),1)).reshape((1,N))
         self.state_coupled = jnp.array(
-            np.append(rng.binomial(1, 0.6, 2*self.n_mut), [1, 2])).reshape((1, N+1))
+            np.append(rng.binomial(1, 0.6, 2*self.n_mut), [1, 0])).reshape((1, N+1))
 
         self.h = 1e-08  # Stepsize for finite difference method
         self.tol = 1e-04    # Tolerance for comparisson between numeric and analytic solution
@@ -111,7 +111,7 @@ class DerivativeTestCase(unittest.TestCase):
             g_num[i] = (score_h - score)/self.h
         np.testing.assert_allclose(g_num, 
                                    np.array(regopt.grad(params, self.state_prim_only, self.state_prim_met, self.state_met,
-                                                        self.state_coupled, 0., 0.8)[1]),
+                                                        self.state_coupled, 0., 0.8)),
                                    rtol=self.tol)
 
 if __name__ == "__main__":
