@@ -27,13 +27,6 @@ def L1_(theta: jnp.ndarray, eps: float = 1e-05) -> jnp.ndarray:
     return theta_.flatten() / jnp.sqrt(theta_.flatten()**2 + eps)
 
 
-def L2(theta: jnp.ndarray) -> jnp.ndarray:
-    return jnp.sum(theta**2)
-
-def L2_(theta: jnp.ndarray) -> jnp.ndarray:
-    return 2*theta
-
-
 def sym_penal(log_theta: jnp.ndarray, eps: float = 1e-05) -> jnp.ndarray:
     n = log_theta.shape[0]
     theta_ = log_theta.at[jnp.diag_indices(n)].set(0.)
@@ -113,11 +106,8 @@ def lp_coupled(log_theta: jnp.ndarray, log_d_p: jnp.ndarray,
         n_met = int(state_joint[1::2].sum() + 1)
         order = dat[i,2*n_muts+1]
         if order == 0:
-            tmp = jnp.exp(ssr._lp_coupled_1(log_theta, log_d_p, log_d_m, state_joint,
-                                        n_prim, n_met))
-            tmp += jnp.exp(ssr._lp_coupled_2(log_theta, log_d_p, log_d_m, state_joint,
-                                        n_prim, n_met))
-            score += jnp.log(tmp)
+            score += ssr._lp_coupled_0(log_theta, log_d_p, log_d_m, state_joint,
+                                        n_prim, n_met)
         elif order == 1:
             score += ssr._lp_coupled_1(log_theta, log_d_p, log_d_m, state_joint,
                                         n_prim, n_met)
@@ -159,12 +149,7 @@ def log_lik(params: np.ndarray, dat_prim_only: jnp.ndarray, dat_prim_met: jnp.nd
     score_prim_met = lp_prim_only(log_theta, log_d_p, dat_prim_met)
     score_met_only = lp_met_only(log_theta, log_d_p, log_d_m, dat_met)
     score_coupled = lp_coupled(log_theta, log_d_p, log_d_m, dat_coupled)
-    
-    #w_m_o = n_c/n_m_o
-    #w_p_m = n_c/n_p_m
-    #score_mets = score_coupled + w_p_m * score_prim_met + w_m_o*score_met_only
     score_mets = score_coupled + score_prim_met + score_met_only
-    #n_mets = n_c + w_m_o * n_m_o + w_p_m * n_p_m
     n_mets = n_c + n_m_o + n_p_m
     
     w = (1-perc_met)*n_mets/(perc_met * n_p_o)
@@ -266,16 +251,8 @@ def grad_coupled(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndar
             n_met = int(state[1::2].sum() + 1)
             order = dat[i,2*n_mut+1]
             if order == 0:
-                lik_1, d_th_1, d_d_p_1, d_d_m_1 = ssr._g_coupled_1(log_theta, log_d_p, log_d_m, state,
+                lik, d_th, d_d_p, d_d_m = ssr._g_coupled_0(log_theta, log_d_p, log_d_m, state,
                                                             n_prim, n_met)
-                lik_2, d_th_2, d_d_p_2, d_d_m_2 = ssr._g_coupled_2(log_theta, log_d_p, log_d_m, state,
-                                                            n_prim, n_met)
-                l1e = jnp.exp(lik_1) 
-                l2e = jnp.exp(lik_2)
-                lik = jnp.log(l1e + l2e)
-                d_th = (l1e*d_th_1 + l2e*d_th_2)/(l1e + l2e)
-                d_d_p = (l1e*d_d_p_1 + l2e*d_d_p_2)/(l1e + l2e)
-                d_d_m = (l1e*d_d_m_1 + l2e*d_d_m_2)/(l1e + l2e)
             elif order == 1:
                 lik, d_th, d_d_p, d_d_m = ssr._g_coupled_1(log_theta, log_d_p, log_d_m, state,
                                                             n_prim, n_met)
@@ -322,10 +299,8 @@ def grad(params: np.ndarray, dat_prim_only: jnp.ndarray, dat_prim_met:jnp.ndarra
     log_d_m = jnp.array(params[n_total*(n_total+1):])
 
     # Penalties and their derivatives
-    #l1_ = np.concatenate((sym_penal_(log_theta), L1_(log_d_p), L1_(log_d_m)))
-    l1_ = np.concatenate((L2_(log_theta).flatten(), L2_(log_d_p), L2_(log_d_m)))
-    #l1 = sym_penal(log_theta) + L1(log_d_p) + L1(log_d_m)
-    l1 = L2(log_theta) + L2(log_d_p) + L2(log_d_m)
+    l1_ = np.concatenate((sym_penal_(log_theta), L1_(log_d_p), L1_(log_d_m)))
+    l1 = sym_penal(log_theta) + L1(log_d_p) + L1(log_d_m)
     
     # Scores and gradients of all datasets
     score_prim, g_prim = grad_prim_only(log_theta, log_d_p, dat_prim_only)
@@ -333,12 +308,8 @@ def grad(params: np.ndarray, dat_prim_only: jnp.ndarray, dat_prim_met:jnp.ndarra
     score_met_only, g_met_only = grad_met_only(log_theta, log_d_p, log_d_m, dat_met)
     score_coupled, g_coupled = grad_coupled(log_theta, log_d_p, log_d_m, dat_coupled)
     
-    #w_m_o = n_c/n_m_o
-    #w_p_m = n_c/n_p_m
-    #g_mets = g_coupled + w_p_m * g_prim_met + w_m_o * g_met_only
     score_mets = score_prim_met + score_met_only + score_coupled
     g_mets = g_coupled + g_prim_met + g_met_only
-    #n_mets = n_c + w_m_o * n_m_o + w_p_m * n_p_m
     n_mets = n_c + n_m_o + n_p_m
     w = (1-perc_met)*n_mets/(perc_met * n_p_o)
     n_dat = w*n_p_o + n_mets
