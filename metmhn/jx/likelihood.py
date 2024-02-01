@@ -501,9 +501,9 @@ def _grad_met_obs(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.nda
     return jnp.log(score*d_rates[-1]), d_th, -d_dp, d_dm_1 - d_dm_2
 
 
-@partial(jit, static_argnames=["n_joint"])
+#@partial(jit, static_argnames=["n_joint"])
 def q_inv_deriv_pth(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, q: jnp.ndarray, p: jnp.ndarray, 
-                      state_joint: jnp.ndarray, n_joint: int) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+                    state_joint: jnp.ndarray, n_joint: int) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Calculate partial derivatives of z = q^T (D_{PM}-Q)^{-1} p_0 = q^T p wrt. theta, log_d_p and log_d_m
 
     Args:
@@ -519,7 +519,7 @@ def q_inv_deriv_pth(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.n
         tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]: Partial derivatives of z wrt. theta, log_d_p, log_d_m
     """
     q = R_i_inv_vec(log_theta, log_d_p, log_d_m, q, state_joint, 
-                        n_joint, transpose = True)
+                    n_joint, transpose = True)
     g_2 = x_partial_Q_y(log_theta, q, p, state_joint)
     # Derivative wrt diagnosis effects
     d_dp_2, d_dm_2 = x_partial_D_y(log_d_m, log_d_p, state_joint, q, p)
