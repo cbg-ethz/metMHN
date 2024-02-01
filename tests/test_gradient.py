@@ -88,8 +88,8 @@ class DerivativeTestCase(unittest.TestCase):
         
     def test_coupled_empty(self):
         state_pt = jnp.zeros((1, 2*(self.n_mut)+2), dtype=jnp.int8)
-        state_pt = state_pt.at[0,-1].set(2)
         state_pt = state_pt.at[0,-2].set(1)
+        state_pt = state_pt.at[0,-1].set(1)
         params = [self.theta, self.d_p, self.d_m, state_pt]
         g_num = finite_difference(regopt.lp_coupled, params, self.n_mut+1, self.h)
         np.testing.assert_allclose(g_num, 
@@ -111,7 +111,7 @@ class DerivativeTestCase(unittest.TestCase):
             g_num[i] = (score_h - score)/self.h
         np.testing.assert_allclose(g_num, 
                                    np.array(regopt.grad(params, self.state_prim_only, self.state_prim_met, self.state_met,
-                                                        self.state_coupled, 0., 0.8)),
+                                                        self.state_coupled, 0., 0.8)[1]),
                                    rtol=self.tol)
 
 if __name__ == "__main__":
