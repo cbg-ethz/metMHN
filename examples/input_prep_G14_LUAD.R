@@ -32,6 +32,9 @@
 ##    DOI: 10.1016/j.ygeno.2020.05.008.
 ##    Note that mecan4cna will not produce output for CN-silent samples
 
+## Finally, note that this script writes intermediate and final results.
+## Please adapt the write commands to fit your file structure
+
 ## This analysis was performed in R 4.3.1
 
 ##### CONTENTS
@@ -98,29 +101,17 @@
 ################################################################################
 
 ################################################################################
-### 05: FUSION EVENT PREPARATION
-### ============================================================================
-### THIS SECTION HAS TO BE CARRIED OUT MANUALLY!
-### in this section, GENIE SV data is used to manually define distinct fusion
-### events which then get binary calls for each sample
-################################################################################
-
-################################################################################
 ### 05: EVENT SELECTION AND CONVERSION TO P/M FORMAT
 ### ============================================================================
 ### THIS SECTION HAS TO BE CARRIED OUT MANUALLY!
 ### there is a limit to active-event-per-sample distributions at which metMHN
 ### training becomes computationally unfeasible. this limit chiefly depends
 ### on the maximum number of active (i.e., present) events per observation.
-### as of december 2023, our decision rule was therefore that "no complete 
-### observation (i.e., primary events + metastasis events + seeding) may
-### exceed 20 active events + seeding."
 ### in order to generate an input satisfying this rule while containing a 
 ### maximum of interesting events, in this section one first chooses an 
 ### event set, converts the vanilla input obtained that way to the P/M format
 ### and then checks whether the rule is satisfied, with an option to omit
-### a small fraction of samples which exceed the limit. iteratively, different
-### event sets should be tried out.
+### a small fraction of samples which exceed the limit. 
 ################################################################################
 
 
@@ -789,18 +780,18 @@ pmFormOmitted$P.AgeAtSeqRep <- ""
 pmFormOmitted$M.AgeAtSeqRep <- ""
 
 
-for (ssRow in 1:nrow(selectionRecord)) {
+for (ssRow in 1:nrow(selectionRecordOmitted)) {
   
-  if (!is.na(selectionRecord[ssRow, "primID"])) {
-    pmFormOmitted[selectionRecord[ssRow, "patientID"], "P.AgeAtSeqRep"] <- sampleData[which(sampleData$SAMPLE_ID == selectionRecord[ssRow, "primID"]), "AGE_AT_SEQ_REPORT"]
+  if (!is.na(selectionRecordOmitted[ssRow, "primID"])) {
+    pmFormOmitted[selectionRecordOmitted[ssRow, "patientID"], "P.AgeAtSeqRep"] <- sampleData[which(sampleData$SAMPLE_ID == selectionRecordOmitted[ssRow, "primID"]), "AGE_AT_SEQ_REPORT"]
   } else {
-    pmFormOmitted[selectionRecord[ssRow, "patientID"], "P.AgeAtSeqRep"] <- "No primary included"
+    pmFormOmitted[selectionRecordOmitted[ssRow, "patientID"], "P.AgeAtSeqRep"] <- "No primary included"
   }
   
-  if (!is.na(selectionRecord[ssRow, "metaID"])) {
-    pmFormOmitted[selectionRecord[ssRow, "patientID"], "M.AgeAtSeqRep"] <- sampleData[which(sampleData$SAMPLE_ID == selectionRecord[ssRow, "metaID"]), "AGE_AT_SEQ_REPORT"]
+  if (!is.na(selectionRecordOmitted[ssRow, "metaID"])) {
+    pmFormOmitted[selectionRecordOmitted[ssRow, "patientID"], "M.AgeAtSeqRep"] <- sampleData[which(sampleData$SAMPLE_ID == selectionRecordOmitted[ssRow, "metaID"]), "AGE_AT_SEQ_REPORT"]
   } else {
-    pmFormOmitted[selectionRecord[ssRow, "patientID"], "M.AgeAtSeqRep"] <- "No metastasis included"
+    pmFormOmitted[selectionRecordOmitted[ssRow, "patientID"], "M.AgeAtSeqRep"] <- "No metastasis included"
   }
   
 }
