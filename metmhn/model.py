@@ -134,35 +134,24 @@ def get_combos(order: np.array, n: int, first_obs: str) -> list[tuple[np.array]]
     else:
         raise ValueError("first_obs must be 'PT' or 'Met'.")
 
-
-class bits_fixed_n:
+    
+def bits_fixed_n(n, k):
     """
-    Iterator over integers whose binary representation has a fixed
+    Generator over integers whose binary representation has a fixed
     number of 1s, in lexicographical order.
     From https://graphics.stanford.edu/~seander/bithacks.html#NextBitPermutation
 
     :param n: How many 1s there should be
     :param k: How many bits the integer should have
     """
-
-    def __init__(self, n, k):
-        self.v = int("1"*n, 2)
-        self.stop_no = int("1"*n + "0"*(k-n), 2)
-        self.stop = False
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        if self.stop:
-            raise StopIteration
-        if self.v == self.stop_no:
-            self.stop = True
-        t = (self.v | (self.v - 1)) + 1
-        w = t | ((((t & -t)) // (self.v & (-self.v)) >> 1) - 1)
-        self.v, w = w, self.v
-        return w
-
+    v = int("1"*n, 2) 
+    stop_no = v << (k-n)
+    w = -1
+    while w != stop_no:
+        t = (v | (v - 1)) + 1
+        w = t | ((((t & -t)) // (v & (-v)) >> 1) - 1)
+        v, w = w, v
+        yield w
 
 class MetMHN:
     """
