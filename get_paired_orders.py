@@ -3,11 +3,12 @@ from metmhn.model import MetMHN
 import os
 
 # set paths
-log_theta_path = R"results\luad\luad_full_0003.csv"
-data_path = R"data\luad\G13_LUAD_PM_v2_Events_19and11_Full.csv"
-sample_selection_path = R"data\luad\G13_LUAD_PM_v2_sampleSelection_19and11.csv"
+log_theta_path = R"results\luad\luad_g14_0005.csv"
+data_path = R"data\luad\G14_LUAD_Events.csv"
+sample_selection_path = R"data\luad\G14_LUAD_sampleSelection.csv"
 output_path = log_theta_path[:-4] + "orders.txt"
 
+data = pd.read_csv(data_path, index_col=0)
 sample_selection = pd.read_csv(sample_selection_path, index_col=0)
 
 already_processed = []
@@ -26,8 +27,11 @@ log_theta = log_theta.drop(index=[0, 1]).to_numpy()
 
 mmhn = MetMHN(log_theta=log_theta, obs1=obs1, obs2=obs2)
 
+############ Compute paired patients ############
+
+limit = 11
+
 # get paired patients, drop NaNs, compute sequencing age difference
-data = pd.read_csv(data_path, index_col=0)
 paired = data[data["paired"] == 1]
 paired = paired.dropna().astype(int)
 paired["first_obs"] = paired["P.AgeAtSeqRep"] - paired["M.AgeAtSeqRep"]
@@ -39,7 +43,7 @@ paired = paired.loc[[i for i in paired.index if i not in already_processed]]
 for i, (pat, row) in enumerate(paired.sort_values("n_events").iterrows()):
     print(f"{i:4}/{len(paired)}. {row['n_events']:2} events.", end="\r")
 
-    if row['n_events'] > 12:
+    if row['n_events'] > limit:
         break
 
     with open(output_path, "a") as file:
@@ -56,20 +60,21 @@ for i, (pat, row) in enumerate(paired.sort_values("n_events").iterrows()):
                        first_obs=first_obs
                    )[0]) + "\n")
 
-unpaired = data[sample_selection["metaStatus"].isin(
-    ["present", "absent", "isMetastasis"])]
-# %%
+############ Compute unpaired patients ##########
+
+unpaired = data.\
+    loc[sample_selection.index][sample_selection["metaStatus"]
+                                .isin(["present", "absent", "isMetastasis"])]
 unpaired = unpaired.loc[[
     i for i in unpaired.index if i not in already_processed]]
 unpaired = unpaired[unpaired.columns[:-3]]
 unpaired["Seeding"] = (sample_selection["metaStatus"].isin(
     ["present", "isMetastasis"])).astype(int)
-# %%
 for i, (pat, row) in enumerate(unpaired.iterrows()):
     print(f"{i:4}/{len(unpaired)}.              ", end="\r")
     with open(output_path, "a") as file:
         file.write(pat + "\t"
                    + str(tuple(mmhn.likeliest_order(
-                       state=row.to_numpy(),
+                       state=row.to_numpy(dtype=int),
                        met_status=sample_selection["metaStatus"][pat]
                    )[1])) + "\n")
