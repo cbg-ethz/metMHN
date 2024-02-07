@@ -15,12 +15,13 @@ class MetState(_State, Hashable, MutableSet):
 
     __slots__ = '__data', '__size', '__PT'  # , '__labels'
 
-    def __init__(self, data: Iterable[int] | int, /, size: int, PT: Sequence[bool], labels: Sequence[str] | None = None):
+    def __init__(self, data: Iterable[int] | int, /, size: int, PT: Sequence[bool]  # , labels: Sequence[str] | None = None
+                 ):
         '''Create a new state from an Iterable or an integer.'''
         self.__size = size
         # Only create a new tuple if mutable; otherwise, use as-is.
-        self.__labels = tuple(labels) if isinstance(
-            labels, MutableSequence) else labels
+        # self.__labels = tuple(labels) if isinstance(
+        #     labels, MutableSequence) else labels
 
         if isinstance(data, Iterable):
             self.__data = 0
@@ -57,13 +58,13 @@ class MetState(_State, Hashable, MutableSet):
     # def copy(self) -> _State:
     #     return copy(self)
 
-    # @classmethod
-    # def from_seq(cls, seq: Collection[bool], /, labels: Sequence[str] | None = None) -> _State:
-    #     '''Create a new state from a collection of booleans.'''
-    #     return cls((i for i, j in enumerate(seq) if j), size=len(seq), labels=labels)
+    @classmethod
+    def from_seq(cls, seq: Collection[bool], /, labels: Sequence[str] | None = None) -> _State:
+        '''Create a new state from a collection of booleans.'''
+        return cls((i for i, j in enumerate(seq) if j), size=len(seq), labels=labels)
 
-    # def to_seq(self) -> tuple[bool]:
-    #     return tuple(i in self for i in range(self.size))
+    def to_seq(self) -> tuple[bool]:
+        return tuple(i in self for i in range(self.size))
 
     # # repr()
     # def __repr__(self) -> str:
