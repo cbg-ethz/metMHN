@@ -44,12 +44,13 @@ where `<input-annotation-file.csv>` contains supporting information for each pat
 You can also set the following command line arguments:
 |Argument | Description|
 | --- | ---|
-| -cv | If set, perform crossvalidation|
-| -cv_start | Lower limit of hyperparameter range to test in crossvalidation |
-|-cv_end | Upper limit of hyperparameter range to test in crossvalidation|
-|-cv_fold | Number of crossvalidation folds|
-|-cv_splits | Number of hyperparamater to test in the range cv_start to cv_end |
+|-cv | If set, perform crossvalidation|
+|-cv_start | Lower limit of hyperparameter range to test in crossvalidation, defaults to 1e-05 |
+|-cv_end | Upper limit of hyperparameter range to test in crossvalidation, defaults to 1e-02|
+|-cv_fold | Number of crossvalidation folds, defaults to 5|
+|-cv_splits | Number of hyperparamater to test in the range cv_start to cv_end, defaults to 5 |
 |-pm_ratio| Ratio of Never metastasizing primary tumors to metastasizing primary tumors|
 |-lam | Weight of penalization. Should only be set of no cross validation is performed|
+|-n_jobs| Number of jobs to use in the crossvalidation analysis, should be max. cv_folds, defaults to 1|
 |-logs| File where logs are stored|
 

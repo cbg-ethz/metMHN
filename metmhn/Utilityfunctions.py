@@ -1,11 +1,16 @@
-from metmhn.regularized_optimization import learn_mhn, log_lik
+from metmhn.regularized_optimization import learn_mhn, score
+from joblib import Parallel, delayed
 from itertools import chain, combinations
 import numpy as np
+import jax
 import jax.numpy as jnp
+import jax.random as jrp
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import logging
+from typing import Callable
+jax.config.update("jax_enable_x64", True)
 
 
 my_color_gradient = LinearSegmentedColormap.from_list('my_gradient', (
@@ -143,53 +148,39 @@ def add_seeding(x: pd.Series) -> int:
         return -1
     
 
-def split_data(dat: pd.DataFrame, events: list) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Splits the whole dataset into subsets, based on their type
-
-    Args:
-        dat (pd.DataFrame): dataset with tumor genotypes as rows
-
-    Returns:
-        tuple: tuple of 4 subsets
-    """
-    prim_only = jnp.array(dat.loc[dat["type"] == 0, events].to_numpy(dtype=np.int8, na_value = -99))
-    prim_met = jnp.array(dat.loc[dat["type"] == 1, events].to_numpy(dtype=np.int8, na_value = -10))
-    met_only = jnp.array(dat.loc[dat["type"] == 2, events].to_numpy(dtype=np.int8, na_value = -10))
-    coupled = jnp.array(dat.loc[dat["type"] == 3, events].to_numpy(dtype=np.int8, na_value = -10))
-    return prim_only, prim_met, met_only, coupled
-
-
-def marg_frequs(dat_prim_nomet: jnp.ndarray, dat_prim_met: jnp.ndarray, dat_met_only:jnp.ndarray, 
-                dat_coupled: jnp.ndarray, events: list) -> pd.DataFrame:
+def marg_frequs(dat: jnp.ndarray,  events: list) -> pd.DataFrame:
     """This calculates the empirical marginal frequencies of mutations in the stratified datasets
 
     Args:
-        dat_prim_nomet (jnp.ndarray): Dataset of unpaired never met. primary tumors
-        dat_prim_met (jnp.ndarray): Dataset of unpaired metastasized primary tumors
-        dat_met_only (jnp.ndarray): Dataset of unpaired metastases
-        dat_coupled (jnp.ndarray): Dataset of coupled PT-MT pairs
+        dat (jnp.ndarray): Matrix of observations dimension (n_dat x (2n+3)), 
+            rows correspond to patients and columns to events.
+            The first 2n+1 colummns are expected to be binary and inidacte the status of events of the tumors, 
+            the next column contains the observation order 
+            (0: unknown, 1: First PT then MT, 2: First MT then PT) and the last column indicates the type of the datapoint 
+            (0: PT only, no MT observed, 1: PT only, MT recorded but not sequenced, 2: MT, No PT sequenced, 3: PT and MT sequenced)
         events (list): List of genomic events of interest
 
     Returns:
         pd.DataFrame: marginal probabilities
     """
-    n_mut = (dat_prim_nomet.shape[1]-1)//2
+    n_mut = (dat.shape[1]-3)//2
     n_tot = n_mut + 1
-    arr = dat_coupled * np.array([1,2]*n_mut+[1])
+    arr = dat[dat[:,-1]==3,:-2] * np.array([1,2]*n_mut+[1])
     arr = arr @ (np.diag([1,0]*n_mut+[1]) + np.diag([1,0]*n_mut, -1))
     counts = np.zeros((6, n_tot))
+    _, sizes = np.unique(dat[:,-1], return_counts=True)
     for i in range(0,2*n_tot,2):
         i_h = int(i/2)
         for j in range(1,4):
-            counts[j-1, i_h] = np.count_nonzero(arr[:,i]==j)/dat_coupled.shape[0]
-        counts[3, i_h] = np.sum(dat_prim_nomet[:, i], axis=0)/dat_prim_nomet.shape[0]
-        counts[4, i_h] = np.sum(dat_prim_met[:, i], axis=0)/dat_prim_met.shape[0]
-        counts[5, i_h] = np.sum(dat_met_only[:, i+1], axis=0)/dat_met_only.shape[0]
+            counts[j-1, i_h] = np.count_nonzero(arr[:,i]==j)/sizes[3]
+        counts[3, i_h] = np.sum(dat[dat[:,-1]==0, i], axis=0)/sizes[0]
+        counts[4, i_h] = np.sum(dat[dat[:,-1]==1, i], axis=0)/sizes[1]
+        counts[5, i_h] = np.sum(dat[dat[:,-1]==2, i+1], axis=0)/sizes[2]
 
-    labels = [["Coupled ("+str(dat_coupled.shape[0])+")"]*3 +\
-            ["NM ("+str(dat_prim_nomet.shape[0])+")"] +\
-            ["EM-PT ("+str(dat_prim_met.shape[0])+")"] +\
-            ["EM-MT ("+str(dat_met_only.shape[0])+")"],
+    labels = [["Coupled ("+str(sizes[3])+")"]*3 +\
+            ["NM ("+str(sizes[0])+")"] +\
+            ["EM-PT ("+str(sizes[1])+")"] +\
+            ["EM-MT ("+str(sizes[2])+")"],
             ["PT-Private", "MT-Private", "Shared"] + ["Present"]*3]
        
     inds =  pd.MultiIndex.from_tuples(list(zip(*labels)))
@@ -198,82 +189,95 @@ def marg_frequs(dat_prim_nomet: jnp.ndarray, dat_prim_met: jnp.ndarray, dat_met_
     return counts
 
 
-def indep(dat: jnp.ndarray, n_coupled: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def indep(dat: jnp.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """This function generates an initial estimate for theta and d_p and d_m
 
     Args:
-        dat (jnp.ndarray): Dataset
-        n_coupled (int): Number of coupled datapoints
+        dat (jnp.ndarray): dat (jnp.ndarray): Matrix of observations dimension (n_dat x (2n+3)), 
+            rows correspond to patients and columns to events.
+            The first 2n+1 colummns are expected to be binary and inidacte the status of events of the tumors, 
+            the next column contains the observation order 
+            (0: unknown, 1: First PT then MT, 2: First MT then PT) and the last column indicates the type of the datapoint 
+            (0: PT only, no MT observed, 1: PT only, MT recorded but not sequenced, 2: MT, No PT sequenced, 3: PT and MT sequenced)
 
     Returns:
         tuple[np.ndarray, np.ndarray, np.ndarray]: th_init, d_p_init, d_m_init
     """
-    
-    n = (dat.shape[1] - 1)//2
+    n_coupled = dat[dat[:,-1]==3, -1].shape[0]
+    n = (dat.shape[1] - 3)//2
     n_single = dat.shape[0] - n_coupled
     theta = np.zeros((n + 1, n + 1))
     for i in range(n):
-        mut_count = np.sum(dat.at[:,2*i].get() + dat.at[:, 2*i+1].get())
+        mut_count = np.sum(dat[:,2*i] + dat[:, 2*i+1])
         if mut_count == 0:
             theta[i, i] = -1e10
         else:
             theta[i,i] = np.log(mut_count/(2 * n_coupled + n_single - mut_count + 1e-10))
-    seed_count = np.sum(dat.at[:,-1].get())
+    seed_count = np.sum(dat[:,-3])
     theta[n,n] = np.log(seed_count/(n_coupled + n_single - seed_count + 1e-10))
     return theta, np.zeros(n+1), np.zeros(n+1)
 
 
-def cross_val(dat: pd.DataFrame, events: list, splits: jnp.ndarray, nfolds: int, m_p_corr: float) -> float:
-    """Performs nfolds-crossvalidation across a parameter range in splits 
+def cross_val(dat: jnp.ndarray, penal_fun: Callable, splits: jnp.ndarray, n_folds: int, 
+              m_p_corr: float, n_jobs: int=1, seed: int = 42) -> float:
+    """Perform a n_folds cross validation for hyperparameter search
 
     Args:
-        dat (pd.DataFrame):     Input data
-        splits (jnp.ndarray):   Hyperparameter range to test
-        nfolds (int):           Number of folds (subgroups) to split dat into
-        m_p_corr (float):       Correction factor to account for poverrepresentation of mets
+        dat (jnp.ndarray): dat (jnp.ndarray): Matrix of observations dimension (n_dat x (2n+3)), 
+            rows correspond to patients and columns to events.
+            The first 2n+1 colummns are expected to be binary and inidacte the status of events of the tumors, 
+            the next column contains the observation order 
+            (0: unknown, 1: First PT then MT, 2: First MT then PT) and the last column indicates the type of the datapoint 
+            (0: PT only, no MT observed, 1: PT only, MT recorded but not sequenced, 2: MT, No PT sequenced, 3: PT and MT sequenced)
+        penal_fun Callable[[np.ndarray, int], tuple[np.ndarray, np.ndaray]]): Penalization function, 
+            should take a parametervector params and total number of events as input and 
+            return the value of the penality and the gradient of it wrt. to all model parameters
+        splits (jnp.ndarray): Vector of penalization weights to test
+        n_folds (int): Number of folds to split the data into
+        m_p_corr (float):  Expected percentage of metastasizing tumor in the Dataset
+        n_jobs (int, optional): Number of jobs to run. Defaults to 1.
+        seed (int, optional): Seed for random number generator. Defaults to 42.
 
     Returns:
-        float: best hyperparameter
+        float: Best hyperparameter
     """
-    n_dat = dat.shape[0]
-    shuffled = dat.sample(frac=1)
-    runs_constrained = np.zeros((nfolds, splits.shape[0]))
-    batch_size = np.ceil(n_dat/nfolds)
+    key = jrp.PRNGKey(seed)
+    shuffled =  jrp.permutation(key, dat, axis=0)
+    runs_constrained = np.zeros((n_folds, splits.shape[0]))
+    batch_size = jnp.ceil(dat.shape[0]/n_folds)
     
     logging.info(f"Crossvalidation started")
-    for i in range(nfolds):
-        start = batch_size*i
-        stop = np.min((batch_size*(i+1), n_dat))
-
-        train_inds = np.concatenate((np.arange(start), 
-                                     np.arange(stop, n_dat)))
-        train = shuffled.iloc[train_inds,:]
-        train_prim_only, train_prim_met, train_met_only, train_coupled = split_data(train, events)
-        
-        test_inds = np.arange(start, stop)
-        test = shuffled.iloc[test_inds, :]
-        test_prim_only, test_prim_met, test_met_only, test_coupled = split_data(test, events)
-        th_init, fd_init, sd_init = indep(jnp.array(train[events].to_numpy()), test_coupled.shape[1])
-        
-        for j in range(splits.size):
-            th, fd, sd = learn_mhn(th_init, fd_init, sd_init, train_prim_only, 
-                                     train_prim_met, train_met_only, train_coupled, 
-                                     m_p_corr, splits[j])
-            params = np.concatenate((th.flatten(), fd, sd))
-            runs_constrained[i,j] = log_lik(params, test_prim_only, test_prim_met, test_met_only,
-                                            test_coupled, 0., m_p_corr)
-            
-            logging.info(f"Split: {splits[j]}, Fold: {i}, Score: {runs_constrained[i,j]}")
-
-    diag_penal_scores = runs_constrained.mean(axis=0)
-    best_diag_score = np.min(diag_penal_scores)
-    best_diag_penal = splits[np.argmin(diag_penal_scores)]
     
+    def calc_folds(fold_index, batch_size, shuffled, penal_fun, split):
+        jax.config.update("jax_enable_x64", True)
+        n_dat = shuffled.shape[0]
+        start = batch_size * fold_index
+        stop = jnp.min(jnp.array([batch_size*(fold_index + 1), n_dat]))
+        
+        train_inds = jnp.concatenate((jnp.arange(start, dtype=jnp.int8), 
+                                      jnp.arange(stop, n_dat, dtype=jnp.int8)))
+        train = shuffled[train_inds,:]
+        th_init, fd_init, sd_init = indep(train)
+        th, dp, dm = learn_mhn(th_init, fd_init, sd_init, train, m_p_corr, penal_fun, split)
+        
+        test_inds = jnp.arange(start, stop, dtype=jnp.int8)
+        test = shuffled[test_inds, :]
+
+        return score(th, dp, dm, test, m_p_corr)
+        
+    for j in range(splits.size):
+        runs_constrained[:, j] = Parallel(n_jobs=n_jobs)(delayed(calc_folds)(i, batch_size, shuffled, penal_fun, splits[j]) for i in range(n_folds))
+        logging.info(f"Finished split {j} out of {splits.size}")
+    
+    penal_scores = runs_constrained.mean(axis=0)
+    best_score = np.max(penal_scores)
+    best_penal = splits[np.argmax(best_score)]
+    logging.info(f"{penal_scores}")
     logging.info(f"Crossvalidation finished")
-    logging.info(f"Highest likelihood score: {best_diag_score}")
-    logging.info(f"Best Lambda: {best_diag_penal}")
+    logging.info(f"Highest likelihood averaged over all folds: {best_score}")
+    logging.info(f"Best Lambda: {best_penal}")
     
-    return best_diag_penal
+    return best_penal
 
 
 def plot_theta(model: jnp.ndarray, events: jnp.ndarray, 
