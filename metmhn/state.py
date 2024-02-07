@@ -11,6 +11,171 @@ class _State:
     pass
 
 
+class State(_State, Hashable, MutableSet):
+    '''Subclass of Set representing a state in a MHN.'''
+
+    __slots__ = '__data', '__size'
+
+    def __init__(
+            self,
+            data: Iterable[int] | int,
+            /,
+            size: int,
+    ):
+        '''Create a new state from an Iterable or an integer.'''
+        if isinstance(data, Iterable):
+            self.__data = 0
+            for i in data:
+                self.add(i)
+        elif isinstance(data, int):
+            if data < 0:
+                raise ValueError('The given integer must be non-negative')
+            self.__data = data
+        else:
+            raise TypeError('unsupported argument type: \'{}\')',
+                            type(data).__name__)
+
+    @property
+    def data(self) -> int:
+        return self.__data
+
+    # MutableSet, in
+    @singledispatchmethod
+    def __contains__(self, item):
+        raise TypeError('unsupported operand type: \'{}\')',
+                        type(item).__name__)
+
+    @__contains__.register
+    def _(self, item: int) -> bool:
+        return self.data & 1 << item
+
+    # MutableSet, iter()
+    def __iter__(self) -> Iterator[int]:
+        for i in range(self.data.bit_length()):
+            if self.data >> i & 1:
+                yield i
+
+    # MutableSet, len()
+    def __len__(self) -> int:
+        return self.data.bit_count()
+
+    # MutableSet
+    @singledispatchmethod
+    def add(self, item) -> None:
+        raise TypeError('unsupported argument type: \'{}\')',
+                        type(item).__name__)
+
+    @add.register
+    def _(self, item: int) -> None:
+        self.__data |= 1 << item
+
+    # MutableSet
+    @singledispatchmethod
+    def discard(self, item) -> None:
+        raise TypeError('unsupported argument type: \'{}\')',
+                        type(item).__name__)
+
+    @discard.register
+    def _(self, item: int) -> None:
+        self.__data &= ~(1 << item)
+
+    # Hashable, hash()
+    def __hash__(self) -> int:
+        return self.data
+
+    @classmethod
+    def from_seq(cls, seq: Collection[bool], /) -> _State:
+        '''Create a new state from a collection of booleans.'''
+        return cls((i for i, j in enumerate(seq) if j), size=len(seq))
+
+
+class RestrState(_State, Hashable, MutableSet):
+    '''Subclass of Set representing a state in a MHN.'''
+
+    __slots__ = '__data', '__size', '__restrict'
+
+    def __init__(
+            self,
+            data: Iterable[int] | int,
+            /,
+            restrict: State,
+    ):
+
+        self.__restrict = restrict
+        '''Create a new state from an Iterable or an integer.'''
+        if isinstance(data, Iterable):
+            self.__data = 0
+            for i in data:
+                self.add(i)
+        elif isinstance(data, int):
+            if data < 0:
+                raise ValueError('The given integer must be non-negative')
+            self.__data = data
+        else:
+            raise TypeError('unsupported argument type: \'{}\')',
+                            type(data).__name__)
+
+    @property
+    def data(self) -> int:
+        return self.__data
+
+    @property
+    def events(self) -> Iterator[int]:
+        for i, e in enumerate(self.__restrict):
+            if self.__data >> i & 1:
+                yield e
+
+    # MutableSet, in
+
+    @singledispatchmethod
+    def __contains__(self, item):
+        raise TypeError('unsupported operand type: \'{}\')',
+                        type(item).__name__)
+
+    @__contains__.register
+    def _(self, item: int) -> bool:
+        return self.data & 1 << item
+
+    # MutableSet, iter()
+    def __iter__(self) -> Iterator[int]:
+        for i in range(self.data.bit_length()):
+            if self.data >> i & 1:
+                yield i
+
+    # MutableSet, len()
+    def __len__(self) -> int:
+        return self.data.bit_count()
+
+    # MutableSet
+    @singledispatchmethod
+    def add(self, item) -> None:
+        raise TypeError('unsupported argument type: \'{}\')',
+                        type(item).__name__)
+
+    @add.register
+    def _(self, item: int) -> None:
+        self.__data |= 1 << item
+
+    # MutableSet
+    @singledispatchmethod
+    def discard(self, item) -> None:
+        raise TypeError('unsupported argument type: \'{}\')',
+                        type(item).__name__)
+
+    @discard.register
+    def _(self, item: int) -> None:
+        self.__data &= ~(1 << item)
+
+    # Hashable, hash()
+    def __hash__(self) -> int:
+        return self.data
+
+    # @classmethod
+    # def from_seq(cls, seq: Collection[bool], /) -> _State:
+    #     '''Create a new state from a collection of booleans.'''
+    #     return cls((i for i, j in enumerate(seq) if j), size=len(seq))
+
+
 class MetState(_State, Hashable, MutableSet):
     '''Subclass of Set representing a state in a MHN.'''
 
@@ -54,10 +219,6 @@ class MetState(_State, Hashable, MutableSet):
     @property
     def PT(self) -> int:
         return self.__PT
-
-    @property
-    def events(self) -> int:
-        return self.__events
 
     # MutableSet, in
     @singledispatchmethod
@@ -112,23 +273,18 @@ class MetState(_State, Hashable, MutableSet):
 class RestrMetState(_State, Hashable, MutableSet):
     '''Subclass of Set representing a state in a MHN.'''
 
-    __slots__ = '__data', '__PT', '__events'
+    __slots__ = '__data', '__size'
 
     def __init__(
         self,
         data: Iterable[int] | int,
         /,
-        PT: Sequence[bool],
-        events: Sequence[int],
+        restrict: MetState,
         # , labels: Sequence[str] | None = None
     ):
-        '''Create a new state from an Iterable or an integer.'''
-        # Only create a new tuple if mutable; otherwise, use as-is.
-        self.__PT = tuple(PT) if isinstance(
-            PT, MutableSequence) else PT
-        self.__events = tuple(events) if isinstance(
-            events, MutableSequence) else events
+        self.__restrict = restrict
 
+        '''Create a new state from an Iterable or an integer.'''
         if isinstance(data, Iterable):
             self.__data = 0
             for i in data:
@@ -162,7 +318,14 @@ class RestrMetState(_State, Hashable, MutableSet):
     #     return self.__size
 
     @property
-    def PT(self) -> int:
+    def PT(self) -> Iterator[int]:
+        for i, pt in self.__restrict.PT:
+            if pt:
+                yield i
+        return self.__PT
+
+    @property
+    def MT(self) -> int:
         return self.__PT
 
     @property
