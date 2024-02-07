@@ -18,8 +18,7 @@ class LikelihoodTestCase(unittest.TestCase):
         self.theta = jnp.array(utils.random_theta(self.n_mut, 0.2))
         self.d_pt = jnp.array(rng.normal(0, 1, size=self.n_mut+1))
         self.d_mt = jnp.array(rng.normal(0, 1, size=self.n_mut+1))
-        self.dat, _ = simul.simulate_dat(np.array(self.theta), self.d_pt, 
-                                         self.d_mt, self.n_sim, rng)
+        self.dat = simul.simulate_dat_jax(self.theta, self.d_pt, self.d_mt, self.n_sim, seed=42)
         self.counts = dict(zip([i for i in range(self.n_states)], 
                           [ 0 for i in range(self.n_states)]))
         
@@ -29,11 +28,11 @@ class LikelihoodTestCase(unittest.TestCase):
 
 
     def test_lp_prim(self):
-        dp = np.array([1, 1, 1, 1, 1,1, 0]).reshape((1,-1))
-        ind = np.packbits(dp, axis=1, bitorder="little")[0]
+        dp = np.array([1, 1, 1, 1, 1,1, 0, -99, 0]).reshape((1,-1))
+        ind = np.packbits(dp[:,:-2], axis=1, bitorder="little")[0]
         sim_freq = np.log(self.counts[ind[0]]/self.n_sim)
-        ana_freq = regopt.lp_prim_only(self.theta, self.d_pt, jnp.array(dp))
-        print(np.exp(sim_freq), ana_freq)
+        ana_freq = regopt.score(self.theta, self.d_pt, self.d_mt, jnp.array(dp), 0)
+        print(np.exp(sim_freq), np.exp(ana_freq))
         np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)
     
 
@@ -49,8 +48,8 @@ class LikelihoodTestCase(unittest.TestCase):
         for i in inds:
             sim_freq += self.counts[i]
         sim_freq = np.log(sim_freq/self.n_sim)
-        dp = np.ones((1, 2*self.n_mut+1), dtype=np.int8)
-        ana_freq = regopt.lp_prim_only(self.theta, self.d_pt, jnp.array(dp))
+        dp = jnp.array([1]*6+[1,-99,1]).reshape((1,-1))
+        ana_freq = regopt.score(self.theta, self.d_pt, self.d_mt, dp, 0)
 
         np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)
     
@@ -67,38 +66,59 @@ class LikelihoodTestCase(unittest.TestCase):
         for i in inds:
             sim_freq += self.counts[i]
         sim_freq = np.log(sim_freq/self.n_sim)
-        dp = np.ones((1, 2*self.n_mut+1), dtype=np.int8)
-        ana_freq = regopt.lp_met_only(self.theta, self.d_pt, self.d_mt, jnp.array(dp))
+        dp = jnp.array([1]*6+[1,-99,2]).reshape((1,-1))
+        ana_freq = regopt.score(self.theta, self.d_pt, self.d_mt, dp, 0)
         print(sim_freq, ana_freq)
         np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)
 
 
-    def test_lp_coupled(self):
-        dp = np.array([1, 1, 1, 1, 1, 1, 1, 1]).reshape((1,-1))
+    def test_lp_coupled_0(self):
+        dp = jnp.array([1]*6+[1, 0, 3]).reshape((1,-1))
+        ind = np.packbits(dp[:,:-2], axis=1, bitorder="little")[0]
+        sim_freq = np.log(self.counts[ind[0]]/self.n_sim)
+        ana_freq = regopt.score(self.theta, self.d_pt, self.d_mt, dp, 0)
+        print(sim_freq, ana_freq)
+        np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)
+
+
+    def test_lp_coupled_1(self):
+        dp = jnp.array([1]*6+[1, 1, 3]).reshape((1,-1))
         
         counts = dict(zip([i for i in range(self.n_states)], 
                           [ 0 for i in range(self.n_states)]))
+        
         genos_hashed = list(np.packbits(self.dat[self.dat[:,-1]==1,:-1], 
                                         axis=1, bitorder="little")[:,0])
         for i in genos_hashed:
             counts[i] += 1
-        ind = np.packbits(dp[:,:-1], axis=1, bitorder="little")[0]
+        ind = np.packbits(dp[:,:-2], axis=1, bitorder="little")[0]
         sim_freq = np.log(counts[ind[0]]/self.n_sim)
-        ana_freq = regopt.lp_coupled(self.theta, self.d_pt, self.d_mt, jnp.array(dp))
+        ana_freq = regopt.score(self.theta, self.d_pt, self.d_mt, dp, 0)
         print(sim_freq, ana_freq)
+        np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)
+
+
+    def test_lp_coupled_2(self):
+        dp = jnp.array([1]*6+[1, 2, 3]).reshape((1,-1))
+        
+        counts = dict(zip([i for i in range(self.n_states)], 
+                          [ 0 for i in range(self.n_states)]))
+        
+        genos_hashed = list(np.packbits(self.dat[self.dat[:,-1]==2,:-1], 
+                                        axis=1, bitorder="little")[:,0])
+        for i in genos_hashed:
+            counts[i] += 1
+        ind = np.packbits(dp[:,:-2], axis=1, bitorder="little")[0]
+        sim_freq = np.log(counts[ind[0]]/self.n_sim)
+        ana_freq = regopt.score(self.theta, self.d_pt, self.d_mt, dp, 0)
+        print(f"Number of occurences:{counts[ind[0]]}")
         np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)
 
 
     def test_lp_empty(self):        
-        dp = np.array([0, 0, 0, 0, 0, 0, 1, 1]).reshape((1,-1))        
-        counts = dict(zip([i for i in range(self.n_states)], 
-                          [ 0 for i in range(self.n_states)]))
-        genos_hashed = list(np.packbits(self.dat[self.dat[:,-1]==1,:-1], 
-                                        axis=1, bitorder="little")[:,0])
-        for i in genos_hashed:
-            counts[i] += 1
-        ind = np.packbits(dp[:,:-1], axis=1, bitorder="little")[0]
-        print(f"Number of occurences:{counts[ind[0]]}")
-        sim_freq = np.log(counts[ind[0]]/self.n_sim)
-        ana_freq = regopt.lp_coupled(self.theta, self.d_pt, self.d_mt, jnp.array(dp))
+        dp = jnp.array([0]*6+[1,0,3]).reshape((1,-1))        
+        ind = np.packbits(dp[:,:-2], axis=1, bitorder="little")[0]
+        print(f"Number of occurences:{self.counts[ind[0]]}")
+        sim_freq = np.log(self.counts[ind[0]]/self.n_sim)
+        ana_freq = regopt.score(self.theta, self.d_pt, self.d_mt, dp, 0)
         np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)
