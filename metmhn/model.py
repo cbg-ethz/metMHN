@@ -4,6 +4,7 @@ from metmhn.np.kronvec import kron_diag as get_diag_paired
 from scipy.linalg.blas import dcopy, dscal, daxpy
 import numpy as np
 from omhn.model import oMHN
+from state import RestrMetState, MetState
 
 append_to_int_order = np.vectorize(
     append_to_int_order, excluded=["numbers", "new_event"])
@@ -875,6 +876,9 @@ class MetMHN:
                 if not reachable(
                         bin_state=current_state, state=state, n=self.n):
                     continue
+                
+                current_state = RestrMetState(
+                    current_state, restrict=MetState.from_seq(state))
 
                 # get the positions of the 1s
                 state_events = [
@@ -883,17 +887,18 @@ class MetMHN:
 
                 # initialize empty numpy struct array for probs and
                 # orders to reach current_state
-                A[2][current_state] = [-1, -1.]
+                A[2][current_state.data] = [-1, -1.]
 
                 # whether seeding has happened
-                if current_state & (1 << (k - 1)):
+                if (1 << (k - 1)) in current_state:
 
                     # iterate over all previous states
                     for pre_state, pre_order in A[1].items():
 
                         # Skip pre_state if it is not a subset of
                         # current_state
-                        if not (current_state | pre_state == current_state):
+                        
+                        if not pre_state <= current_state:
                             continue
 
                         # get the position of the new 1

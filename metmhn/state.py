@@ -217,7 +217,7 @@ class MetState(_State, Hashable, MutableSet):
         return self.__data
 
     @property
-    def PT(self) -> int:
+    def PT(self) -> State:
         return self.__PT
 
     # MutableSet, in
