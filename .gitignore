@@ -3,6 +3,7 @@ logs/*
 .vscode
 
 # package installation
+.venv
 build
 dist
 *.egg-info
