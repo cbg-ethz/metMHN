@@ -824,7 +824,7 @@ class MetMHN:
         p *= np.exp(self.obs1[events[state_events][pt_s[state_events]]].sum())
         return int_to_order(o, np.nonzero(state)[0].tolist()), p
 
-    def _likeliest_order_sync(self, state: np.array
+    def _likeliest_order_sync(self, state: MetState
                               ) -> tuple[tuple[int, ...], float]:
         """Returns the most probable order for a coupled observation 
         consisting of PT and Met if they were observed at the same time
@@ -838,18 +838,16 @@ class MetMHN:
             probability
         """
 
-        k = state.sum()
+        k = len(state)
+
         if not reachable(
-                bin_state=int("1" * k, base=2), n=self.n, state=state):
+                bin_state=int("1" * k, base=2), n=self.n, state=state.data):
             raise ValueError("This state is not reachable by mhn.")
 
         # whether active events belong to pt
         pt = np.nonzero(state)[0] % 2 == 0
         pt_s = pt.copy()
         pt[-1] = False
-
-        # get the numbers of events
-        events = np.nonzero(state)[0] // 2
 
         # get the positions of the pt 1s
         diag_paired = get_diag_paired(
@@ -878,16 +876,11 @@ class MetMHN:
                     continue
                 
                 current_state = RestrMetState(
-                    current_state, restrict=MetState.from_seq(state))
-
-                # get the positions of the 1s
-                state_events = [
-                    i for i in range(k)
-                    if (1 << i) | current_state == current_state]
+                    current_state, restrict=state)
 
                 # initialize empty numpy struct array for probs and
                 # orders to reach current_state
-                A[2][current_state.data] = [-1, -1.]
+                A[2][current_state] = [-1, -1.]
 
                 # whether seeding has happened
                 if (1 << (k - 1)) in current_state:
@@ -902,18 +895,17 @@ class MetMHN:
                             continue
 
                         # get the position of the new 1
-                        new_event = bin(current_state ^ pre_state)[
-                            :1:-1].index("1")
+                        diff = current_state ^ pre_state
 
                         # whether new event is pt
                         if pt[new_event]:  # new event is pt
                             num = np.exp(self.log_theta[
-                                events[new_event],
-                                events[state_events][pt[state_events]]].sum())
+                                diff.PT,
+                                current_state.PT].sum())
                         else:  # new event is met
                             num = np.exp(self.log_theta[
-                                events[new_event],
-                                events[state_events][~pt[state_events]]].sum())
+                                diff.MT,
+                                current_state.MT].sum())
 
                         if pre_order[1] * num > A[2][current_state][1]:
                             A[2][current_state][1] = pre_order[1] * num

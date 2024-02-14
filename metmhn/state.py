@@ -200,25 +200,36 @@ class MetState(_State, Hashable, MutableSet):
             raise TypeError('unsupported argument type: \'{}\')',
                             type(data).__name__)
 
-        self.__PT = list()
-        self.__events = list()
-        for i, pt, event in zip(range(size), cycle([True, False]), chain.from_iterable([repeat(i, 2) for i in range(size)])):
-            if (self.data >> i) & 1:
-                if i == size - 1:
-                    self.__PT.append(False)
-                else:
-                    self.__PT.append(pt)
-                self.__events.append(event)
-        self.__PT = tuple(self.__PT)
-        self.__events = tuple(self.__events)
+        self.__size = size
+        self.__n = size // 2
 
     @property
     def data(self) -> int:
         return self.__data
 
     @property
-    def PT(self) -> State:
-        return self.__PT
+    def size(self) -> int:
+        return self.__size
+
+    @property
+    def n(self) -> int:
+        return self.__n
+
+    @property
+    def PT(self) -> Iterator[int]:
+        _data = self.data
+        for i in range(self.n):
+            if _data & 1:
+                yield i
+            _data >>= 2
+
+    @property
+    def MT(self) -> Iterator[int]:
+        _data = self.data >> 1
+        for i in range(self.n):
+            if _data & 1:
+                yield i
+            _data >>= 2
 
     # MutableSet, in
     @singledispatchmethod
@@ -273,17 +284,14 @@ class MetState(_State, Hashable, MutableSet):
 class RestrMetState(_State, Hashable, MutableSet):
     '''Subclass of Set representing a state in a MHN.'''
 
-    __slots__ = '__data', '__size'
+    __slots__ = '__data', '__restrict'
 
     def __init__(
         self,
         data: Iterable[int] | int,
         /,
         restrict: MetState,
-        # , labels: Sequence[str] | None = None
     ):
-        self.__restrict = restrict
-
         '''Create a new state from an Iterable or an integer.'''
         if isinstance(data, Iterable):
             self.__data = 0
@@ -296,84 +304,62 @@ class RestrMetState(_State, Hashable, MutableSet):
         else:
             raise TypeError('unsupported argument type: \'{}\')',
                             type(data).__name__)
+        self.__restrict = restrict
 
     @property
     def data(self) -> int:
         return self.__data
 
-    # @property
-    # def events(self) -> Iterator:
-    #     temp = self.__data
-    #     for i in range(self.size):
-    #         if temp & 1:
-    #             yield i
-    #         temp >>= 1
-
-    # @property
-    # def labels(self) -> Sequence[str] | None:
-    #     return self.__labels
-
-    # @property
-    # def size(self) -> int:
-    #     return self.__size
+    @property
+    def restrict(self) -> int:
+        return self.__restrict
 
     @property
     def PT(self) -> Iterator[int]:
-        for i, pt in self.__restrict.PT:
-            if pt:
-                yield i
-        return self.__PT
+        _restrict = self.__restrict.data
+        _data = self.data
+        for i in range(self.__restrict.n):
+            if _restrict & 1:
+                _data >>= 1
+                if _data & 1:
+                    yield i
+            _restrict >>= 1
+            if _restrict & 1:
+                _data >>= 1
+            _restrict >>= 1
 
     @property
-    def MT(self) -> int:
-        return self.__PT
+    def MT(self) -> Iterator[int]:
+        _restrict = self.__restrict.data
+        _data = self.data
+        for i in range(self.__restrict.n):
+            if _restrict & 1:
+                _data >>= 1
+            _restrict >>= 1
+            if _restrict & 1:
+                if _data & 1:
+                    yield i
+                _data >>= 1
+            _restrict >>= 1
 
     @property
-    def events(self) -> int:
-        return self.__events
-
-    # def copy(self) -> _State:
-    #     return copy(self)
-
-    # @classmethod
-    # def from_seq(cls, seq: Collection[bool], /, labels: Sequence[str] | None = None) -> _State:
-    #     '''Create a new state from a collection of booleans.'''
-    #     return cls((i for i, j in enumerate(seq) if j), size=len(seq), labels=labels)
-
-    # def to_seq(self) -> tuple[bool]:
-    #     return tuple(i in self for i in range(self.size))
-
-    # # repr()
-    # def __repr__(self) -> str:
-    #     if self.labels:
-    #         return '{}({}, size={}, labels={})'.format(
-    #             type(self).__name__,
-    #             set(self),
-    #             self.size,
-    #             self.labels[:self.size],
-    #         )
-    #     else:
-    #         return '{}({}, size={})'.format(
-    #             type(self).__name__,
-    #             set(self),
-    #             self.size,
-    #         )
-
-    # # bool()
-    # def __bool__(self) -> bool:
-    #     return bool(self.data)
-
-    # # int()
-    # def __int__(self) -> int:
-    #     return self.data
-
-    # # unary ~
-    # def __invert__(self) -> _State:
-    #     return type(self)((1<<self.size) + ~self.data, size=self.size, labels=self.labels)
-
-    # # MutableSet mixin
-    # def _from_iterable(self, iterable: Iterable[int]) -> _State:
-    #     return type(self)(iterable, size=self.size, labels=self.labels)
+    def events(self) -> Iterator[int]:
+        _restrict = self.__restrict.data
+        _data = self.data
+        for i in range(self.__restrict.n):
+            if _restrict & 1:
+                if _data & 1:
+                    yield i
+                _data >>= 1
+            _restrict >>= 1
+            if _restrict & 1:
+                if _data & 1:
+                    yield i
+                _data >>= 1
+            _restrict >>= 1
+        _restrict >>= 1
+        if _restrict & 1 and _data & 1:
+            yield self.__restrict.n
 
     # MutableSet, in
 
@@ -415,64 +401,6 @@ class RestrMetState(_State, Hashable, MutableSet):
     @discard.register
     def _(self, item: int) -> None:
         self.__data &= ~(1 << item)
-
-    # # MutableSet mixin, ==
-    # @singledispatchmethod
-    # def __eq__(self, other) -> bool:
-    #     return super().__eq__(other)
-
-    # @__eq__.register
-    # def _(self, other) -> bool:
-    #     return self.data == other.data
-
-    # # MutableSet mixin, <=
-    # @singledispatchmethod
-    # def __le__(self, other) -> bool:
-    #     return super().__le__(other)
-
-    # @__le__.register
-    # def _(self, other: _State) -> bool:
-    #     return not self.data & ~other.data
-
-    # # MutableSet mixin, >=
-    # @singledispatchmethod
-    # def __ge__(self, other) -> bool:
-    #     return super().__ge__(other)
-
-    # @__ge__.register
-    # def _(self, other: _State) -> bool:
-    #     return not other.data & ~self.data
-
-    # # MutableSet mixin, &
-    # @singledispatchmethod
-    # def __and__(self, other) -> _State:
-    #     return super().__and__(other)
-
-    # @__and__.register
-    # def _(self, other: _State) -> _State:
-    #     return type(self)(self.data & other.data, size=self.size, labels=self.labels)
-
-    # # MutableSet mixin, |
-    # @singledispatchmethod
-    # def __or__(self, other) -> _State:
-    #     return super().__or__(other)
-
-    # @__or__.register
-    # def _(self, other: _State) -> _State:
-    #     return type(self)(self.data | other.data, size=self.size, labels=self.labels)
-
-    # # MutableSet mixin, ^
-    # @singledispatchmethod
-    # def __xor__(self, other) -> _State:
-    #     return super().__xor__(other)
-
-    # @__xor__.register
-    # def _(self, other: _State) -> _State:
-    #     return type(self)(self.data ^ other.data, size=self.size, labels=self.labels)
-
-    # # MutableSet mixin
-    # def clear(self) -> None:
-    #     self.__data = 0
 
     # Hashable, hash()
     def __hash__(self) -> int:
