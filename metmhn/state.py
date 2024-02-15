@@ -316,13 +316,13 @@ class RestrMetState(_State, Hashable, MutableSet):
 
     @property
     def PT(self) -> Iterator[int]:
-        _restrict = self.__restrict.data
+        _restrict = self.restrict.data
         _data = self.data
-        for i in range(self.__restrict.n):
+        for i in range(self.restrict.n):
             if _restrict & 1:
-                _data >>= 1
                 if _data & 1:
                     yield i
+                _data >>= 1
             _restrict >>= 1
             if _restrict & 1:
                 _data >>= 1
@@ -330,9 +330,9 @@ class RestrMetState(_State, Hashable, MutableSet):
 
     @property
     def MT(self) -> Iterator[int]:
-        _restrict = self.__restrict.data
+        _restrict = self.restrict.data
         _data = self.data
-        for i in range(self.__restrict.n):
+        for i in range(self.restrict.n):
             if _restrict & 1:
                 _data >>= 1
             _restrict >>= 1
@@ -341,6 +341,11 @@ class RestrMetState(_State, Hashable, MutableSet):
                     yield i
                 _data >>= 1
             _restrict >>= 1
+
+    @property
+    def Seeding(self) -> Iterator[int]:
+        if self.data >> (len(self.restrict) - 1) & 1:
+            yield self.restrict.size
 
     @property
     def events(self) -> Iterator[int]:
@@ -405,6 +410,15 @@ class RestrMetState(_State, Hashable, MutableSet):
     # Hashable, hash()
     def __hash__(self) -> int:
         return self.data | 1 << self.size
+
+        # MutableSet mixin, ^
+    @singledispatchmethod
+    def __xor__(self, other) -> _State:
+        return super().__xor__(other)
+
+    @__xor__.register
+    def _(self, other: _State) -> _State:
+        return type(self)(self.data ^ other.data, restrict=self.restrict)
 
 
 if __name__ == "__main__":

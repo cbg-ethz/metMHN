@@ -5,6 +5,7 @@ from scipy.linalg.blas import dcopy, dscal, daxpy
 import numpy as np
 from omhn.model import oMHN
 from state import RestrMetState, MetState
+from itertools import chain
 
 append_to_int_order = np.vectorize(
     append_to_int_order, excluded=["numbers", "new_event"])
@@ -844,11 +845,6 @@ class MetMHN:
                 bin_state=int("1" * k, base=2), n=self.n, state=state.data):
             raise ValueError("This state is not reachable by mhn.")
 
-        # whether active events belong to pt
-        pt = np.nonzero(state)[0] % 2 == 0
-        pt_s = pt.copy()
-        pt[-1] = False
-
         # get the positions of the pt 1s
         diag_paired = get_diag_paired(
             log_theta=self.log_theta, n=self.n, state=state)
@@ -894,11 +890,11 @@ class MetMHN:
                         if not pre_state <= current_state:
                             continue
 
-                        # get the position of the new 1
+                        # get difference of pre_state and current_state
                         diff = current_state ^ pre_state
 
                         # whether new event is pt
-                        if pt[new_event]:  # new event is pt
+                        if len(diff.PT) > 0:  # new event is pt
                             num = np.exp(self.log_theta[
                                 diff.PT,
                                 current_state.PT].sum())
@@ -911,14 +907,13 @@ class MetMHN:
                             A[2][current_state][1] = pre_order[1] * num
                             A[2][current_state][0] = append_to_int_order(
                                 pre_order[0],
-                                numbers=[
-                                    e for e in state_events if e != new_event],
-                                new_event=new_event)
+                                numbers=list(pre_state),
+                                new_event=next(diff))
 
                     obs1 = np.exp(self.obs1[
-                        events[state_events][pt_s[state_events]]].sum())
+                        chain(current_state.PT, current_state.Seeding)].sum())
                     obs2 = np.exp(self.obs2[
-                        events[state_events][~pt[state_events]]].sum())
+                        chain(current_state.MT, current_state.Seeding)].sum())
                     A[2][current_state][1] /= \
                         (obs1 + obs2 - diag_paired[current_state])
 
@@ -929,35 +924,30 @@ class MetMHN:
 
                         # Skip pre_state if it is not a subset of
                         # current_state
-                        if not (current_state | pre_state == current_state):
+                        if not pre_state <= current_state:
                             continue
 
                         # get the position of the new 1
-                        new_event = bin(current_state ^ pre_state)[
-                            :1:-1].index("1")
+                        diff = current_state ^ pre_state
 
                         # get the numerator
                         num = np.exp(self.log_theta[
-                            events[new_event],
-                            events[state_events][pt[state_events]]].sum())
+                            diff.events,
+                            current_state.PT].sum())
 
                         if pre_order[1] * num > A[2][current_state][1]:
                             A[2][current_state][1] = pre_order[1] * num
                             A[2][current_state][0] = append_to_int_order(
                                 append_to_int_order(
                                     my_int=pre_order[0],
-                                    numbers=[e for e in state_events
-                                             if e not in [
-                                                 new_event, new_event + 1]],
-                                    new_event=new_event
+                                    numbers=pre_state,
+                                    new_event=next(diff)
                                 ),
-                                numbers=[
-                                    e for e in state_events if e != new_event],
-                                new_event=new_event + 1)
+                                numbers=chain(pre_state, [next(diff)]),
+                                new_event=next(diff) + 1)
 
                     A[2][current_state][1] /= \
-                        (np.exp(self.obs1[
-                            events[state_events][pt[state_events]]].sum())
+                        (np.exp(self.obs1[current_state.PT].sum())
                          - diag_paired[current_state])
 
             # remove the orders and probs that we do not need anymore
