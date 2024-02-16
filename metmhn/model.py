@@ -892,15 +892,16 @@ class MetMHN:
 
                         # get difference of pre_state and current_state
                         diff = current_state ^ pre_state
+                        new_event = next(iter(diff))
 
                         # whether new event is pt
                         if len(diff.PT) > 0:  # new event is pt
                             num = np.exp(self.log_theta[
-                                diff.PT,
+                                new_event,
                                 current_state.PT].sum())
                         else:  # new event is met
                             num = np.exp(self.log_theta[
-                                diff.MT,
+                                new_event,
                                 current_state.MT].sum())
 
                         if pre_order[1] * num > A[2][current_state][1]:
@@ -908,7 +909,7 @@ class MetMHN:
                             A[2][current_state][0] = append_to_int_order(
                                 pre_order[0],
                                 numbers=list(pre_state),
-                                new_event=next(diff))
+                                new_event=new_event)
 
                     obs1 = np.exp(self.obs1[
                         chain(current_state.PT, current_state.Seeding)].sum())
@@ -929,6 +930,7 @@ class MetMHN:
 
                         # get the position of the new 1
                         diff = current_state ^ pre_state
+                        new_event = next(iter(diff))
 
                         # get the numerator
                         num = np.exp(self.log_theta[
@@ -941,10 +943,10 @@ class MetMHN:
                                 append_to_int_order(
                                     my_int=pre_order[0],
                                     numbers=pre_state,
-                                    new_event=next(diff)
+                                    new_event=new_event
                                 ),
-                                numbers=chain(pre_state, [next(diff)]),
-                                new_event=next(diff) + 1)
+                                numbers=chain(pre_state, [new_event]),
+                                new_event=new_event + 1)
 
                     A[2][current_state][1] /= \
                         (np.exp(self.obs1[current_state.PT].sum())
@@ -953,11 +955,11 @@ class MetMHN:
             # remove the orders and probs that we do not need anymore
             A.popleft()
 
-        bin_state = int("1" * k, base=2)
+        bin_state = RestrMetState(int("1" * k, base=2), restrict=state)
         o, p = A[1][bin_state]
 
-        obs1 = np.exp(self.obs1[events[pt_s]].sum())
-        obs2 = np.exp(self.obs2[events[~pt]].sum())
+        obs1 = np.exp(self.obs1[chain(bin_state.PT, bin_state.Seeding)].sum())
+        obs2 = np.exp(self.obs2[bin_state.MT].sum())
 
         p *= (obs1 + obs2)
         return int_to_order(o, np.nonzero(state)[0].tolist()), p
