@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: MIT-0
 
 from collections.abc import Collection, Hashable, Iterable, Iterator, MutableSet, MutableSequence, Sequence
+from typing import Tuple
 from functools import singledispatchmethod
 from copy import copy
 from itertools import chain, repeat, cycle
+import numpy as np
 
 
 class _State:
@@ -216,20 +218,25 @@ class MetState(_State, Hashable, MutableSet):
         return self.__n
 
     @property
-    def PT(self) -> Iterator[int]:
-        _data = self.data
-        for i in range(self.n):
-            if _data & 1:
-                yield i
-            _data >>= 2
+    def PT(self) -> Tuple[int]:
+        return tuple(i for i in range(self.n) if (self.data >> 2*i) & 1)
 
     @property
-    def MT(self) -> Iterator[int]:
-        _data = self.data >> 1
-        for i in range(self.n):
-            if _data & 1:
-                yield i
-            _data >>= 2
+    def MT(self) -> Tuple[int]:
+        return tuple(i for i in range(self.n) if (self.data >> (2*i + 1)) & 1)
+
+    @property
+    def Seeding(self) -> Tuple[int]:
+        if self.data >> (self.size - 1) & 1:
+            return (self.n,)
+        else:
+            return ()
+
+    @property
+    def reachable(self) -> bool:
+        if self.size - 1 in self:
+            return True
+        return self.PT == self.MT
 
     # MutableSet, in
     @singledispatchmethod
@@ -280,6 +287,11 @@ class MetState(_State, Hashable, MutableSet):
         '''Create a new state from a collection of booleans.'''
         return cls((i for i, j in enumerate(seq) if j), size=len(seq))
 
+    def to_seq(self) -> np.array:
+        seq = np.zeros(self.size, dtype=bool)
+        seq[list(self)] = 1
+        return seq
+
 
 class RestrMetState(_State, Hashable, MutableSet):
     '''Subclass of Set representing a state in a MHN.'''
@@ -315,56 +327,72 @@ class RestrMetState(_State, Hashable, MutableSet):
         return self.__restrict
 
     @property
-    def PT(self) -> Iterator[int]:
+    def PT(self) -> Tuple[int]:
         _restrict = self.restrict.data
         _data = self.data
+        result = ()
         for i in range(self.restrict.n):
             if _restrict & 1:
                 if _data & 1:
-                    yield i
+                    result += (i,)
                 _data >>= 1
             _restrict >>= 1
             if _restrict & 1:
                 _data >>= 1
             _restrict >>= 1
+        return result
 
     @property
-    def MT(self) -> Iterator[int]:
+    def MT(self) -> Tuple[int]:
         _restrict = self.restrict.data
         _data = self.data
+        result = ()
         for i in range(self.restrict.n):
             if _restrict & 1:
                 _data >>= 1
             _restrict >>= 1
             if _restrict & 1:
                 if _data & 1:
-                    yield i
+                    result += (i,)
                 _data >>= 1
             _restrict >>= 1
+        return result
 
     @property
-    def Seeding(self) -> Iterator[int]:
+    def Seeding(self) -> tuple[int]:
         if self.data >> (len(self.restrict) - 1) & 1:
-            yield self.restrict.size
+            return (self.restrict.n,)
+        else:
+            return ()
 
     @property
-    def events(self) -> Iterator[int]:
+    def reachable(self) -> bool:
+        # whether seeding has happened
+        if self.restrict.size - 1 in self.restrict and \
+                len(self.restrict) - 1 in self:
+            return True
+        return self.PT == self.MT
+
+    @property
+    def events(self) -> Tuple[int]:
         _restrict = self.__restrict.data
         _data = self.data
+        result = ()
         for i in range(self.__restrict.n):
             if _restrict & 1:
                 if _data & 1:
-                    yield i
+                    result += (i,)
                 _data >>= 1
             _restrict >>= 1
             if _restrict & 1:
                 if _data & 1:
-                    yield i
+                    result += (i,)
                 _data >>= 1
             _restrict >>= 1
         _restrict >>= 1
         if _restrict & 1 and _data & 1:
-            yield self.__restrict.n
+            result += (self.__restrict.n,)
+        return result
 
     # MutableSet, in
 
@@ -409,7 +437,7 @@ class RestrMetState(_State, Hashable, MutableSet):
 
     # Hashable, hash()
     def __hash__(self) -> int:
-        return self.data | 1 << self.size
+        return self.data
 
         # MutableSet mixin, ^
     @singledispatchmethod
