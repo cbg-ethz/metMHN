@@ -891,12 +891,12 @@ class MetMHN:
 
                         # get difference of pre_state and current_state
                         diff = current_state ^ pre_state
-                        new_event = next(iter(diff))
+                        new_event = tuple(diff)[0]
 
                         # whether new event is pt
                         if len(diff.PT) > 0:  # new event is pt
                             num = np.exp(self.log_theta[
-                                new_event,
+                                diff.events[0],
                                 current_state.PT].sum())
                         else:  # new event is met
                             num = np.exp(self.log_theta[
@@ -929,7 +929,7 @@ class MetMHN:
 
                         # get the position of the new 1
                         diff = current_state ^ pre_state
-                        new_event = next(iter(diff))
+                        new_event = tuple(diff)[0]
 
                         # get the numerator
                         num = np.exp(self.log_theta[
@@ -1202,65 +1202,55 @@ class MetMHN:
                 order=np.array(order), n=self.n, first_obs="Met"))
 
     def _likelihood_sync(self, order: np.array) -> float:
-        state = np.zeros(2 * self.n + 1, dtype=int)
-        state[order] = 1
-        diag = get_diag_paired(log_theta=self.log_theta, n=self.n, state=state)
+        state = MetState(order, size=2 * self.n + 1)
+        diag = get_diag_paired(
+            log_theta=self.log_theta, n=self.n, state=state.to_seq())
 
         p = 1 / (1 - diag[0])
-        current_state = np.zeros(2 * self.n + 1)
-        current_state_bin = 0
-        event_to_bin = {e: 1 << i for i, e in enumerate(np.sort(order))}
-        seeded = False
+        current_state = RestrMetState(0, restrict=state)
 
         for i, event in enumerate(order):
-            if not seeded:
+            if not current_state.Seeding:
                 # if the seeding has not happened yet, every second
                 # event is just the second part of the joint development
                 if i % 2:
                     continue
                 if event == 2 * self.n:  # seeding
-                    seeded = True
-                    current_state[-1] = 1
-                    current_state_bin += event_to_bin[2 * self.n]
+                    current_state.add(len(state) - 1)
                     obs1 = np.exp(
-                        self.obs1[current_state[::2].astype(bool)].sum())
-                    obs2 = np.exp(self.obs2[np.append(
-                        current_state[1::2].astype(bool), True)].sum())
+                        self.obs1[current_state.PT + current_state.Seeding,].sum())
+                    obs2 = np.exp(
+                        self.obs2[current_state.MT + current_state.Seeding,].sum())
 
                     p *= (np.exp(self.log_theta[
-                        self.n, current_state[::2].astype(bool)].sum())
-                        / (obs1 + obs2 - diag[current_state_bin]))
+                        self.n, current_state.PT + current_state.Seeding].sum())
+                        / (obs1 + obs2 - diag[current_state.data]))
                 else:
-                    current_state[[event, event + 1]] = 1
-                    current_state_bin += (event_to_bin[event] +
-                                          event_to_bin[event + 1])
+                    _event = list(state).index(event)
+                    current_state.add(_event)
+                    current_state.add(_event + 1)
                     obs1 = np.exp(self.obs1[
-                        current_state[::2].astype(bool)].sum())
+                        current_state.PT,].sum())
                     p *= (np.exp(self.log_theta[
-                        event // 2, current_state[::2].astype(bool)].sum())
-                        / (obs1 - diag[current_state_bin]))
+                        event // 2, current_state.PT].sum())
+                        / (obs1 - diag[current_state.data]))
             else:
-                current_state[event] = 1
-                current_state_bin += event_to_bin[event]
+                current_state.add(list(state).index(event))
                 obs1 = np.exp(self.obs1[
-                    current_state[::2].astype(bool)].sum())
-                obs2 = np.exp(self.obs2[np.append(
-                    current_state[1::2].astype(bool), True)].sum())
+                    current_state.PT + current_state.Seeding,].sum())
+                obs2 = np.exp(self.obs2[
+                    current_state.MT + current_state.Seeding,].sum())
                 p *= (np.exp(self.log_theta[
                     event // 2,
-                    np.append(
-                        current_state[1::2].astype(bool),
-                        True)
+                    current_state.MT + current_state.Seeding
                     if event % 2 else
-                    np.append(
-                        current_state[:-1:2].astype(bool),
-                        False)
+                    current_state.PT
                 ].sum())
-                    / (obs1 + obs2 - diag[current_state_bin]))
+                    / (obs1 + obs2 - diag[current_state.data]))
         obs1 = np.exp(self.obs1[
-            current_state[::2].astype(bool)].sum())
-        obs2 = np.exp(self.obs2[np.append(
-            current_state[1::2].astype(bool), True)].sum())
+            current_state.PT + current_state.Seeding,].sum())
+        obs2 = np.exp(self.obs2[
+            current_state.MT + current_state.Seeding,].sum())
         p *= (obs1 + obs2)
         return p
 

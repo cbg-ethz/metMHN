@@ -389,7 +389,6 @@ class RestrMetState(_State, Hashable, MutableSet):
                     result += (i,)
                 _data >>= 1
             _restrict >>= 1
-        _restrict >>= 1
         if _restrict & 1 and _data & 1:
             result += (self.__restrict.n,)
         return result
