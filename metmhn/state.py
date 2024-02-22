@@ -36,10 +36,15 @@ class State(_State, Hashable, MutableSet):
         else:
             raise TypeError('unsupported argument type: \'{}\')',
                             type(data).__name__)
+        self.__size = size
 
     @property
     def data(self) -> int:
         return self.__data
+
+    @property
+    def size(self) -> int:
+        return self.__size
 
     # MutableSet, in
     @singledispatchmethod
@@ -122,13 +127,23 @@ class RestrState(_State, Hashable, MutableSet):
         return self.__data
 
     @property
-    def events(self) -> Iterator[int]:
-        for i, e in enumerate(self.__restrict):
-            if self.__data >> i & 1:
-                yield e
+    def restrict(self) -> int:
+        return self.__restrict
+
+    @property
+    def events(self) -> tuple[int]:
+        result = ()
+        _restrict = self.restrict.data
+        _data = self.data
+        for i in range(self.__restrict.size):
+            if _restrict & 1:
+                if _data & 1:
+                    result += (i,)
+                _data >>= 1
+            _restrict >>= 1
+        return result
 
     # MutableSet, in
-
     @singledispatchmethod
     def __contains__(self, item):
         raise TypeError('unsupported operand type: \'{}\')',
@@ -218,11 +233,11 @@ class MetState(_State, Hashable, MutableSet):
         return self.__n
 
     @property
-    def PT(self) -> Tuple[int]:
+    def PT_events(self) -> Tuple[int]:
         return tuple(i for i in range(self.n) if (self.data >> 2*i) & 1)
 
     @property
-    def MT(self) -> Tuple[int]:
+    def MT_events(self) -> Tuple[int]:
         return tuple(i for i in range(self.n) if (self.data >> (2*i + 1)) & 1)
 
     @property
@@ -236,7 +251,7 @@ class MetState(_State, Hashable, MutableSet):
     def reachable(self) -> bool:
         if self.size - 1 in self:
             return True
-        return self.PT == self.MT
+        return self.PT_events == self.MT_events
 
     # MutableSet, in
     @singledispatchmethod
@@ -327,7 +342,7 @@ class RestrMetState(_State, Hashable, MutableSet):
         return self.__restrict
 
     @property
-    def PT(self) -> Tuple[int]:
+    def PT_events(self) -> Tuple[int]:
         _restrict = self.restrict.data
         _data = self.data
         result = ()
@@ -343,7 +358,7 @@ class RestrMetState(_State, Hashable, MutableSet):
         return result
 
     @property
-    def MT(self) -> Tuple[int]:
+    def MT_events(self) -> Tuple[int]:
         _restrict = self.restrict.data
         _data = self.data
         result = ()
@@ -366,12 +381,29 @@ class RestrMetState(_State, Hashable, MutableSet):
             return ()
 
     @property
+    def PT(self) -> RestrState:
+        return RestrState(
+            sum(1 << i for i, e in enumerate(
+                self.restrict.PT_events) if e in self.PT_events),
+            restrict=State(self.restrict.PT_events, size=self.restrict.n),
+        )
+
+    @property
+    def MT(self) -> RestrState:
+        return RestrState(
+            sum(1 << i for i, e in enumerate(self.restrict.MT_events +
+                self.restrict.Seeding) if e in self.MT_events + self.Seeding),
+            restrict=State(self.restrict.MT_events +
+                           self.restrict.Seeding, size=self.restrict.n + 1),
+        )
+
+    @property
     def reachable(self) -> bool:
         # whether seeding has happened
         if self.restrict.size - 1 in self.restrict and \
                 len(self.restrict) - 1 in self:
             return True
-        return self.PT == self.MT
+        return self.PT_events == self.MT_events
 
     @property
     def events(self) -> Tuple[int]:
