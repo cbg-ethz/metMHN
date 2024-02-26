@@ -358,7 +358,7 @@ class MetMHN:
         # get there with tau1
         A1 = deque([
             dict(),
-            {0: np.array(
+            {RestrMetState(0, restrict=state): np.array(
                 [(0, 1 / (1 - diag_paired[0]))],
                 dtype=order_type)}])
         # get there with tau2
@@ -379,7 +379,7 @@ class MetMHN:
 
                 # check whether state is reachable
                 if not reachable(
-                        bin_state=current_state, state=state.data, n=self.n):
+                        bin_state=current_state, state=state.to_seq(), n=self.n):
                     continue
 
                 current_state = RestrMetState(current_state, restrict=state)
@@ -397,9 +397,9 @@ class MetMHN:
                     if pt_terminal:
 
                         obs1 = np.exp(self.obs1[
-                            current_state.PT_events + current_state.Seeding].sum())
+                            current_state.PT_events + current_state.Seeding,].sum())
                         obs2 = np.exp(self.obs2[
-                            current_state.PT + current_state.Seeding].sum())
+                            current_state.MT_events + current_state.Seeding,].sum())
 
                         denom2 = 1 / \
                             (obs2 - diag_unpaired[current_state.MT.data])
@@ -420,10 +420,10 @@ class MetMHN:
                         denom1 = 1 / \
                             (np.exp(self.obs1[
                                 current_state.PT_events +
-                                    current_state.Seeding].sum())
+                                    current_state.Seeding,].sum())
                                 + np.exp(self.obs2[
                                     current_state.MT_events +
-                                    current_state.Seeding].sum())
+                                    current_state.Seeding,].sum())
                                 - diag_paired[current_state.data])
 
                         # whether new event is pt
@@ -433,7 +433,7 @@ class MetMHN:
                                 current_state.PT_events].sum())
                         else:  # new event is met or seeding
                             num = np.exp(self.log_theta[
-                                diff.MT_events[0],
+                                diff.MT_events or diff.Seeding,
                                 current_state.MT_events + current_state.Seeding].sum())
 
                         # Assign the probabilities for A1
@@ -557,12 +557,12 @@ class MetMHN:
             A1.popleft()
             A2.popleft()
 
-        bin_state = RestrMetState(1 << k, restrict=state)
+        bin_state = RestrMetState((1 << k) - 1, restrict=state)
         arg_max = np.argmax(A2[0][bin_state]["prob"])
         o, p = A2[0][bin_state][arg_max]
-        p *= np.exp(self.obs2[current_state.PT_events +
-                    current_state.Seeding].sum())
-        return int_to_order(o, np.nonzero(state)[0].tolist()), p
+        p *= np.exp(self.obs2[current_state.MT_events +
+                    current_state.Seeding,].sum())
+        return int_to_order(o, np.nonzero(state.to_seq())[0].tolist()), p
 
     def _likeliest_order_mt_pt(
         self, state: np.array, verbose: bool = False
