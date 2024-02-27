@@ -661,7 +661,7 @@ class MetMHN:
                         else:  # new event is met or seeding
                             num = np.exp(self.log_theta[
                                 diff.MT_events or diff.Seeding,
-                                current_state.MT_events + current_state.Seeding])
+                                current_state.MT_events + current_state.Seeding].sum())
 
                         # Assign the probabilities for A1
                         new_orders = pre_orders1.copy()
@@ -784,10 +784,10 @@ class MetMHN:
             A1.popleft()
             A2.popleft()
 
-        bin_state = RestrMetState((1 >> k) - 1, restrict=state)
+        bin_state = RestrMetState((1 << k) - 1, restrict=state)
         arg_max = np.argmax(A2[0][bin_state]["prob"])
         o, p = A2[0][bin_state][arg_max]
-        p *= np.exp(self.obs1[bin_state.PT_events + bin_state.Seeding].sum())
+        p *= np.exp(self.obs1[bin_state.PT_events + bin_state.Seeding,].sum())
         return int_to_order(o, np.nonzero(state.to_seq())[0].tolist()), p
 
     def _likeliest_order_sync(self, state: MetState
@@ -1277,5 +1277,6 @@ if __name__ == "__main__":
                      size=log_theta.shape[1] * 2 - 1)
 
     print(mmhn._likeliest_order_mt_pt(state))
+    print(mmhn._likelihood_mt_pt((42, 1, 30, 16, 32, 3, 11, 13)))
     # print(get_combos(np.array([0, 1, 42, 2]), n=mmhn.n, first_obs="Met"))
     # print(mmhn._likelihood_mt_pt_timed(np.array([ 0,  1, 42,  2]), np.array([])))
