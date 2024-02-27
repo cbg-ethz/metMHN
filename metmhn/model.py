@@ -611,14 +611,14 @@ class MetMHN:
                                  n=self.n):
                     continue
 
+                current_state = RestrMetState(
+                    current_state, restrict=state)
+
                 # whether seeding has happened
-                if current_state & (1 << (k - 1)):
+                if k - 1 in current_state:
 
-                    current_state = RestrMetState(
-                        current_state, restrict=state)
-
-                    # Does the pt part fit the observation?
-                    met_terminal = state.PT_events == current_state.PT_events
+                    # Does the met part fit the observation?
+                    met_terminal = state.MT_events == current_state.MT_events
 
                     # initialize empty numpy struct array for probs and
                     # orders to reach current_state
@@ -1273,10 +1273,10 @@ if __name__ == "__main__":
 
     # x = mmhn.likeliest_order(state, met_status="isMetastasis")
 
-    state = MetState([1, 3, 11, 13, 42, 16, 32, 30],
+    state = MetState([42, 1, 12, 13, 30, 5],
                      size=log_theta.shape[1] * 2 - 1)
 
     print(mmhn._likeliest_order_mt_pt(state))
-    print(mmhn._likelihood_mt_pt((42, 1, 30, 16, 32, 3, 11, 13)))
-    # print(get_combos(np.array([0, 1, 42, 2]), n=mmhn.n, first_obs="Met"))
+    print(mmhn._likelihood_mt_pt((12, 13, 42, 1, 5, 30)))
+    # print(get_combos(np.array([42, 1, 12, 13, 30]), n=mmhn.n, first_obs="Met"))
     # print(mmhn._likelihood_mt_pt_timed(np.array([ 0,  1, 42,  2]), np.array([])))
