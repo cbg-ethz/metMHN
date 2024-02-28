@@ -28,7 +28,7 @@ class State(_State, Hashable, MutableSet):
         if isinstance(data, Iterable):
             self.__data = 0
             for i in data:
-                self.add(i)
+                self.add(int(i))
         elif isinstance(data, int):
             if data < 0:
                 raise ValueError('The given integer must be non-negative')
@@ -94,6 +94,11 @@ class State(_State, Hashable, MutableSet):
     def from_seq(cls, seq: Collection[bool], /) -> _State:
         '''Create a new state from a collection of booleans.'''
         return cls((i for i, j in enumerate(seq) if j), size=len(seq))
+
+    def to_seq(self) -> np.array:
+        seq = np.zeros(self.size, dtype=bool)
+        seq[list(self)] = 1
+        return seq
 
 
 class RestrState(_State, Hashable, MutableSet):
@@ -208,8 +213,8 @@ class MetState(_State, Hashable, MutableSet):
         if isinstance(data, Iterable):
             self.__data = 0
             for i in data:
-                self.add(i)
-        elif isinstance(data, int):
+                self.add(int(i))
+        elif isinstance(data, (int, np.int32)):
             if data < 0:
                 raise ValueError('The given integer must be non-negative')
             self.__data = data
@@ -233,6 +238,14 @@ class MetState(_State, Hashable, MutableSet):
         return self.__n
 
     @property
+    def events(self) -> tuple[int]:
+        result = ()
+        for i in range(self.size):
+            if self.data >> i & 1:
+                result += (i,)
+        return result
+
+    @property
     def PT_events(self) -> Tuple[int]:
         return tuple(i for i in range(self.n) if (self.data >> 2*i) & 1)
 
@@ -246,6 +259,18 @@ class MetState(_State, Hashable, MutableSet):
             return (self.n,)
         else:
             return ()
+
+    @property
+    def PT(self) -> State:
+        return State(
+            (i for i in range(self.n) if (self.data >> 2 * i) & 1),
+            size=self.n)
+
+    @property
+    def MT(self) -> State:
+        return State(
+            (i for i in range(self.n) if (self.data >> (2 * i + 1)) & 1),
+            size=self.n)
 
     @property
     def reachable(self) -> bool:
@@ -478,14 +503,3 @@ class RestrMetState(_State, Hashable, MutableSet):
     @__xor__.register
     def _(self, other: _State) -> _State:
         return type(self)(self.data ^ other.data, restrict=self.restrict)
-
-
-if __name__ == "__main__":
-    pt = [True, True, False, False]
-    events = [0, 1, 1, 2]
-    s = MetState.from_seq([True, True, False, True, True])
-    print(
-        s.data,
-        s.PT,
-        s.events
-    )

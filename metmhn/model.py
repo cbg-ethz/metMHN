@@ -565,27 +565,18 @@ class MetMHN:
         return int_to_order(o, np.nonzero(state.to_seq())[0].tolist()), p
 
     def _likeliest_order_mt_pt(
-        self, state: np.array, verbose: bool = False
+        self, state: MetState, verbose: bool = False
     ) -> tuple[tuple[int, ...], float]:
 
-        k = state.sum()
+        k = len(state)
         if not reachable(
-                bin_state=int("1" * k, base=2), n=self.n, state=state):
+                bin_state=(1 << k) - 1, n=self.n, state=state):
             raise ValueError("This state is not reachable by mhn.")
 
-        # whether active events belong to pt
-        pt = np.nonzero(state)[0] % 2 == 0
-        pt_s = pt.copy()
-        pt[-1] = False
-
-        # get the numbers of events
-        events = np.nonzero(state)[0] // 2
-
-        # get the positions of the pt 1s
-        met_events = np.nonzero(~pt)[0]
         diag_paired = get_diag_paired(
-            log_theta=self.log_theta, n=self.n, state=state)
-        diag_unpaired = self.get_diag_unpaired(state=state[::2], seeding=False)
+            log_theta=self.log_theta, n=self.n, state=state.to_seq())
+        diag_unpaired = self.get_diag_unpaired(
+            state=state.to_seq()[::2], seeding=False)
 
         # In A1[i][state][order], the probabilities to reach a state
         # with a given order are stored. Here, i can be 0, 1 or 2, where
@@ -596,7 +587,7 @@ class MetMHN:
         # get there with tau1
         A1 = deque([
             dict(),
-            {0: np.array(
+            {RestrMetState(0, restrict=state): np.array(
                 [(0, 1 / (1 - diag_paired[0]))],
                 dtype=order_type)}])
         # get there with tau2
@@ -616,19 +607,18 @@ class MetMHN:
                         f"{n_events:3}/{k:3}, {len(A1[2]):10}, {sum(len(x) for x in A1[2].values()):10}", end="\r")
 
                 # check whether state is reachable
-                if not reachable(bin_state=current_state, state=state, n=self.n):
+                if not reachable(bin_state=current_state, state=state.to_seq(),
+                                 n=self.n):
                     continue
 
+                current_state = RestrMetState(
+                    current_state, restrict=state)
+
                 # whether seeding has happened
-                if current_state & (1 << (k - 1)):
+                if k - 1 in current_state:
 
-                    # get the positions of the 1s
-                    state_events = [
-                        i for i in range(k)
-                        if (1 << i) | current_state == current_state]
-
-                    # Does the pt part fit the observation?
-                    met_terminal = np.isin(met_events, state_events).all()
+                    # Does the met part fit the observation?
+                    met_terminal = state.MT_events == current_state.MT_events
 
                     # initialize empty numpy struct array for probs and
                     # orders to reach current_state
@@ -637,12 +627,11 @@ class MetMHN:
                     if met_terminal:
 
                         obs1 = np.exp(self.obs1[
-                            events[state_events][pt_s[state_events]]].sum())
+                            current_state.PT_events + current_state.Seeding,].sum())
                         obs2 = np.exp(self.obs2[
-                            events[state_events][~pt[state_events]]].sum())
-
+                            current_state.MT_events + current_state.Seeding,].sum())
                         denom2 = 1 / \
-                            (obs1 - diag_unpaired[get_pt(current_state, pt)])
+                            (obs1 - diag_unpaired[current_state.PT.data])
                         start_factor = obs2 * denom2
 
                     # iterate over all previous states
@@ -650,37 +639,36 @@ class MetMHN:
 
                         # Skip pre_state if it is not a subset of
                         # current_state
-                        if not (current_state | pre_state == current_state):
+                        if not pre_state <= current_state:
                             continue
 
                         # get the position of the new 1
-                        new_event = bin(current_state ^ pre_state)[
-                            :1:-1].index("1")
+                        diff = current_state ^ pre_state
+                        new_event = tuple(diff)[0]
 
                         denom1 = 1 / \
                             (np.exp(self.obs1[
-                                events[state_events][pt_s[state_events]]].sum())
-                                + np.exp(self.obs2[
-                                    events[state_events][~pt[state_events]]].sum())
-                                - diag_paired[current_state])
+                                current_state.PT_events + current_state.Seeding,].sum())
+                             + np.exp(self.obs2[
+                                 current_state.MT_events + current_state.Seeding,].sum())
+                                - diag_paired[current_state.data])
 
                         # whether new event is pt
-                        if pt[new_event]:  # new event is pt
+                        if len(diff.PT) > 0:  # new event is pt
                             num = np.exp(self.log_theta[
-                                events[new_event],
-                                events[state_events][pt[state_events]]].sum())
+                                diff.PT_events,
+                                current_state.PT_events].sum())
                         else:  # new event is met or seeding
                             num = np.exp(self.log_theta[
-                                events[new_event],
-                                events[state_events][~pt[state_events]]].sum())
+                                diff.MT_events or diff.Seeding,
+                                current_state.MT_events + current_state.Seeding].sum())
 
                         # Assign the probabilities for A1
                         new_orders = pre_orders1.copy()
                         new_orders["prob"] *= (num * denom1)
                         new_orders["order"] = append_to_int_order(
                             new_orders["order"],
-                            numbers=[
-                                e for e in state_events if e != new_event],
+                            numbers=list(pre_state),
                             new_event=new_event)
                         A1[2][current_state] = np.append(
                             A1[2][current_state],
@@ -704,29 +692,26 @@ class MetMHN:
 
                             # Skip pre_state if it is not a subset of
                             # current_state
-                            if not (current_state | pre_state ==
-                                    current_state):
+                            if not pre_state <= current_state:
                                 continue
 
                             # if pre_state was met_terminal
                             if pre_state in A2[0]:
 
                                 # get the position of the new 1
-                                new_event = bin(current_state ^ pre_state)[
-                                    :1:-1].index("1")
+                                diff = current_state ^ pre_state
+                                new_event = tuple(diff)[0]
 
                                 # Get the numerator
                                 num = np.exp(self.log_theta[
-                                    events[new_event],
-                                    events[state_events][
-                                        pt[state_events]]].sum())
+                                    diff.events[0],
+                                    current_state.PT_events].sum())
 
                                 # get the orders that are coming from
                                 # pre_state
                                 new_orders = append_to_int_order(
                                     my_int=A2[0][pre_state]["order"],
-                                    numbers=[e for e in state_events
-                                             if e != new_event],
+                                    numbers=list(pre_state),
                                     new_event=new_event)
 
                                 # add to the probs of these orders the
@@ -749,33 +734,30 @@ class MetMHN:
                                 A2[1][current_state])
 
                 else:  # seeding has not happened yet
-                    # get positions of 1s
-                    state_events = [i for i in range(k) if (
-                        1 << i) | current_state == current_state]
 
                     # initialize empty numpy struct array for probs and
                     # orders to reach current_state
                     A1[2][current_state] = np.empty([0], dtype=order_type)
 
                     denom = 1 / (np.exp(self.obs1[
-                        events[state_events][pt[state_events]]].sum()) -
-                        diag_paired[current_state])
+                        current_state.PT_events].sum()) -
+                        diag_paired[current_state.data])
 
                     for pre_state, pre_orders1 in A1[0].items():
 
                         # Skip pre_state if it is not a subset of
                         # current_state
-                        if not (current_state | pre_state == current_state):
+                        if not pre_state <= current_state:
                             continue
 
                         # get the position of the new 1
-                        new_event = bin(current_state ^ pre_state)[
-                            :1:-1].index("1")
+                        diff = current_state ^ pre_state
+                        new_event = tuple(diff)[0]
 
                         # get the numerator
                         num = np.exp(self.log_theta[
-                            events[new_event],
-                            events[state_events][pt[state_events]]].sum())
+                            diff.events[0],
+                            current_state.PT_events].sum())
 
                         # Assign the probabilities for A1
                         new_orders = pre_orders1.copy()
@@ -783,12 +765,10 @@ class MetMHN:
                         new_orders["order"] = append_to_int_order(
                             my_int=append_to_int_order(
                                 my_int=new_orders["order"],
-                                numbers=[e for e in state_events if e not in [
-                                    new_event, new_event + 1]],
+                                numbers=list(pre_state),
                                 new_event=new_event
                             ),
-                            numbers=[
-                                e for e in state_events if e != new_event],
+                            numbers=list(pre_state) + [new_event],
                             new_event=new_event + 1
                         )
                         A1[2][current_state] = np.append(
@@ -804,11 +784,11 @@ class MetMHN:
             A1.popleft()
             A2.popleft()
 
-        bin_state = int("1" * k, base=2)
+        bin_state = RestrMetState((1 << k) - 1, restrict=state)
         arg_max = np.argmax(A2[0][bin_state]["prob"])
         o, p = A2[0][bin_state][arg_max]
-        p *= np.exp(self.obs1[events[state_events][pt_s[state_events]]].sum())
-        return int_to_order(o, np.nonzero(state)[0].tolist()), p
+        p *= np.exp(self.obs1[bin_state.PT_events + bin_state.Seeding,].sum())
+        return int_to_order(o, np.nonzero(state.to_seq())[0].tolist()), p
 
     def _likeliest_order_sync(self, state: MetState
                               ) -> tuple[tuple[int, ...], float]:
@@ -1089,84 +1069,92 @@ class MetMHN:
             float: likelihood of these two orders happening
         """
         # translate first observation to state
-        state = np.zeros(2 * self.n + 1, dtype=int)
-        if len(order_1) > 0:
-            state[order_1] = 1
-        diag = get_diag_paired(log_theta=self.log_theta, n=self.n, state=state)
-
-        event_to_bin = {e: 1 << i for i, e in enumerate(np.sort(order_1))}
+        state = MetState(order_1, size=2 * self.n + 1)
+        diag = get_diag_paired(log_theta=self.log_theta,
+                               n=self.n, state=state.to_seq())
 
         p = 1 / (1 - diag[0])
 
-        current_state = np.zeros(2 * self.n + 1, dtype=bool)
-        pt = np.array([True, False] * self.n + [False])
-        pt_s = np.array([True, False] * self.n + [True])
-        met = ~pt
+        current_state = RestrMetState(0, restrict=state)
 
-        current_state_bin = 0  # binary state
-        seeded = False
         for i, e in enumerate(order_1):
-            if not seeded:
+            if not current_state.Seeding:
                 # if the seeding has not happened yet, every second
                 # event is just the second part of the joint development
                 if i % 2:
                     continue
                 if e == 2 * self.n:  # seeding
-                    seeded = True
-                    current_state[-1] = 1
-                    current_state_bin += event_to_bin[2 * self.n]
+                    current_state.add(len(state) - 1)
                     p *= (np.exp(self.log_theta[
-                        self.n, current_state[pt_s]].sum())
-                        / (np.exp(self.obs1[current_state[pt_s]].sum())
-                           + np.exp(self.obs2[current_state[met]].sum())
-                           - diag[current_state_bin]))
+                        self.n,
+                        current_state.PT_events + current_state.Seeding
+                    ].sum())
+                        / (np.exp(self.obs1[
+                            current_state.PT_events + current_state.Seeding,
+                        ].sum())
+                        + np.exp(self.obs2[
+                            current_state.MT_events + current_state.Seeding,
+                        ].sum())
+                        - diag[current_state.data]))
                 else:
-                    current_state[[e, e + 1]] = 1
-                    current_state_bin += (event_to_bin[e] +
-                                          event_to_bin[e + 1])
+                    _event = list(state).index(e)
+                    current_state.add(_event)
+                    current_state.add(_event + 1)
                     p *= (np.exp(self.log_theta[
-                        e // 2, current_state[pt_s]].sum())
-                        / (np.exp(self.obs1[current_state[pt_s]].sum())
-                           - diag[current_state_bin]))
+                        e // 2, current_state.PT_events + current_state.Seeding
+                    ].sum())
+                        / (np.exp(self.obs1[
+                            current_state.PT_events + current_state.Seeding,
+                        ].sum())
+                        - diag[current_state.data]))
             else:  # seeded
-                current_state[e] = 1
-                current_state_bin += event_to_bin[e]
+                current_state.add(list(state).index(e))
                 if not e % 2:  # PT event
                     p *= (np.exp(self.log_theta[
-                        e//2, np.append(current_state[pt], False)].sum())
-                        / (np.exp(self.obs1[current_state[pt_s]].sum())
-                           + np.exp(self.obs2[current_state[met]].sum())
-                           - diag[current_state_bin]))
+                        e//2, current_state.PT_events].sum())
+                        / (np.exp(self.obs1[
+                            current_state.PT_events + current_state.Seeding,
+                        ].sum())
+                        + np.exp(self.obs2[
+                            current_state.MT_events + current_state.Seeding,
+                        ].sum())
+                        - diag[current_state.data]))
                 else:  # Met event
                     p *= (np.exp(self.log_theta[
-                        e//2, current_state[met]].sum())
-                        / (np.exp(self.obs1[current_state[pt_s]].sum())
-                           + (np.exp(self.obs2[current_state[met]].sum())
-                              - diag[current_state_bin])))
+                        e//2, current_state.MT_events + current_state.Seeding
+                    ].sum())
+                        / (np.exp(self.obs1[
+                            current_state.PT_events + current_state.Seeding,
+                        ].sum())
+                        + (np.exp(self.obs2[
+                            current_state.MT_events + current_state.Seeding,
+                        ].sum())
+                            - diag[current_state.data])))
 
-        p *= np.exp(self.obs2[current_state[met]].sum())
-        current_state = state[:-1:2].astype(bool)  # reduce to pt events
-        k = len(order_2) + current_state.sum()
-        state = current_state.copy()
-        if len(order_2) > 0:
-            state[order_2 // 2] = 1
-        event_to_bin = {e: 1 << i for i, e in enumerate(np.nonzero(state)[0])}
-        current_state_bin = (
-            current_state[state] << np.arange(k)).sum()
-        diag = self.get_diag_unpaired(state=state.astype(int), seeding=False)
-        p /= (np.exp(self.obs1[np.append(current_state, True)].sum())
-              - diag[current_state_bin])
+        p *= np.exp(self.obs2[current_state.MT_events + current_state.Seeding,
+                              ].sum())
+
+        # reduce to pt events
+        state = state.PT
+        for e in order_2:
+            state.add(int(e//2))
+        current_state = RestrState(
+            (i for i, e in enumerate(state) if e in current_state.PT_events),
+            restrict=state)
+
+        diag = self.get_diag_unpaired(state=state.to_seq(), seeding=False)
+        p /= (np.exp(self.obs1[current_state.events + (self.n,),].sum())
+              - diag[current_state.data])
 
         for i, e in enumerate(order_2):
             e = e//2
-            current_state[e] = 1
-            current_state_bin += event_to_bin[e]
-            p *= (np.exp(self.log_theta[e, np.append(current_state, False)].sum())
-                  / (np.exp(self.obs1[np.append(current_state, True)].sum())
-                     - diag[current_state_bin]))
+            current_state.add(list(state).index(e))
+            p *= (np.exp(self.log_theta[e, current_state.events].sum())
+                  / (np.exp(self.obs1[current_state.events + (self.n,),].sum())
+                     - diag[current_state.data]))
             pass
 
-        p *= np.exp(self.obs1[np.append(current_state, True)].sum())
+        p *= np.exp(self.obs1[current_state.events + (self.n,),].sum())
 
         return p
 
@@ -1293,9 +1281,10 @@ if __name__ == "__main__":
 
     # x = mmhn.likeliest_order(state, met_status="isMetastasis")
 
-    state = MetState([1, 3, 11, 13, 42, 16, 32, 30],
+    state = MetState([42, 1, 12, 13, 30, 5],
                      size=log_theta.shape[1] * 2 - 1)
 
-    print(mmhn._likeliest_order_pt_mt(state))
-    # print(get_combos(np.array([0, 1, 42, 2]), n=mmhn.n, first_obs="Met"))
+    # print(mmhn._likeliest_order_mt_pt(state))
+    print(mmhn._likelihood_mt_pt((12, 13, 42, 1, 5, 30, 32, 20)))
+    # print(get_combos(np.array([42, 1, 12, 13, 30]), n=mmhn.n, first_obs="Met"))
     # print(mmhn._likelihood_mt_pt_timed(np.array([ 0,  1, 42,  2]), np.array([])))
