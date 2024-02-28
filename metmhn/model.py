@@ -581,7 +581,7 @@ class MetMHN:
         # In A1[i][state][order], the probabilities to reach a state
         # with a given order are stored. Here, i can be 0, 1 or 2, where
         # A1[2] holds the states that have n_events events and A1[1] and
-        # A1[1] hold the ones with 1 and 2 events less, respectively.
+        # A1[0] hold the ones with 1 and 2 events less, respectively.
 
         order_type = [("order", int), ("prob", float)]
         # get there with tau1
@@ -949,85 +949,75 @@ class MetMHN:
             float: likelihood of these two orders happening
         """
         # translate first observation to state
-        state = np.zeros(2 * self.n + 1, dtype=int)
-        if len(order_1) > 0:
-            state[order_1] = 1
-        diag = get_diag_paired(log_theta=self.log_theta, n=self.n, state=state)
-
-        event_to_bin = {e: 1 << i for i, e in enumerate(np.sort(order_1))}
+        state = MetState(order_1, size=2 * self.n + 1)
+        diag = get_diag_paired(log_theta=self.log_theta,
+                               n=self.n, state=state.to_seq())
 
         p = 1 / (1 - diag[0])
 
-        current_state = np.zeros(2 * self.n + 1, dtype=bool)
-        pt = np.array([True, False] * self.n + [False])
-        pt_s = np.array([True, False] * self.n + [True])
-        met = ~pt
+        current_state = RestrMetState(0, restrict=state)
 
-        current_state_bin = 0  # binary state
-        seeded = False
         for i, e in enumerate(order_1):
-            if not seeded:
+            if not current_state.Seeding:
                 # if the seeding has not happened yet, every second
                 # event is just the second part of the joint development
                 if i % 2:
                     continue
                 if e == 2 * self.n:  # seeding
-                    seeded = True
-                    current_state[-1] = 1
-                    current_state_bin += event_to_bin[2 * self.n]
+                    current_state.add(len(state) - 1)
                     p *= (np.exp(self.log_theta[
-                        self.n, current_state[pt_s]].sum())
-                        / (np.exp(self.obs1[current_state[pt_s]].sum())
-                           + np.exp(self.obs2[current_state[met]].sum())
-                           - diag[current_state_bin]))
+                        self.n, current_state.PT_events + current_state.Seeding].sum())
+                        / (np.exp(self.obs1[current_state.PT_events + current_state.Seeding,].sum())
+                           + np.exp(self.obs2[current_state.MT_events + current_state.Seeding,].sum())
+                           - diag[current_state.data]))
                 else:
-                    current_state[[e, e + 1]] = 1
-                    current_state_bin += (event_to_bin[e] +
-                                          event_to_bin[e + 1])
+                    _event = list(state).index(e)
+                    current_state.add(_event)
+                    current_state.add(_event + 1)
                     p *= (np.exp(self.log_theta[
-                        e // 2, current_state[pt_s]].sum())
-                        / (np.exp(self.obs1[current_state[pt_s]].sum())
-                           - diag[current_state_bin]))
+                        e // 2, current_state.PT_events + current_state.Seeding].sum())
+                        / (np.exp(self.obs1[current_state.PT_events + current_state.Seeding,].sum())
+                           - diag[current_state.data]))
             else:  # seeded
-                current_state[e] = 1
-                current_state_bin += event_to_bin[e]
+                current_state.add(list(state).index(e))
                 if not e % 2:  # PT event
                     p *= (np.exp(self.log_theta[
-                        e//2, np.append(current_state[pt], False)].sum())
-                        / (np.exp(self.obs1[current_state[pt_s]].sum())
-                           + np.exp(self.obs2[current_state[met]].sum())
-                           - diag[current_state_bin]))
+                        e//2, current_state.PT_events].sum())
+                        / (np.exp(self.obs1[current_state.PT_events + current_state.Seeding,].sum())
+                           + np.exp(self.obs2[current_state.MT_events + current_state.Seeding,].sum())
+                           - diag[current_state.data]))
                 else:  # Met event
                     p *= (np.exp(self.log_theta[
-                        e//2, current_state[met]].sum())
-                        / (np.exp(self.obs1[current_state[pt_s]].sum())
-                           + (np.exp(self.obs2[current_state[met]].sum())
-                              - diag[current_state_bin])))
+                        e//2, current_state.MT_events + current_state.Seeding].sum())
+                        / (np.exp(self.obs1[current_state.PT_events + current_state.Seeding,].sum())
+                           + (np.exp(self.obs2[current_state.MT_events + current_state.Seeding,].sum())
+                              - diag[current_state.data])))
 
-        p *= np.exp(self.obs1[current_state[pt_s]].sum())
-        current_state = np.append(state[1::2], True).astype(
-            bool)  # reduce to met events
-        k = len(order_2) + current_state.sum()
-        state = current_state.copy()
-        if len(order_2) > 0:
-            state[order_2 // 2] = 1
-        event_to_bin = {e: 1 << i for i, e in enumerate(np.nonzero(state)[0])}
-        current_state_bin = (
-            current_state[state] << np.arange(k)).sum()
-        diag = self.get_diag_unpaired(state=state.astype(int))
-        p /= (np.exp(self.obs2[current_state].sum())
-              - diag[current_state_bin])
+        p *= np.exp(self.obs1[current_state.PT_events +
+                    current_state.Seeding,].sum())
+
+        # reduce to met events
+        state = state.MT
+        for e in order_2:
+            state.add(int(e//2))
+        current_state = RestrState(
+            (i for i, e in enumerate(state)
+             if e in current_state.MT_events + current_state.Seeding),
+            restrict=state)
+
+        diag = self.get_diag_unpaired(state=state.to_seq())
+        p /= (np.exp(self.obs2[current_state.events,].sum())
+              - diag[current_state.data])
 
         for i, e in enumerate(order_2):
             e = e//2
-            current_state[e] = 1
-            current_state_bin += event_to_bin[e]
-            p *= (np.exp(self.log_theta[e, current_state].sum())
-                  / (np.exp(self.obs2[current_state].sum())
-                     - diag[current_state_bin]))
+            current_state.add(list(state).index(e))
+            p *= (np.exp(self.log_theta[e, current_state.events].sum())
+                  / (np.exp(self.obs2[current_state.events,].sum())
+                     - diag[current_state.data]))
             pass
 
-        p *= np.exp(self.obs2[current_state].sum())
+        p *= np.exp(self.obs2[current_state.events,].sum())
 
         return p
 
@@ -1044,7 +1034,7 @@ class MetMHN:
         """
         return sum(
             self._likelihood_pt_mt_timed(o1, o2) for o1, o2 in get_combos(
-                order=np.array(order), n=self.n))
+                order=np.array(order), n=self.n, first_obs="PT"))
 
     def _likelihood_mt_pt_timed(self, order_1: np.array, order_2: np.array
                                 ) -> float:
@@ -1276,15 +1266,11 @@ if __name__ == "__main__":
 
     log_theta = log_theta.drop(index=[0, 1]).to_numpy()
     mmhn = MetMHN(log_theta=log_theta, obs1=obs1, obs2=obs2)
-    # state = np.zeros(2 * mmhn.n + 1, dtype=int)
-    # state[[1, 3, 11, 13, 42]] = 1
-
-    # x = mmhn.likeliest_order(state, met_status="isMetastasis")
 
     state = MetState([42, 1, 12, 13, 30, 5],
                      size=log_theta.shape[1] * 2 - 1)
 
-    # print(mmhn._likeliest_order_mt_pt(state))
-    print(mmhn._likelihood_mt_pt((12, 13, 42, 1, 5, 30, 32, 20)))
+    # print(mmhn._likeliest_order_pt_mt(state))
+    print(mmhn._likelihood_pt_mt((12, 13, 42, 30, 1, 5, 6)))
     # print(get_combos(np.array([42, 1, 12, 13, 30]), n=mmhn.n, first_obs="Met"))
     # print(mmhn._likelihood_mt_pt_timed(np.array([ 0,  1, 42,  2]), np.array([])))

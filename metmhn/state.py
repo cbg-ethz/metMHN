@@ -269,8 +269,8 @@ class MetState(_State, Hashable, MutableSet):
     @property
     def MT(self) -> State:
         return State(
-            (i for i in range(self.n) if (self.data >> (2 * i + 1)) & 1),
-            size=self.n)
+            tuple(i for i in range(self.n) if (self.data >> (2 * i + 1)) & 1) + (self.n,) if self.Seeding else (),
+            size=self.n + 1)
 
     @property
     def reachable(self) -> bool:
