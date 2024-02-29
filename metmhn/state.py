@@ -201,7 +201,7 @@ class RestrState(_State, Hashable, MutableSet):
 class MetState(_State, Hashable, MutableSet):
     '''Subclass of Set representing a state in a MHN.'''
 
-    __slots__ = '__data', '__size', '__PT', '__events'
+    __slots__ = '__data', '__size', '__n'
 
     def __init__(
             self,
@@ -265,6 +265,14 @@ class MetState(_State, Hashable, MutableSet):
         return State(
             (i for i in range(self.n) if (self.data >> 2 * i) & 1),
             size=self.n)
+    
+    @property
+    def PT_S(self) -> State:
+        state = State(
+            (i for i in range(self.n) if (self.data >> 2 * i) & 1),
+            size=self.n + 1)
+        if self.Seeding:
+            state.add(self.n)
 
     @property
     def MT(self) -> State:
@@ -381,6 +389,10 @@ class RestrMetState(_State, Hashable, MutableSet):
                 _data >>= 1
             _restrict >>= 1
         return result
+
+    @property
+    def PT_S_events(self) -> Tuple[int]:
+        raise NotImplementedError
 
     @property
     def MT_events(self) -> Tuple[int]:

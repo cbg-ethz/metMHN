@@ -6,6 +6,7 @@ import numpy as np
 from omhn.model import oMHN
 from metmhn.state import State, RestrState, RestrMetState, MetState
 from itertools import chain
+from typing import Union
 
 append_to_int_order = np.vectorize(
     append_to_int_order, excluded=["numbers", "new_event"])
@@ -185,7 +186,65 @@ class MetMHN:
             log_theta=np.vstack([_pt_log_theta, self.obs1])
         )
 
-    def get_diag_unpaired(self, state: np.array, seeding: bool = True) -> np.array:
+    def likeliest_order(
+        self,
+        state: Union[np.array, MetState],
+        met_status: str,
+        first_obs: str = None
+    ) -> tuple[tuple[int, ...], float]:
+        """Returns the most probable order for a coupled observation 
+        consisting of PT and Met
+
+        Args:
+            state (np.array or MetState): state describing the coupled observation, 
+            numpy shape (2*n + 1).
+            met_status (str): Must be one of
+                - "isMetastasis" for an unpaired metastasis
+                - "present" for an unpaired primary tumor that at some
+                    point develops a metastasis
+                - "absent" for an unpaired primary tumor that does not
+                    develop a metastasis
+                - "isPaired" for a paired sample
+            first_obs (str): Which was the first observation. Must be 
+            one of "Met", "PT" or "sync"
+
+        Returns:
+            tuple[tuple[int, ...], float]: most probable order and its 
+            probability
+        """
+
+        if isinstance(state, np.array):
+            state = MetState.from_seq(state)
+
+        match met_status:
+            case "isMetastasis":
+                return self._likeliest_order_unpaired_met(state=state.MT)
+            case "absent":
+                p, o = self._pt_omhn.likeliest_order(
+                    state=state[::2]
+                )
+                return p, 2 * o
+            case "present":
+                p, o = self._pt_omhn.likeliest_order(
+                    state=state[::2]
+                )
+                return p, 2 * o
+            case "isPaired":
+                match first_obs:
+                    case"PT":
+                        return self._likeliest_order_pt_mt(state)
+                    case "Met":
+                        return self._likeliest_order_mt_pt(state)
+                    case "sync":
+                        return self._likeliest_order_sync(state)
+                    case _:
+                        raise ValueError(
+                            "first_obs must be one of 'PT', 'Met', 'sync'")
+            case _:
+                raise ValueError(
+                    "met_status must be one of 'isMetastasis', 'absent', 'present', 'isPaired")
+
+    def _get_diag_unpaired(self, state: np.array, seeding: bool = True) -> np.array:
         """This returns the diagonal of the restricted rate matrix of
         the metMHN's Markov chain.
 
@@ -235,71 +294,14 @@ class MetMHN:
             daxpy(n=nx, a=1, x=subdiag, incx=1, y=diag, incy=1)
         return diag
 
-    def likeliest_order(
-        self,
-        state: np.array,
-        met_status: str,
-        first_obs: str = None
-    ) -> tuple[tuple[int, ...], float]:
-        """Returns the most probable order for a coupled observation 
-        consisting of PT and Met
+    def _likeliest_order_unpaired_met(self, state: State) -> tuple[tuple[int, ...], float]:
 
-        Args:
-            state (np.array): state describing the coupled observation, 
-            shape (2*n + 1).
-            met_status (str): Must be one of
-                - "isMetastasis" for an unpaired metastasis
-                - "present" for an unpaired primary tumor that at some
-                    point develops a metastasis
-                - "absent" for an unpaired primary tumor that does not
-                    develop a metastasis
-                - "isPaired" for a paired sample
-            first_obs (str): Which was the first observation. Must be 
-            one of "Met", "PT" or "sync"
+        diag = self._get_diag_unpaired(state=state.to_seq(), seeding=True)
+        log_theta = self.log_theta[state.to_seq()][:, state.to_seq()]
+        obs1 = self.obs1[state.to_seq()]
+        obs2 = self.obs2[state.to_seq()]
 
-        Returns:
-            tuple[tuple[int, ...], float]: most probable order and its 
-            probability
-        """
-
-        match met_status:
-            case "isMetastasis":
-                return self._likeliest_order_unpaired_met(state=state)
-            case "absent":
-                p, o = self._pt_omhn.likeliest_order(
-                    state=state[::2]
-                )
-                return p, 2 * o
-            case "present":
-                p, o = self._pt_omhn.likeliest_order(
-                    state=state[::2]
-                )
-                return p, 2 * o
-            case "isPaired":
-                match first_obs:
-                    case"PT":
-                        return self._likeliest_order_pt_mt(state)
-                    case "Met":
-                        return self._likeliest_order_mt_pt(state)
-                    case "sync":
-                        return self._likeliest_order_sync(state)
-                    case _:
-                        raise ValueError(
-                            "first_obs must be one of 'PT', 'Met', 'sync'")
-            case _:
-                raise ValueError(
-                    "met_status must be one of 'isMetastasis', 'absent', 'present', 'isPaired")
-
-    def _likeliest_order_unpaired_met(self, state: np.array) -> tuple[tuple[int, ...], float]:
-
-        state = np.append(state[1::2], state[-1])
-
-        diag = self.get_diag_unpaired(state=state, seeding=True)
-        log_theta = self.log_theta[state.astype(bool)][:, state.astype(bool)]
-        obs1 = self.obs1[state.astype(bool)]
-        obs2 = self.obs2[state.astype(bool)]
-
-        k = state.sum()
+        k = len(state)
         # {state: highest path probability to this state}
         A = {0: 1/(1-diag[0])}
         # {state: path with highest probability to this state}
@@ -329,7 +331,7 @@ class MetMHN:
             B = B_new
         i = (1 << k) - 1
         A[i] *= np.exp(obs2.sum())
-        order = np.arange(self.log_theta.shape[1])[state.astype(bool)][B[i]]
+        order = np.arange(self.log_theta.shape[1])[state.to_seq()][B[i]]
         order = 2 * order + 1
         order[np.where(order == self.n * 2 + 1)] -= 1
         return (A[i], order)
@@ -346,7 +348,7 @@ class MetMHN:
 
         diag_paired = get_diag_paired(
             log_theta=self.log_theta, n=self.n, state=state.to_seq())
-        diag_unpaired = self.get_diag_unpaired(
+        diag_unpaired = self._get_diag_unpaired(
             state=np.concatenate([seq_state[1::2], seq_state[-1::]]))
 
         # In A1[i][state][order], the probabilities to reach a state
@@ -575,7 +577,7 @@ class MetMHN:
 
         diag_paired = get_diag_paired(
             log_theta=self.log_theta, n=self.n, state=state.to_seq())
-        diag_unpaired = self.get_diag_unpaired(
+        diag_unpaired = self._get_diag_unpaired(
             state=state.to_seq()[::2], seeding=False)
 
         # In A1[i][state][order], the probabilities to reach a state
@@ -654,7 +656,7 @@ class MetMHN:
                                 - diag_paired[current_state.data])
 
                         # whether new event is pt
-                        if len(diff.PT) > 0:  # new event is pt
+                        if len(diff.PT_events) > 0:  # new event is pt
                             num = np.exp(self.log_theta[
                                 diff.PT_events,
                                 current_state.PT_events].sum())
@@ -1005,7 +1007,7 @@ class MetMHN:
              if e in current_state.MT_events + current_state.Seeding),
             restrict=state)
 
-        diag = self.get_diag_unpaired(state=state.to_seq())
+        diag = self._get_diag_unpaired(state=state.to_seq())
         p /= (np.exp(self.obs2[current_state.events,].sum())
               - diag[current_state.data])
 
@@ -1132,7 +1134,7 @@ class MetMHN:
             (i for i, e in enumerate(state) if e in current_state.PT_events),
             restrict=state)
 
-        diag = self.get_diag_unpaired(state=state.to_seq(), seeding=False)
+        diag = self._get_diag_unpaired(state=state.to_seq(), seeding=False)
         p /= (np.exp(self.obs1[current_state.events + (self.n,),].sum())
               - diag[current_state.data])
 
@@ -1237,7 +1239,7 @@ class MetMHN:
         if timepoint == 2:
             t_obs += np.random.exponential(1 / self.tau2)
         t = np.random.exponential(-1 /
-                                  self.get_diag_unpaired(state=state)[-1])
+                                  self._get_diag_unpaired(state=state)[-1])
         while t < t_obs:
             probs = [
                 np.exp(self.log_theta[
@@ -1252,7 +1254,7 @@ class MetMHN:
             if state.sum() == n:
                 break
             t += np.random.exponential(-1 /
-                                       self.get_diag_unpaired(state=state)[-1])
+                                       self._get_diag_unpaired(state=state)[-1])
         return order, t_obs
 
 
