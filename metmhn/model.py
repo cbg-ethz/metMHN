@@ -13,9 +13,7 @@ append_to_int_order = np.vectorize(
 
 
 def tuple_max(x: np.array, y: np.array) -> tuple[np.array]:
-    """If given two values x_i and y_i for each i, we want to find i
-    s.t. for all non-negative linear factors a and b we have 
-    ax_i + by_i >= ax_j + by_j
+    """If given two values x_i and y_i for each i, we want to find i s.t. for all non-negative linear factors a and b we have ax_i + by_i >= ax_j + by_j.
     There will in general not be a unique i that satisfies this,
     therefore we just return all possible candidates i that could
     fulfill this for the right values a and b. 
@@ -66,43 +64,6 @@ def reachable(bin_state: int, n: int, state: np.array) -> bool:
     else:
         # check whether pt and met state agree
         return not (full_bin ^ (full_bin >> 1)) & int("01"*n, base=2)
-
-
-def get_met(bin_state: int, pt) -> int:
-    """Get the metastasis part of a state, both binary and state-space
-    restricted to some state vector x.
-
-    Args:
-        bin_state (int): state, binary
-        pt (numpy.array, dtype=bool): Boolean array of length k, where
-        k = x.sum(). Its entries encode whether the nonzero entries of x
-        belongs to the pt or the met part.  
-
-    Returns:
-        int: Inter
-    """
-    return int(
-        "".join(
-            i for i, pt_ev in zip(bin(bin_state)[2:], pt[::-1]) if not pt_ev),
-        base=2)
-
-
-def get_pt(bin_state: int, pt) -> int:
-    """Get the primary tumor part of a state, both binary and
-    state-space restricted to some state vector x.
-
-    Args:
-        bin_state (int): state, binary
-        pt (numpy.array, dtype=bool): Boolean array of length k, where
-        k = x.sum(). Its entries encode whether the nonzero entries of x
-        belongs to the pt or the met part.  
-
-    Returns:
-        int: PT 
-    """
-    bitstring = "".join(
-        i for i, pt_ev in zip(bin(bin_state)[2:], pt[::-1]) if pt_ev)
-    return int(bitstring, base=2) if len(bitstring) != 0 else 0
 
 
 def get_combos(order: np.array, n: int, first_obs: str) -> list[tuple[np.array]]:
@@ -218,15 +179,15 @@ class MetMHN:
 
         match met_status:
             case "isMetastasis":
-                return self._likeliest_order_unpaired_met(state=state.MT)
+                return self._likeliest_order_unpaired_mt(state=state.MT)
             case "absent":
                 p, o = self._pt_omhn.likeliest_order(
-                    state=state[::2]
+                    state=state.PT_S.to_seq()
                 )
                 return p, 2 * o
             case "present":
                 p, o = self._pt_omhn.likeliest_order(
-                    state=state[::2]
+                    state=state.PT_S.to_seq()
                 )
                 return p, 2 * o
             case "isPaired":
@@ -244,7 +205,7 @@ class MetMHN:
                 raise ValueError(
                     "met_status must be one of 'isMetastasis', 'absent', 'present', 'isPaired")
 
-    def _get_diag_unpaired(self, state: np.array, seeding: bool = True) -> np.array:
+    def _get_diag_unpaired(self, state: State, seeding: bool = True) -> np.array:
         """This returns the diagonal of the restricted rate matrix of
         the metMHN's Markov chain.
 
@@ -258,7 +219,7 @@ class MetMHN:
             np.array: Diagonal of the restricted rate matrix. Shape
             (2^k,) with k the number of 1s in state.
         """
-        k = state.sum()
+        k = len(state)
         nx = 1 << k
         diag = np.zeros(nx)
         subdiag = np.zeros(nx)
@@ -271,7 +232,7 @@ class MetMHN:
             subdiag[0] = 1
             # compute the ith subdiagonal of Q
             for j in range(n):
-                if state[j]:
+                if j in state:
                     exp_theta = np.exp(self.log_theta[i, j])
                     if i == j:
                         exp_theta *= -1
@@ -294,8 +255,19 @@ class MetMHN:
             daxpy(n=nx, a=1, x=subdiag, incx=1, y=diag, incy=1)
         return diag
 
-    def _likeliest_order_unpaired_met(self, state: State) -> tuple[tuple[int, ...], float]:
+    def _likeliest_order_unpaired_mt(self, state: State) -> tuple[tuple[int, ...], float]:
+        """
+        Calculates the likeliest order of events for unpaired metastasis
+        observation.
 
+        Args:
+            state (State): The state representing the metastasis.
+
+        Returns:
+            tuple[tuple[int, ...], float]: A tuple containing the
+            likeliest order of events and the corresponding probability.
+
+        """
         diag = self._get_diag_unpaired(state=state.to_seq(), seeding=True)
         log_theta = self.log_theta[state.to_seq()][:, state.to_seq()]
         obs1 = self.obs1[state.to_seq()]
@@ -336,10 +308,21 @@ class MetMHN:
         order[np.where(order == self.n * 2 + 1)] -= 1
         return (A[i], order)
 
-    def _likeliest_order_pt_mt(
-        self, state: MetState, verbose: bool = False
-    ) -> tuple[tuple[int, ...], float]:
+    def _likeliest_order_pt_mt(self, state: MetState, verbose: bool = False) -> tuple[tuple[int, ...], float]:
+        """
+        Calculates the likeliest order of events to reach a given state
+        with first a PT observation followed by an MT observation.
 
+        Args:
+            state (MetState): The target state to reach.
+            verbose (bool, optional): Whether to print verbose output.
+            Defaults to False.
+
+        Returns:
+            tuple[tuple[int, ...], float]: A tuple containing the
+            likeliest order of events as a tuple of integers and the
+            corresponding probability.
+        """
         k = len(state)
         if not state.reachable:
             raise ValueError("This state is not reachable by mhn.")
