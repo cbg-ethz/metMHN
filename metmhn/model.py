@@ -174,7 +174,7 @@ class MetMHN:
             probability
         """
 
-        if isinstance(state, np.array):
+        if isinstance(state, np.ndarray):
             state = MetState.from_seq(state)
 
         match met_status:
