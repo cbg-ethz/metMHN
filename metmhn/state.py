@@ -265,7 +265,7 @@ class MetState(_State, Hashable, MutableSet):
         return State(
             (i for i in range(self.n) if (self.data >> 2 * i) & 1),
             size=self.n)
-    
+
     @property
     def PT_S(self) -> State:
         state = State(
@@ -273,11 +273,13 @@ class MetState(_State, Hashable, MutableSet):
             size=self.n + 1)
         if self.Seeding:
             state.add(self.n)
+        return state
 
     @property
     def MT(self) -> State:
         return State(
-            tuple(i for i in range(self.n) if (self.data >> (2 * i + 1)) & 1) + (self.n,) if self.Seeding else (),
+            tuple(i for i in range(self.n) if (self.data >> (2 * i + 1))
+                  & 1) + (self.n,) if self.Seeding else (),
             size=self.n + 1)
 
     @property
@@ -423,6 +425,15 @@ class RestrMetState(_State, Hashable, MutableSet):
             sum(1 << i for i, e in enumerate(
                 self.restrict.PT_events) if e in self.PT_events),
             restrict=State(self.restrict.PT_events, size=self.restrict.n),
+        )
+
+    @property
+    def PT_S(self) -> RestrState:
+        return RestrState(
+            sum(1 << i for i, e in enumerate(self.restrict.PT_events +
+                self.restrict.Seeding) if e in self.PT_events + self.Seeding),
+            restrict=State(self.restrict.PT_events +
+                           self.restrict.Seeding, size=self.restrict.n + 1),
         )
 
     @property
