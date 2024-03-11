@@ -1,6 +1,5 @@
-cdef int my_factorial(int n):
+def my_factorial(n):
     cdef int result = 1
-    cdef int i
     for i in range(1, n + 1):
         result *= i
     return result
@@ -8,7 +7,7 @@ cdef int my_factorial(int n):
 
 cdef int[20] factorial = [1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800, 39916800, 479001600, 6227020800, 87178291200, 1307674368000, 20922789888000, 355687428096000, 6402373705728000, 121645100408832000]
 
-cdef int order_to_int(int[:] order):
+def order_to_int(order):
     cdef int my_int = 0
     cdef int n, index_o
 
@@ -18,8 +17,7 @@ cdef int order_to_int(int[:] order):
     cdef list indices = list(order)
     indices.sort()
     n = len(order)
-    
-    cdef int o
+
     for o in order:
         index_o = indices.index(o)
         my_int = my_int * n + index_o
@@ -28,7 +26,7 @@ cdef int order_to_int(int[:] order):
 
     return my_int
 
-cdef int[:] int_to_order(int my_int, int[:] numbers):
+def int_to_order(my_int, numbers):
     cdef int f
     numbers.sort()
     cdef list order = list()
@@ -40,8 +38,8 @@ cdef int[:] int_to_order(int my_int, int[:] numbers):
 
     return tuple(order)
 
-cdef int append_to_int_order(int my_int, int[:] numbers, int new_event):
-    cdef int i, f, j, e, new_int
+def append_to_int_order(my_int, numbers, new_event):
+    cdef int f, j, e, new_int
     numbers = numbers.copy()
     numbers.sort()
     new_int = 0
@@ -54,7 +52,7 @@ cdef int append_to_int_order(int my_int, int[:] numbers, int new_event):
         if e > new_event:
             j += 1
 
-        new_int += (j * f * (i + 1))
+        new_int += j * f * (i + 1)
         my_int %= f
 
     return new_int
