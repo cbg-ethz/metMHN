@@ -318,7 +318,8 @@ class MetMHN:
             for st in bits_fixed_n(n=i, k=k):
                 A_new[st] = -1
                 state_events = np.array(
-                    [i for i in range(k) if (1 << i) | st == st])  # events in state
+                    # events in state
+                    [i for i in range(k) if (1 << i) | st == st])
                 for e in state_events:
                     # numerator in Gotovos formula
                     num = np.exp(log_theta[e, state_events].sum())
@@ -1104,7 +1105,7 @@ class MetMHN:
         """
         return sum(
             self._likelihood_pt_mt_timed(o1, o2) for o1, o2 in get_combos(
-                order=np.array(order), n=self.n))
+                order=np.array(order), n=self.n, first_obs="PT"))
 
     def _likelihood_mt_pt_timed(self, order_1: np.array, order_2: np.array
                                 ) -> float:
@@ -1332,15 +1333,17 @@ if __name__ == "__main__":
     import pandas as pd
 
     log_theta = pd.read_csv(
-        R"results/luad/luad_16_muts_5_cnvs_0028.csv", index_col=0)
+        R"C:\Users\Hu\Code\metmhn-analyses\2024-01-metmhn-paper\data\luad\luad_g14_0005.csv", index_col=0)
     obs1 = log_theta.iloc[0].to_numpy()
     obs2 = log_theta.iloc[1].to_numpy()
 
     log_theta = log_theta.drop(index=[0, 1]).to_numpy()
     mmhn = MetMHN(log_theta=log_theta, obs1=obs1, obs2=obs2)
     state = np.zeros(2 * mmhn.n + 1, dtype=int)
-    state[[1, 3, 11, 13, 42]] = 1
+    state[[56, 32, 6, 0]] = 1
 
-    x = mmhn.likeliest_order(state, met_status="isMetastasis")
+    print(mmhn.likeliest_order(state, met_status="isPaired", first_obs="Met"))
+    # print(mmhn._likeliest_order_pt_mt(state))
+    print(mmhn._likelihood_mt_pt((56, 32, 6, 0)))
     # print(get_combos(np.array([0, 1, 42, 2]), n=mmhn.n, first_obs="Met"))
     # print(mmhn._likelihood_mt_pt_timed(np.array([ 0,  1, 42,  2]), np.array([])))
