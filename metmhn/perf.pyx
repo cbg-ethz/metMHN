@@ -18,6 +18,7 @@ def order_to_int(order):
     indices.sort()
     n = len(order)
 
+    cdef int o
     for o in order:
         index_o = indices.index(o)
         my_int = my_int * n + index_o
@@ -27,7 +28,7 @@ def order_to_int(order):
     return my_int
 
 def int_to_order(my_int, numbers):
-    cdef int f
+    cdef int i, f
     numbers.sort()
     cdef list order = list()
 
@@ -39,7 +40,7 @@ def int_to_order(my_int, numbers):
     return tuple(order)
 
 def append_to_int_order(my_int, numbers, new_event):
-    cdef int f, j, e, new_int
+    cdef int f, i, j, e, new_int
     numbers = numbers.copy()
     numbers.sort()
     new_int = 0
