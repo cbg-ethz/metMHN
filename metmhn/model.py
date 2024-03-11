@@ -1227,7 +1227,7 @@ class MetMHN:
 
     def _likelihood_sync(self, order: np.array) -> float:
         state = np.zeros(2 * self.n + 1, dtype=int)
-        state[order] = 1
+        state[order,] = 1
         diag = get_diag_paired(log_theta=self.log_theta, n=self.n, state=state)
 
         p = 1 / (1 - diag[0])
