@@ -268,7 +268,7 @@ class MetMHN:
             likeliest order of events and the corresponding probability.
 
         """
-        diag = self._get_diag_unpaired(state=state.to_seq(), seeding=True)
+        diag = self._get_diag_unpaired(state=state, seeding=True)
         log_theta = self.log_theta[state.to_seq()][:, state.to_seq()]
         obs1 = self.obs1[state.to_seq()]
         obs2 = self.obs2[state.to_seq()]
@@ -332,7 +332,7 @@ class MetMHN:
         diag_paired = get_diag_paired(
             log_theta=self.log_theta, n=self.n, state=state.to_seq())
         diag_unpaired = self._get_diag_unpaired(
-            state=np.concatenate([seq_state[1::2], seq_state[-1::]]))
+            state=state.MT)
 
         # In A1[i][state][order], the probabilities to reach a state
         # with a given order are stored. Here, i can be 0, 1 or 2, where
@@ -561,7 +561,7 @@ class MetMHN:
         diag_paired = get_diag_paired(
             log_theta=self.log_theta, n=self.n, state=state.to_seq())
         diag_unpaired = self._get_diag_unpaired(
-            state=state.to_seq()[::2], seeding=False)
+            state=state.PT_S, seeding=False)
 
         # In A1[i][state][order], the probabilities to reach a state
         # with a given order are stored. Here, i can be 0, 1 or 2, where
@@ -725,7 +725,7 @@ class MetMHN:
                     A1[2][current_state] = np.empty([0], dtype=order_type)
 
                     denom = 1 / (np.exp(self.obs1[
-                        current_state.PT_events].sum()) -
+                        current_state.PT_events,].sum()) -
                         diag_paired[current_state.data])
 
                     for pre_state, pre_orders1 in A1[0].items():
@@ -821,7 +821,6 @@ class MetMHN:
 
                 current_state = RestrMetState(
                     current_state, restrict=state)
-
                 # initialize empty numpy struct array for probs and
                 # orders to reach current_state
                 A[2][current_state] = [-1, -1.]
@@ -849,7 +848,7 @@ class MetMHN:
                                 current_state.PT_events].sum())
                         else:  # new event is met
                             num = np.exp(self.log_theta[
-                                diff.MT or diff.Seeding,
+                                diff.MT_events or diff.Seeding,
                                 current_state.MT_events + current_state.Seeding].sum())
 
                         if pre_order[1] * num > A[2][current_state][1]:
@@ -990,7 +989,7 @@ class MetMHN:
              if e in current_state.MT_events + current_state.Seeding),
             restrict=state)
 
-        diag = self._get_diag_unpaired(state=state.to_seq())
+        diag = self._get_diag_unpaired(state=state)
         p /= (np.exp(self.obs2[current_state.events,].sum())
               - diag[current_state.data])
 
@@ -1117,7 +1116,7 @@ class MetMHN:
             (i for i, e in enumerate(state) if e in current_state.PT_events),
             restrict=state)
 
-        diag = self._get_diag_unpaired(state=state.to_seq(), seeding=False)
+        diag = self._get_diag_unpaired(state=state, seeding=False)
         p /= (np.exp(self.obs1[current_state.events + (self.n,),].sum())
               - diag[current_state.data])
 
@@ -1245,17 +1244,17 @@ if __name__ == "__main__":
     import pandas as pd
 
     log_theta = pd.read_csv(
-        R"results/luad/luad_16_muts_5_cnvs_0028.csv", index_col=0)
+        R"C:\Users\Hu\Code\metmhn-analyses\2024-01-metmhn-paper\data\luad\luad_g14_0005.csv", index_col=0)
     obs1 = log_theta.iloc[0].to_numpy()
     obs2 = log_theta.iloc[1].to_numpy()
 
     log_theta = log_theta.drop(index=[0, 1]).to_numpy()
     mmhn = MetMHN(log_theta=log_theta, obs1=obs1, obs2=obs2)
 
-    state = MetState([42, 1, 12, 13, 30, 5],
+    state = MetState([56, 32, 6, 0],
                      size=log_theta.shape[1] * 2 - 1)
 
-    # print(mmhn._likeliest_order_pt_mt(state))
-    print(mmhn._likelihood_pt_mt((12, 13, 42, 30, 1, 5, 6)))
+    # print(mmhn.likeliest_order(state, met_status="isPaired", first_obs="Met"))
+    print(mmhn._likelihood_mt_pt((56, 6, 0, 32)))
     # print(get_combos(np.array([42, 1, 12, 13, 30]), n=mmhn.n, first_obs="Met"))
     # print(mmhn._likelihood_mt_pt_timed(np.array([ 0,  1, 42,  2]), np.array([])))
