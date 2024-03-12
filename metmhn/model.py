@@ -248,6 +248,7 @@ class MetMHN:
             be int32. This is the vector according to which state space
             restriction will be performed. Shape (n,) with n the number
             of events including seeding.
+            seeding (bool, optional): Whether the seeding can be
 
         Returns:
             np.array: Diagonal of the restricted rate matrix. Shape
