@@ -249,6 +249,7 @@ class MetMHN:
             restriction will be performed. Shape (n,) with n the number
             of events including seeding.
             seeding (bool, optional): Whether the seeding can be
+            acquired
 
         Returns:
             np.array: Diagonal of the restricted rate matrix. Shape
@@ -808,6 +809,298 @@ class MetMHN:
         arg_max = np.argmax(A2[0][bin_state]["prob"])
         o, p = A2[0][bin_state][arg_max]
         p *= np.exp(self.obs1[bin_state.PT_events + bin_state.Seeding,].sum())
+        return int_to_order(o, np.nonzero(state.to_seq())[0].tolist()), p
+
+    def _likeliest_order_unknown(
+        self, state: MetState, verbose: bool = False
+    ) -> tuple[tuple[int, ...], float]:
+
+        k = len(state)
+        if not reachable(
+                bin_state=(1 << k) - 1, n=self.n, state=state):
+            raise ValueError("This state is not reachable by mhn.")
+
+        diag_paired = get_diag_paired(
+            log_theta=self.log_theta, n=self.n, state=state.to_seq())
+        diag_unpaired_pt = self._get_diag_unpaired(
+            state=state.PT_S, seeding=False)
+        diag_unpaired_mt = self._get_diag_unpaired(
+            state=state.MT, seeding=True)
+
+        # In A1[i][state][order], the probabilities to reach a state
+        # with a given order are stored. Here, i can be 0, 1 or 2, where
+        # A1[2] holds the states that have n_events events and A1[1] and
+        # A1[0] hold the ones with 1 and 2 events less, respectively.
+
+        order_type = [("order", int), ("prob", float)]
+        # get there with before any observation
+        A = deque([
+            dict(),
+            {RestrMetState(0, restrict=state): np.array(
+                [(0, 1 / (1 - diag_paired[0]))],
+                dtype=order_type)}])
+        # get there after PT observation
+        AP = deque([dict()])
+        # get there after MT observation
+        AM = deque([dict()])
+
+        for n_events in range(1, k + 1):
+            # create dicts to hold the probs and orders to reach states
+            # with n_events events
+            A.append(dict())
+            AP.append(dict())
+            AM.append(dict())
+
+            # iterate over all states with n_events events
+            for current_state in bits_fixed_n(n=n_events, k=k):
+
+                if verbose:
+                    print(
+                        f"{n_events:3}/{k:3}, {len(A[2]):10}, {sum(len(x) for x in A[2].values()):10}", end="\r")
+
+                # check whether state is reachable
+                if not reachable(bin_state=current_state, state=state.to_seq(),
+                                 n=self.n):
+                    continue
+
+                current_state = RestrMetState(
+                    current_state, restrict=state)
+
+                # whether seeding has happened
+                if k - 1 in current_state:
+
+                    # Does the pt/mt part fit the observation?
+                    pt_terminal = state.PT_events == current_state.PT_events
+                    mt_terminal = state.MT_events == current_state.MT_events
+
+                    # initialize empty numpy struct array for probs and
+                    # orders to reach current_state
+                    A[2][current_state] = np.empty([0], dtype=order_type)
+
+                    obs1 = np.exp(self.obs1[
+                        current_state.PT_events + current_state.Seeding,].sum())
+                    obs2 = np.exp(self.obs2[
+                        current_state.MT_events + current_state.Seeding,].sum())
+
+                    denom1 = 1 / \
+                        (obs1 + obs2 - diag_paired[current_state.data])
+
+                    # iterate over all previous states
+                    for pre_state, pre_orders in A[1].items():
+
+                        # Skip pre_state if it is not a subset of
+                        # current_state
+                        if not pre_state <= current_state:
+                            continue
+
+                        # get the position of the new 1
+                        diff = current_state ^ pre_state
+                        new_event = tuple(diff)[0]
+
+                        # whether new event is pt
+                        if len(diff.PT_events) > 0:  # new event is pt
+                            num = np.exp(self.log_theta[
+                                diff.PT_events,
+                                current_state.PT_events].sum())
+                        else:  # new event is met or seeding
+                            num = np.exp(self.log_theta[
+                                diff.MT_events or diff.Seeding,
+                                current_state.MT_events + current_state.Seeding].sum())
+
+                        # Assign the probabilities for A1
+                        new_orders = pre_orders.copy()
+                        new_orders["prob"] *= (num * denom1)
+                        new_orders["order"] = append_to_int_order(
+                            new_orders["order"],
+                            numbers=list(pre_state),
+                            new_event=new_event)
+                        A[2][current_state] = np.append(
+                            A[2][current_state],
+                            new_orders
+                        )
+
+                    if mt_terminal:
+
+                        denom2 = 1 / \
+                            (obs1 - diag_unpaired_pt[current_state.PT.data])
+                        start_factor = obs2 * denom2
+
+                        # all probabilities to reach after MT obs are at
+                        # least the ones to reach before MT obs times
+                        # the start factor
+                        AM[1][current_state] = A[2][current_state].copy()
+                        AM[1][current_state]["prob"] *= start_factor
+
+                        for pre_state, pre_orders in AM[0].items():
+                            # if current_state is mt terminal, it is
+                            # possible that the same holds for a
+                            # prestate.
+                            # Then we need to calculate how we can get
+                            # from pre_state to current_state
+
+                            # Skip pre_state if it is not a subset of
+                            # current_state
+                            if not pre_state <= current_state:
+                                continue
+
+                            # get the position of the new 1
+                            diff = current_state ^ pre_state
+                            new_event = tuple(diff)[0]
+
+                            # Get the numerator
+                            num = np.exp(self.log_theta[
+                                diff.events[0],
+                                current_state.PT_events].sum())
+
+                            # get the orders that are coming from
+                            # pre_state
+                            new_orders = append_to_int_order(
+                                my_int=pre_orders["order"],
+                                numbers=list(pre_state),
+                                new_event=new_event)
+
+                            # add to the probs of these orders the
+                            # prob to reach current_state
+                            AM[1][current_state]["prob"][
+                                np.isin(AM[1][current_state]["order"],
+                                        new_orders)] \
+                                += AM[0][pre_state]["prob"] \
+                                * num * denom2
+
+                    if pt_terminal:
+
+                        denom2 = 1 / \
+                            (obs2 - diag_unpaired_mt[current_state.MT.data])
+                        start_factor = obs1 * denom2
+
+                        # all probabilities to reach after PT obs are at
+                        # least the ones to reach before PT obs times
+                        # the start factor
+                        AP[1][current_state] = A[2][current_state].copy()
+                        AP[1][current_state]["prob"] *= start_factor
+
+                        for pre_state, pre_orders in AP[0].items():
+                            # if current_state is pt_terminal, it is
+                            # possible that the same holds for a
+                            # prestate.
+                            # Then we need to calculate how we can get
+                            # from pre_state to current_state
+
+                            # Skip pre_state if it is not a subset of
+                            # current_state
+                            if not pre_state <= current_state:
+                                continue
+
+                            # get the position of the new 1
+                            diff = current_state ^ pre_state
+                            new_event = tuple(diff)[0]
+
+                            # Get the numerator
+                            num = np.exp(self.log_theta[
+                                diff.events[0],
+                                current_state.MT_events].sum())
+
+                            # get the orders that are coming from
+                            # pre_state
+                            new_orders = append_to_int_order(
+                                my_int=pre_orders["order"],
+                                numbers=list(pre_state),
+                                new_event=new_event)
+
+                            # add to the probs of these orders the
+                            # prob to reach current_state
+                            AP[1][current_state]["prob"][
+                                np.isin(AP[1][current_state]["order"],
+                                        new_orders)] \
+                                += AP[0][pre_state]["prob"] \
+                                * num * denom2
+
+                    # Now I have possibly three dicts
+                    # A[2][current_state], AP[2][current_state] and
+                    # AM[1][current_state] with possible paths to get to
+                    # current_state. I can kick out some of them,
+                    # because I am only interested in those orders that
+                    # stand a chance to be maximal
+                    if pt_terminal and mt_terminal:
+                        A[2][current_state], AP[1][current_state], \
+                            AM[1][current_state] = \
+                            triple_max(
+                                A[2][current_state],
+                                AP[1][current_state],
+                                AM[1][current_state])
+                    elif pt_terminal:
+                        A[2][current_state], AP[1][current_state] = \
+                            tuple_max(
+                                A[2][current_state],
+                                AP[1][current_state])
+                    elif mt_terminal:
+                        A[2][current_state], AM[1][current_state] = \
+                            tuple_max(
+                                A[2][current_state],
+                                AM[1][current_state])
+
+                else:  # seeding has not happened yet
+
+                    # initialize empty numpy struct array for probs and
+                    # orders to reach current_state
+                    A[2][current_state] = np.empty([0], dtype=order_type)
+
+                    denom = 1 / (np.exp(self.obs1[
+                        current_state.PT_events,].sum()) -
+                        diag_paired[current_state.data])
+
+                    for pre_state, pre_orders in A[0].items():
+
+                        # Skip pre_state if it is not a subset of
+                        # current_state
+                        if not pre_state <= current_state:
+                            continue
+
+                        # get the position of the new 1
+                        diff = current_state ^ pre_state
+                        new_event = tuple(diff)[0]
+
+                        # get the numerator
+                        num = np.exp(self.log_theta[
+                            diff.events[0],
+                            current_state.PT_events].sum())
+
+                        # Assign the probabilities for A1
+                        new_orders = pre_orders.copy()
+                        new_orders["prob"] *= num * denom
+                        new_orders["order"] = append_to_int_order(
+                            my_int=append_to_int_order(
+                                my_int=new_orders["order"],
+                                numbers=list(pre_state),
+                                new_event=new_event
+                            ),
+                            numbers=list(pre_state) + [new_event],
+                            new_event=new_event + 1
+                        )
+                        A[2][current_state] = np.append(
+                            A[2][current_state],
+                            new_orders)
+
+                    # just keep the most like order to reach
+                    # current_state
+                    A[2][current_state] = A[2][current_state][
+                        [np.argmax(A[2][current_state]["prob"])]]
+
+            # remove the orders and probs that we do not need anymore
+            A.popleft()
+            AP.popleft()
+            AM.popleft()
+
+        bin_state = RestrMetState((1 << k) - 1, restrict=state)
+        AP[0][bin_state]["prob"] *= np.exp(self.obs2[
+            bin_state.MT_events + bin_state.Seeding,].sum())
+        AM[0][bin_state]["prob"] *= np.exp(self.obs1[
+            bin_state.PT_events + bin_state.Seeding,].sum())
+
+        arg_max = np.argmax(AP[0][bin_state]["prob"] +
+                            AM[0][bin_state]["prob"])
+        o, p = AP[0][bin_state][arg_max]["order"], AP[0][bin_state][arg_max]["prob"] + \
+            AM[0][bin_state][arg_max]["prob"]
         return int_to_order(o, np.nonzero(state.to_seq())[0].tolist()), p
 
     def _likeliest_order_sync(self, state: MetState
