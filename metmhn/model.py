@@ -1244,7 +1244,7 @@ if __name__ == "__main__":
     import pandas as pd
 
     log_theta = pd.read_csv(
-        R"C:\Users\Hu\Code\metmhn-analyses\2024-01-metmhn-paper\data\luad\luad_g14_0005.csv", index_col=0)
+        "../metmhn-analyses/2024-01-metmhn-paper/data/luad/luad_g14_0005.csv", index_col=0)
     obs1 = log_theta.iloc[0].to_numpy()
     obs2 = log_theta.iloc[1].to_numpy()
 
