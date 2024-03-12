@@ -1579,10 +1579,13 @@ if __name__ == "__main__":
     log_theta = log_theta.drop(index=[0, 1]).to_numpy()
     mmhn = MetMHN(log_theta=log_theta, obs1=obs1, obs2=obs2)
 
-    state = MetState([56, 32, 6, 0],
+    state = MetState([56, 34, 1],
                      size=log_theta.shape[1] * 2 - 1)
 
     # print(mmhn.likeliest_order(state, met_status="isPaired", first_obs="Met"))
-    print(mmhn._likelihood_mt_pt((56, 6, 0, 32)))
+
+    print(mmhn._likeliest_order_unknown(state))
+    print(mmhn._likelihood_mt_pt((56, 34, 1)))
+    print(mmhn._likelihood_pt_mt((56, 34, 1)))
     # print(get_combos(np.array([42, 1, 12, 13, 30]), n=mmhn.n, first_obs="Met"))
     # print(mmhn._likelihood_mt_pt_timed(np.array([ 0,  1, 42,  2]), np.array([])))
