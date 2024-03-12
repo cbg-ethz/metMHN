@@ -33,6 +33,40 @@ def tuple_max(x: np.array, y: np.array) -> tuple[np.array]:
     return x[indices], y[indices]
 
 
+def triple_max(x: np.array, y: np.array, z: np.array) -> tuple[np.array]:
+    """If given three values x_i, y_i and z_i for each i, we want to find i s.t. for all non-negative linear factors a, b and c we have ax_i + by_i + cz_i >= ax_j + by_j + cz_j.
+    There will in general not be a unique i that satisfies this,
+    therefore we just return all possible candidates i that could
+    fulfill this for the right values a, b and c.
+
+    Args:
+        x (np.array): x
+        y (np.array): y
+        z (np.array): z
+
+    Returns:
+        tuple[np.array]: Vectors that only contain the maximizing
+        candidates.
+    """
+
+    x.sort(order="order")
+    y.sort(order="order")
+    z.sort(order="order")
+
+    indices = list()
+
+    for i in range(len(x)):
+        non_dominated = True
+        for j in range(len(x)):
+            if x[i]["prob"] < x[j]["prob"] and y[i]["prob"] < y[j]["prob"] and z[i]["prob"] < z[j]["prob"]:
+                non_dominated = False
+                break
+        if non_dominated:
+            indices.append(i)
+
+    return x[indices], y[indices], z[indices]
+
+
 def reachable(bin_state: int, n: int, state: np.array) -> bool:
     """This function checks for a binary state in state space restricted
     form whether it can be actually reached by an MHN
