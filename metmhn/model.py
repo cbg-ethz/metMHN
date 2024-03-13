@@ -998,7 +998,7 @@ class MetMHN:
                             # Get the numerator
                             num = np.exp(self.log_theta[
                                 diff.events[0],
-                                current_state.MT_events].sum())
+                                current_state.MT_events + current_state.Seeding].sum())
 
                             # get the orders that are coming from
                             # pre_state
