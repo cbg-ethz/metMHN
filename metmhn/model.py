@@ -7,6 +7,7 @@ from omhn.model import oMHN
 from metmhn.state import State, RestrState, RestrMetState, MetState
 from itertools import chain
 from typing import Union
+import warnings
 
 append_to_int_order = np.vectorize(
     append_to_int_order, excluded=["numbers", "new_event"])
@@ -231,11 +232,14 @@ class MetMHN:
                         return self._likeliest_order_pt_mt(state)
                     case "Met":
                         return self._likeliest_order_mt_pt(state)
+                    case "unknown":
+                        return self._likeliest_order_unknown(state)
                     case "sync":
+                        warnings.warn("Synchronous development is deprecated.")
                         return self._likeliest_order_sync(state)
                     case _:
                         raise ValueError(
-                            "first_obs must be one of 'PT', 'Met', 'sync'")
+                            "first_obs must be one of 'PT', 'Met', 'unknown', 'sync'")
             case _:
                 raise ValueError(
                     "met_status must be one of 'isMetastasis', 'absent', 'present', 'isPaired")
@@ -1477,6 +1481,19 @@ class MetMHN:
             self._likelihood_mt_pt_timed(o1, o2) for o1, o2 in get_combos(
                 order=np.array(order), n=self.n, first_obs="Met"))
 
+    def _likelihood_unkown(self, order: tuple[int]) -> float:
+        """This function returns the probability of observing a specific
+        order of events after two observations where the order of PT and
+        MT is unknown.
+
+        Args:
+            order (tuple[int]): Sequence of events
+
+        Returns:
+            float: Probability of observing this order.
+        """
+        return self._likelihood_mt_pt(order) + self._likelihood_pt_mt(order)
+
     def _likelihood_sync(self, order: np.array) -> float:
         state = MetState(order, size=2 * self.n + 1)
         diag = get_diag_paired(
@@ -1581,13 +1598,8 @@ if __name__ == "__main__":
     log_theta = log_theta.drop(index=[0, 1]).to_numpy()
     mmhn = MetMHN(log_theta=log_theta, obs1=obs1, obs2=obs2)
 
-    state = MetState([56, 34, 1],
+    state = MetState([56, 8, 2, 4, 1, 29, 25, 45],
                      size=log_theta.shape[1] * 2 - 1)
 
-    # print(mmhn.likeliest_order(state, met_status="isPaired", first_obs="Met"))
-
     print(mmhn._likeliest_order_unknown(state))
-    print(mmhn._likelihood_mt_pt((56, 34, 1)))
-    print(mmhn._likelihood_pt_mt((56, 34, 1)))
-    # print(get_combos(np.array([42, 1, 12, 13, 30]), n=mmhn.n, first_obs="Met"))
-    # print(mmhn._likelihood_mt_pt_timed(np.array([ 0,  1, 42,  2]), np.array([])))
+    print(mmhn._likelihood_unkown((56, 8, 2, 4, 1, 29, 25, 45)))
