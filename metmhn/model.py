@@ -201,7 +201,8 @@ class MetMHN:
                     develop a metastasis
                 - "isPaired" for a paired sample
             first_obs (str): Which was the first observation. Must be 
-            one of "Met", "PT" or "sync"
+            one of "Met", "PT" or "unknown". "sync" is deprecated and
+            will raise a warning.
 
         Returns:
             tuple[tuple[int, ...], float]: most probable order and its 
@@ -1351,7 +1352,8 @@ class MetMHN:
     def _likelihood_mt_pt_timed(self, order_1: np.array, order_2: np.array
                                 ) -> float:
         """ Compute the likelihood of two orders of events happening
-        before the first and the second observation 
+        before the first and the second observation, where the MT is
+        observed first.
 
         Args:
             order_1 (np.array): Order of events (2i and 2i+1 encode the
@@ -1463,7 +1465,7 @@ class MetMHN:
     def _likelihood_mt_pt(self, order: tuple[int]) -> float:
         """This function returns the probability of observing a specific
         order of events after two observations (timepoint of first
-        observation does not matter)
+        observation does not matter) where the MT is observed first.
 
         Args:
             order (tuple[int]): Sequence of events
