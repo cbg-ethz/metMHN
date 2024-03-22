@@ -10,7 +10,9 @@ from metmhn.jx.kronvec import (
                         obs_states,
                         diagnosis_theta,
                         partial_diag_scal_p,
-                        partial_diag_scal_m
+                        partial_diag_scal_m,
+                        mto_kronvec,
+                        mto_kron_diag
                         )
 
 from metmhn.jx import vanilla as mhn
@@ -257,7 +259,6 @@ def R_i_inv_vec(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndarr
         body_fun=body_fun,
         init_val=y
     )
-
     return y
 
 
@@ -300,16 +301,9 @@ def _lp_coupled_0(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.nda
     n_joint = n_prim + n_met - 1
     p0 = jnp.zeros(2**n_joint)
     p0 = p0.at[0].set(1.)
-    if n_joint == 1:
-        d_m_le = jnp.exp(log_d_m[-1])
-        d_p_le = jnp.exp(log_d_p[-1])
-        pTh1_joint = one.R_i_inv_vec(log_theta, p0, d_p_le, d_m_le) 
-        pf_pTh1_cond_obs = pTh1_joint * jnp.array([0,d_p_le])
-        mf_pTh1_cond_obs = pTh1_joint * jnp.array([0, d_m_le])
-    else:
-        pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p0, state_joint, n_joint)
-        pf_pTh1_cond_obs = cond_p_obs(diag_scal_p(log_d_p, state_joint, pTh1_joint), state_joint, n_joint, n_met, True)
-        mf_pTh1_cond_obs = cond_p_obs(diag_scal_m(log_d_m, state_joint, pTh1_joint), state_joint, n_joint, n_prim, False)
+    pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p0, state_joint, n_joint)
+    pf_pTh1_cond_obs = cond_p_obs(diag_scal_p(log_d_p, state_joint, pTh1_joint), state_joint, n_joint, n_met, True)
+    mf_pTh1_cond_obs = cond_p_obs(diag_scal_m(log_d_m, state_joint, pTh1_joint), state_joint, n_joint, n_prim, False)
     
     met = jnp.append(state_joint[1::2], 1)
     log_theta_scal = diagnosis_theta(log_theta, log_d_m)
@@ -320,6 +314,7 @@ def _lp_coupled_0(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.nda
     theta_pt = diagnosis_theta(theta_pt, log_d_p)
     mf_pTh2 = mhn.R_inv_vec(theta_pt, mf_pTh1_cond_obs, prim)
     return jnp.log(pf_pTh2[-1] + mf_pTh2[-1])
+
 
 
 def _lp_coupled_1(log_theta:jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, 
@@ -340,20 +335,14 @@ def _lp_coupled_1(log_theta:jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndar
     joint_size = n_prim + n_met - 1
     p0 = jnp.zeros(2**joint_size)
     p0 = p0.at[0].set(1.)
-    if joint_size == 1:
-        d_m_le = jnp.exp(log_d_m[-1])
-        d_p_le = jnp.exp(log_d_p[-1])
-        pTh1_joint = one.R_i_inv_vec(log_theta, p0, d_p_le, d_m_le)
-        pTh1_cond_obs = jnp.append(jnp.zeros(1), pTh1_joint[-1] * d_p_le)
-    else:
-        pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p0, state_joint, joint_size)
-        pTh1_joint = diag_scal_p(log_d_p, state_joint, pTh1_joint)
+    pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p0, state_joint, joint_size)
+    pTh1_joint = diag_scal_p(log_d_p, state_joint, pTh1_joint)
     
-        compatible_states = obs_states(n_joint=joint_size, state=state_joint, pt_first=True)
-        poss_states_inds = jnp.where(compatible_states == 1., size=2**(n_met-1))[0]
+    compatible_states = obs_states(n_joint=joint_size, state=state_joint, pt_first=True)
+    poss_states_inds = jnp.where(compatible_states == 1., size=2**(n_met-1))[0]
     
-        pTh1_cond_obs = pTh1_joint[poss_states_inds]
-        pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_met-1)), pTh1_cond_obs)
+    pTh1_cond_obs = pTh1_joint[poss_states_inds]
+    pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_met-1)), pTh1_cond_obs)
     
     met = jnp.append(state_joint[1::2], 1)
     log_theta_scal = diagnosis_theta(log_theta, log_d_m)
@@ -379,20 +368,14 @@ def _lp_coupled_2(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.nda
     joint_size = n_prim + n_met - 1
     p0 = jnp.zeros(2**joint_size)
     p0 = p0.at[0].set(1.)
-    if joint_size == 1:
-        d_m_le = jnp.exp(log_d_m[-1])
-        d_p_le = jnp.exp(log_d_p[-1])
-        pTh1_joint = one.R_i_inv_vec(log_theta, p0, d_p_le, d_m_le)
-        pTh1_cond_obs = jnp.append(jnp.zeros(1), pTh1_joint[-1]*d_m_le)
-    else:
-        pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p0, state_joint, joint_size)
-        pTh1_joint = diag_scal_m(log_d_m, state_joint, pTh1_joint)
+    pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p0, state_joint, joint_size)
+    pTh1_joint = diag_scal_m(log_d_m, state_joint, pTh1_joint)
     
-        compatible_states = obs_states(joint_size, state_joint, False)
-        poss_states_inds = jnp.where(compatible_states == 1., size=2**(n_prim-1))[0]
+    compatible_states = obs_states(joint_size, state_joint, False)
+    poss_states_inds = jnp.where(compatible_states == 1., size=2**(n_prim-1))[0]
     
-        pTh1_cond_obs = pTh1_joint[poss_states_inds]
-        pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_prim-1)), pTh1_cond_obs)
+    pTh1_cond_obs = pTh1_joint[poss_states_inds]
+    pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_prim-1)), pTh1_cond_obs)
     
     prim = state_joint[0::2]
     theta_pt = log_theta.at[:-1,-1].set(0.)
@@ -543,16 +526,12 @@ def marginal_obs_pt_first(log_theta:jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: 
     Returns:
         tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]: Log. score, partial derivatives wrt to theta, log_d_p and log_d_m
     """
-    if n_joint == 1:
-        d_p_le = jnp.exp(log_d_p[-1])
-        pTh1_cond_obs = jnp.append(jnp.zeros(1), pTh1_joint[-1])*d_p_le
-    else:
-        pTh1_joint_scal = diag_scal_p(log_d_p, state_joint, pTh1_joint)
-        # Select the states where x = prim and z are compatible with met
-        p = obs_states(n_joint, state_joint, pt_first=True)
-        poss_states_inds = jnp.where(p==1., size=2**(n_met-1))[0]
-        pTh1_cond_obs = pTh1_joint_scal[poss_states_inds]
-        pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_met-1)), pTh1_cond_obs)
+    pTh1_joint_scal = diag_scal_p(log_d_p, state_joint, pTh1_joint)
+    # Select the states where x = prim and z are compatible with met
+    p = obs_states(n_joint, state_joint, pt_first=True)
+    poss_states_inds = jnp.where(p==1., size=2**(n_met-1))[0]
+    pTh1_cond_obs = pTh1_joint_scal[poss_states_inds]
+    pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_met-1)), pTh1_cond_obs)
 
     # Derivative of pTh2 = M(I-Q_sd)^(-1)pth1_cond
     log_theta_dm = diagnosis_theta(log_theta, log_d_m)
@@ -563,14 +542,10 @@ def marginal_obs_pt_first(log_theta:jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: 
     q = jnp.zeros(2**n_met)
     q = q.at[-1].set(1/exp_score)
     q = mhn.R_inv_vec(log_theta_dm, q, met, transpose = True)
-    if n_joint == 1:
-        p = q*jnp.array([0, d_p_le])
-        d_dp_1 = jnp.zeros_like(log_d_p)
-        d_dp_1 = d_dp_1.at[-1].set(jnp.dot(p, pTh1_joint))
-    else:
-        p = p*0.
-        p = p.at[poss_states_inds].set(q[2**(n_met - 1):])
-        d_dp_1, _ = x_partial_D_y(log_d_m, log_d_p, state_joint, p, pTh1_joint)
+    
+    p = p*0.
+    p = p.at[poss_states_inds].set(q[2**(n_met - 1):])
+    d_dp_1, _ = x_partial_D_y(log_d_m, log_d_p, state_joint, p, pTh1_joint)
 
     return exp_score, g_1, d_dp_1, d_dm_1, p  
 
@@ -592,15 +567,11 @@ def marginal_obs_mt_first(log_theta:jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: 
     Returns:
         tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]: Log. score, partial derivatives wrt to theta, log_d_p and log_d_m
     """
-    if n_joint == 1:
-        d_m_le = jnp.exp(log_d_m[-1])
-        pTh1_cond_obs = jnp.append(jnp.zeros(1), pTh1_joint[-1]*d_m_le)
-    else:
-        pTh1_joint_scal = diag_scal_m(log_d_m, state_joint, pTh1_joint)
-        p = obs_states(n_joint, state_joint, pt_first=False)
-        poss_states_inds = jnp.where(p==1., size=2**(n_prim-1))[0]
-        pTh1_cond_obs = pTh1_joint_scal[poss_states_inds]
-        pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_prim-1)), pTh1_cond_obs)
+    pTh1_joint_scal = diag_scal_m(log_d_m, state_joint, pTh1_joint)
+    p = obs_states(n_joint, state_joint, pt_first=False)
+    poss_states_inds = jnp.where(p==1., size=2**(n_prim-1))[0]
+    pTh1_cond_obs = pTh1_joint_scal[poss_states_inds]
+    pTh1_cond_obs = jnp.append(jnp.zeros(2**(n_prim-1)), pTh1_cond_obs)
 
     # Derivative of pTh2 = D_P(D_P-Q_P)^(-1)pth1_cond
     log_theta_dp = log_theta.at[:-1,-1].set(0.)
@@ -615,14 +586,9 @@ def marginal_obs_mt_first(log_theta:jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: 
     q = q.at[-1].set(1/exp_score)
     q = mhn.R_inv_vec(log_theta_pt, q, prim, transpose = True)
     
-    if n_joint == 1:
-        p = q*jnp.array([0, d_m_le])
-        d_dm_1 = jnp.zeros_like(log_d_m)
-        d_dm_1 = d_dm_1.at[-1].set(jnp.dot(p, pTh1_joint))
-    else:
-        p = p * 0.
-        p = p.at[poss_states_inds].set(q[2**(n_prim - 1):])
-        _, d_dm_1 = x_partial_D_y(log_d_m, log_d_p, state_joint, p, pTh1_joint)
+    p = p * 0.
+    p = p.at[poss_states_inds].set(q[2**(n_prim - 1):])
+    _, d_dm_1 = x_partial_D_y(log_d_m, log_d_p, state_joint, p, pTh1_joint)
     return exp_score, g_1, d_dp_1, d_dm_1, p
 
 
@@ -650,26 +616,17 @@ def _g_coupled_0(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndar
     p = p.at[0].set(1.)
     
     # Joint and met-marginal distribution at first sampling
-    if n_joint == 1:
-        d_m_le = jnp.exp(log_d_m[-1])
-        d_p_le = jnp.exp(log_d_p[-1])
-        pTh1_joint = one.R_i_inv_vec(log_theta, p, d_p_le, d_m_le)
-
-    else:
-        pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p, state_joint, 
-                                n_joint, transpose = False)
+    pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p, state_joint, 
+                             n_joint, transpose = False)
     
     pf_exp_score, pf_g_1, pf_d_dp_1, pf_d_dm_1, pf_p = marginal_obs_pt_first(log_theta, log_d_p, log_d_m, pTh1_joint, state_joint, met, n_joint, n_met)
     mf_exp_score, mf_g_1, mf_d_dp_1, mf_d_dm_1, mf_p =  marginal_obs_mt_first(log_theta, log_d_p, log_d_m, pTh1_joint, state_joint, prim, n_joint, n_prim)
     full_score = pf_exp_score + mf_exp_score
 
-    if n_joint == 1:
-        g_2, d_dp_2, d_dm_2 = one.q_inv_deriv_pth(log_theta, d_p_le, d_m_le, (pf_p*pf_exp_score + mf_p*mf_exp_score)/full_score, pTh1_joint)
-    else:
-        # Derivative of pth1_cond
-        pf_p = diag_scal_p(log_d_p, state_joint, pf_p)*pf_exp_score/full_score
-        mf_p = diag_scal_m(log_d_m, state_joint, mf_p)*mf_exp_score/full_score
-        g_2, d_dp_2, d_dm_2 = q_inv_deriv_pth(log_theta, log_d_p, log_d_m, pf_p+mf_p, pTh1_joint, state_joint, n_joint)
+    # Derivative of pth1_cond
+    pf_p = diag_scal_p(log_d_p, state_joint, pf_p)*pf_exp_score/full_score
+    mf_p = diag_scal_m(log_d_m, state_joint, mf_p)*mf_exp_score/full_score
+    g_2, d_dp_2, d_dm_2 = q_inv_deriv_pth(log_theta, log_d_p, log_d_m, pf_p+mf_p, pTh1_joint, state_joint, n_joint)
     
     d_dm = (pf_d_dm_1*pf_exp_score + mf_d_dm_1*mf_exp_score)/full_score - d_dm_2
     d_dp = (pf_d_dp_1*pf_exp_score + mf_d_dp_1*mf_exp_score)/full_score - d_dp_2
@@ -699,21 +656,13 @@ def _g_coupled_1(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndar
     p = jnp.zeros(2**n_joint)
     p = p.at[0].set(1.)
     
-    if n_joint == 1:
-        d_p_le = jnp.exp(log_d_p[-1])
-        d_m_le = jnp.exp(log_d_m[-1])
-        pTh1_joint = one.R_i_inv_vec(log_theta, p, d_p_le, d_m_le)
-    else:
-        pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p, state_joint, 
-                                 n_joint, transpose = False)
+    pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p, state_joint, 
+                             n_joint, transpose = False)
 
     exp_score, g_1, d_dp_1, d_dm_1, p = marginal_obs_pt_first(log_theta, log_d_p, log_d_m, pTh1_joint, state_joint, met, n_joint, n_met)
-    if n_joint == 1:
-        g_2, d_dp_2, d_dm_2 = one.q_inv_deriv_pth(log_theta, d_p_le, d_m_le, p, pTh1_joint)
-    else:
-        # Derivative of pth1_cond
-        p = diag_scal_p(log_d_p, state_joint, p)
-        g_2, d_dp_2, d_dm_2 = q_inv_deriv_pth(log_theta, log_d_p, log_d_m, p, pTh1_joint, state_joint, n_joint)
+    # Derivative of pth1_cond
+    p = diag_scal_p(log_d_p, state_joint, p)
+    g_2, d_dp_2, d_dm_2 = q_inv_deriv_pth(log_theta, log_d_p, log_d_m, p, pTh1_joint, state_joint, n_joint)
     d_dm = d_dm_1 - d_dm_2
     d_dp = d_dp_1 - d_dp_2
 
@@ -741,22 +690,13 @@ def _g_coupled_2(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndar
     n_joint = n_prim + n_met - 1
     p = jnp.zeros(2**n_joint)
     p = p.at[0].set(1.)
-    
-    if n_joint == 1:
-        d_p_le = jnp.exp(log_d_p[-1])
-        d_m_le = jnp.exp(log_d_m[-1])
-        pTh1_joint = one.R_i_inv_vec(log_theta, p, d_p_le, d_m_le)
-    else:
-        pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p, state_joint, 
-                                 n_joint, transpose = False)
+    pTh1_joint = R_i_inv_vec(log_theta, log_d_p, log_d_m, p, state_joint, 
+                             n_joint, transpose = False)
     exp_score, g_1, d_dp_1, d_dm_1, p =  marginal_obs_mt_first(log_theta, log_d_p, log_d_m, pTh1_joint, state_joint, prim, n_joint, n_prim)
     
-    if n_joint == 1:
-        g_2, d_dp_2, d_dm_2 = one.q_inv_deriv_pth(log_theta, d_p_le, d_m_le, p, pTh1_joint)
-    else:
-        # Derivative of pth1_cond
-        p = diag_scal_m(log_d_m, state_joint, p)
-        g_2, d_dp_2, d_dm_2 = q_inv_deriv_pth(log_theta, log_d_p, log_d_m, p, pTh1_joint, state_joint, n_joint)
+    # Derivative of pth1_cond
+    p = diag_scal_m(log_d_m, state_joint, p)
+    g_2, d_dp_2, d_dm_2 = q_inv_deriv_pth(log_theta, log_d_p, log_d_m, p, pTh1_joint, state_joint, n_joint)
     d_dp = d_dp_1 - d_dp_2 
     d_dm = d_dm_1 - d_dm_2
 

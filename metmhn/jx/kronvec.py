@@ -539,6 +539,38 @@ def kronvec(log_theta: jnp.ndarray, p: jnp.ndarray, state: jnp.ndarray,
     return y
 
 
+@partial(jit, static_argnames=["diag", "transpose"])
+def mto_kronvec(log_theta: jnp.ndarray, p: jnp.ndarray, state: jnp.ndarray,
+            diag: bool = True, transpose: bool = False
+            ) -> jnp.ndarray:
+    """
+    This computes the restricted version of the product of the rate matrix Q with a vector p.
+
+    Args:
+        log_theta (jnp.ndarray): theta matrix with log. entries
+        p (jnp.ndarray): Vector to multiply with from the right. Length must equal the number of
+            nonzero entries in the state vector.
+        state (jnp.ndarray): Binary state vector, representing the current sample's events.
+        diag (bool, optional): Whether to use the diagonal of Q (and not set it to 0). Defaults to True.
+        transpose (bool, optional): Whether to transpose Q before multiplying. Defaults to False.
+
+    Returns:
+        jnp.array: Q p
+    """
+    def body_fun(i, val):
+        val += kronvec_met(log_theta=log_theta, p=p, i=i,
+                           state=state, diag=diag, transpose=transpose)
+        return val
+
+    n = log_theta.shape[0]-1
+    y = lax.fori_loop(
+        lower=0,
+        upper=n,
+        body_fun=body_fun,
+        init_val=jnp.zeros_like(p)
+    )
+    return y
+
 @jit
 def diag_scal_p(log_d_p: jnp.ndarray, state: jnp.ndarray, p: jnp.ndarray) -> jnp.ndarray:
     """Multiplies a vector p with the diagonal matrix of PT-diagnosis effects d_p
@@ -966,6 +998,35 @@ def kron_diag(log_theta: jnp.ndarray, state: jnp.ndarray, n_state: int) -> jnp.n
 
     return y
 
+
+@partial(jit, static_argnames=["n_state"])
+def mto_kron_diag(log_theta: jnp.ndarray, state: jnp.ndarray, n_state: int) -> jnp.ndarray:
+    """This computes diagonal of the rate matrix Q.
+
+    Args:
+        log_theta (jnp.ndarray): Theta matrix with log entries
+        state (jnp.ndarray): Binary state vector, representing the current sample's events.
+        n_state (int): Number of non zero bits in state
+
+    Returns:
+        jnp.ndarray: diag(Q)
+    """
+
+    def body_fun(i, val):
+        val += kron_met_diag(log_theta=log_theta, i=i,
+                             state=state, n_state=n_state)
+        return val
+
+    n = log_theta.shape[0] - 1
+    y = jnp.zeros(2**n_state)
+    y = lax.fori_loop(
+        lower=0,
+        upper=n,
+        body_fun=body_fun,
+        init_val=y
+    )
+
+    return y
 
 def shuffle_stride2(p: jnp.ndarray) -> jnp.ndarray:
     p = p.reshape((-1, 2), order="C")
