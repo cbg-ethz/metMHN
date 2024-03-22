@@ -261,7 +261,7 @@ def cross_val(dat: jnp.ndarray, penal_fun, splits: jnp.ndarray, n_folds: int,
     best_score = np.max(mean_scores)
     blp = np.argmax(mean_scores)
     best_penal = splits[blp]
-    se = np.std(splits[:, blp])/np.sqrt(n_folds)
+    se = np.std(runs_constrained[:, blp])/np.sqrt(n_folds)
     best_penal_1se = splits[np.max(np.argwhere(mean_scores>(best_score-se)))]
     logging.info(f"{mean_scores}")
     logging.info(f"Crossvalidation finished")
