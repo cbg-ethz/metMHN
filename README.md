@@ -3,7 +3,7 @@
 Mutual Hazard Networks for metastatic disease or in short [metMHN](https://www.biorxiv.org/content/10.1101/2024.01.30.577989v1) is an extension to the MHN-algorithm by [Schill et al. (2020)](https://academic.oup.com/bioinformatics/article/36/1/241/5524604) and [Schill et al. (2023)](https://www.biorxiv.org/content/10.1101/2023.12.03.569824v1) to account for the joint evolution of primary tumor and metastasis pairs. It accounts for sampling bias and different primary/tumor metastasis diagnosis orderings. 
 
 ## Installation
-we advise to use a virtual environment.
+We advise to use a virtual environment.
 Create a new virtual environment
 
 ```bash
@@ -44,13 +44,24 @@ where `<input-annotation-file.csv>` contains supporting information for each pat
 You can also set the following command line arguments:
 |Argument | Description|
 | --- | ---|
-|-cv | If set, perform crossvalidation|
-|-cv_start | Lower limit of hyperparameter range to test in crossvalidation, defaults to 1e-05 |
-|-cv_end | Upper limit of hyperparameter range to test in crossvalidation, defaults to 1e-02|
-|-cv_fold | Number of crossvalidation folds, defaults to 5|
-|-cv_splits | Number of hyperparamater to test in the range cv_start to cv_end, defaults to 5 |
-|-pm_ratio| Ratio of Never metastasizing primary tumors to metastasizing primary tumors|
-|-lam | Weight of penalization. Should only be set of no cross validation is performed|
-|-n_jobs| Number of jobs to use in the crossvalidation analysis, should be max. cv_folds, defaults to 1|
-|-logs| File where logs are stored|
+|-cv | Boolean, If set, perform crossvalidation|
+|-cv_start | Float, Lower limit of hyperparameter range to test in crossvalidation, defaults to 1e-05 |
+|-cv_end | Float, Upper limit of hyperparameter range to test in crossvalidation, defaults to 1e-02|
+|-cv_fold | Integer, Number of crossvalidation folds, defaults to 5|
+|-cv_splits | Integer, Number of hyperparameters to test in the range cv_start to cv_end, defaults to 5 |
+|-pm_ratio| Float, Expected ratio of never metastasizing primary tumors to metastasizing primary tumors|
+|-lam | Float, Weight of penalization. Should only be set if no cross validation is performed|
+|-logs| String, relative filepath for log-files|
+
+We also provide a script to assess how well metMHN can recover groundtruth parameters:
+```bash
+python3 examples/recall_study.py -args 
+```
+You can also set the following command line arguments:
+|Argument | Description|
+| --- | ---|
+|-n_dat | Integer, Number of datapoints in simulated dataset|
+|-n_reps | Integer, Number of simulated datasets to generate|
+|-logs | String, Relative filepath for log-files|
+|-seed | Integer, Seed for random number generator|
 
