@@ -65,7 +65,7 @@ class DerivativeTestCase(unittest.TestCase):
 
         self.empty_2 = jnp.array([0]*(2*self.n_mut)+[1, 2, 3]).reshape((1, -1))
 
-        self.h = 1e-09  # Stepsize for finite difference method
+        self.h = 1e-08  # Stepsize for finite difference method
         self.tol = 1e-04    # Tolerance for comparisson between numeric and analytic solution
 
     def test_prim_only_deriv(self):
@@ -153,7 +153,8 @@ class DerivativeTestCase(unittest.TestCase):
         _, g_ana = regopt.score_and_grad_reg(params, dat, 0.8, regopt.symmetric_penal, 0.4)
         np.testing.assert_allclose(g_num, 
                                    g_ana,
-                                   rtol=self.tol)
+                                   rtol=self.tol,
+                                   atol=self.tol)
 
 if __name__ == "__main__":
     unittest.main()

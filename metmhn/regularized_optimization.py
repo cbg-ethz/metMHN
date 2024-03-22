@@ -85,7 +85,7 @@ def score(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, da
                 n_prim = int(state_obs.sum())      
                 score += ssr._lp_prim_obs(log_theta, log_d_p, state_obs, n_prim)
             elif dat[i, -1] == 2:
-                # Metastates withut sequenced primary tumor
+                # Metastates without sequenced primary tumor
                 state_obs = dat[i, 0:2*n_total-1]
                 state_met = jnp.append(state_obs[1:2*n_total-1:2], 1)
                 n_met = int(state_met.sum())
@@ -159,86 +159,6 @@ def score_reg(params: np.ndarray, dat: jnp.ndarray, perc_met: float, penal: Call
 
 
 def score_and_grad(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, dat: jnp.ndarray, 
-                   perc_met: float)->tuple[np.array, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Calculates the log. likelihood and its gradient of the dataset dat
-
-    Args:
-        log_theta (jnp.ndarray): (n+1)x(n+1)-dimensional Theta matrix with logarithmic entries
-        log_d_p (jnp.ndarray): (n+1)-dimensional vector with logarithmic effects of events in the PT on the rate of its observation event
-        log_d_m (jnp.ndarray): (n+1)-dimensional vector with logarithmic effects of events in the MT on the rate of its observation event
-        dat (jnp.ndarray): Matrix of observations dimension (n_dat x (2n+3)), rows correspond to patients and columns to events.
-            The first 2n+1 colummns are expected to be binary and inidacte the status of events of the tumors, the next column contains the observation order 
-            (0: unknown, 1: First PT then MT, 2: First MT then PT) and the last column indicates the type of the datapoint 
-            (0: PT only, no MT observed, 1: PT only, MT recorded but not sequenced, 2: MT, No PT sequenced, 3: PT and MT sequenced)
-        perc_met (float): Expected percentage of metastasizing tumor in the Dataset.
-    
-    Returns:
-        tuple[np.array, jnp.ndarray, jnp.ndarray, jnp.ndarray]: Log. likelihood, grad wrt. theta, grad wrt. log_d_p, grad wrt. log_d_m
-    """
-    n_mut = (dat.shape[1]-3)//2
-    n_total = n_mut + 1
-    score, score_pt = 0., 0.
-    d_th, d_th_pt = jnp.zeros((n_total, n_total)), jnp.zeros((n_total, n_total))
-    d_d_p, d_d_p_pt = jnp.zeros(n_total), jnp.zeros(n_total) 
-    d_d_m = jnp.zeros(n_total)
-    for i in range(dat.shape[0]):
-        if dat[i,-1] == 0:
-            # Never metastasizing primary tumors
-            state_obs = dat[i, 0:2*n_total-1:2]
-            n_prim = int(state_obs.sum())      
-            s, th_, d_p_ = ssr._grad_prim_obs(log_theta, log_d_p, state_obs, n_prim)
-            score_pt += s
-            d_th_pt += th_
-            d_d_p_pt += d_p_
-        else:
-            if dat[i,-1] == 1:
-                # Metastasized primary tumors without sequenced metastasis
-                state_obs = dat[i, 0:2*n_total-1:2]
-                n_prim = int(state_obs.sum())      
-                s, th_, d_p_ = ssr._grad_prim_obs(log_theta, log_d_p, state_obs, n_prim)
-                d_m_ = jnp.zeros_like(d_d_m)
-            elif dat[i, -1] == 2:
-                # Metastases without sequenced primary tumor
-                state_obs = dat[i, 0:2*n_total-1]
-                state_met = jnp.append(state_obs[1:2*n_total-1:2], 1)
-                n_met = int(state_met.sum())
-                s, th_, d_p_, d_m_ = ssr._grad_met_obs(log_theta, log_d_p, log_d_m, state_met, n_met)
-            elif dat[i, -1] == 3:
-                # Paired primary tumors and metastases
-                state_obs = dat[i, 0:2*n_mut+1]
-                n_prim = int(state_obs[::2].sum())
-                n_met = int(state_obs[1::2].sum() + 1)
-                order = dat[i,-2]
-                if order == 0:
-                    s, th_, d_p_, d_m_ = ssr._g_coupled_0(log_theta, log_d_p, log_d_m, state_obs,
-                                                        n_prim, n_met)
-                elif order == 1:
-                    s, th_, d_p_, d_m_ = ssr._g_coupled_1(log_theta, log_d_p, log_d_m, state_obs,
-                                                        n_prim, n_met)
-                else:
-                    s, th_, d_p_, d_m_ = ssr._g_coupled_2(log_theta, log_d_p, log_d_m, state_obs,
-                                                        n_prim, n_met)
-            score += s
-            d_th += th_
-            d_d_p += d_p_
-            d_d_m += d_m_
-    logging.info(f"NM-score: {score_pt}, EM-score: {score}")
-
-    n_em = jnp.sum(dat[:,-3])
-    n_nm = dat.shape[0] - n_em
-    if n_em*n_nm != 0:
-        w = perc_met * n_nm/((1-perc_met)*n_em)
-    else:
-        w = 1
-    n_full = w*n_em + n_nm
-    score = (w*score + score_pt)/n_full
-    d_th = (w*d_th + d_th_pt)/n_full
-    d_d_p = (w*d_d_p + d_d_p_pt)/n_full
-    d_d_m = w*d_d_m/n_full
-    return score, d_th, d_d_p, d_d_m
-
-
-def score_and_grad_2(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, dat: jnp.ndarray, 
                    perc_met: float)->tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Calculates the log. likelihood and its gradient of the dataset dat
 
@@ -364,7 +284,7 @@ def score_and_grad_reg(params: np.ndarray, dat: jnp.ndarray, perc_met: float, pe
     log_theta = jnp.array(params[0:n_total**2]).reshape((n_total, n_total))
     log_d_p = jnp.array(params[n_total**2:n_total*(n_total + 1)])
     log_d_m = jnp.array(params[n_total*(n_total+1):])
-    score, d_th, d_d_p, d_d_m = score_and_grad_2(log_theta, log_d_p, log_d_m, dat, perc_met)
+    score, d_th, d_d_p, d_d_m = score_and_grad(log_theta, log_d_p, log_d_m, dat, perc_met)
     grad_vec = np.concatenate((d_th.flatten(), d_d_p, d_d_m))
     pen, pen_ = penal(params, n_total)
     return np.array(-score + w_penal*pen), -grad_vec + w_penal*pen_ 
