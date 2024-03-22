@@ -1,5 +1,4 @@
 from metmhn.regularized_optimization import learn_mhn, score
-from joblib import Parallel, delayed
 from itertools import chain, combinations
 import numpy as np
 import jax
@@ -9,16 +8,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import logging
-from typing import Callable
+from typing import Callable, Any
 jax.config.update("jax_enable_x64", True)
 
-
-my_color_gradient = LinearSegmentedColormap.from_list('my_gradient', (
-    # Generated with https://eltos.github.io/gradient/#E69F00-FFFFFF-009E73
-    (0.000, (0.902, 0.624, 0.000)),
-    (0.500, (0.937, 0.976, 0.965)),
-    (1.000, (0.000, 0.620, 0.451)))
-    )
 
 def state_space(n: int) -> np.ndarray:
     """
@@ -176,7 +168,7 @@ def marg_frequs(dat: jnp.ndarray,  events: list) -> pd.DataFrame:
         counts[3, i_h] = np.sum(dat[dat[:,-1]==0, i], axis=0)/sizes[0]
         counts[4, i_h] = np.sum(dat[dat[:,-1]==1, i], axis=0)/sizes[1]
         counts[5, i_h] = np.sum(dat[dat[:,-1]==2, i+1], axis=0)/sizes[2]
-
+    counts[5, -1] = np.sum(dat[dat[:,-1]==2, -3], axis=0)/sizes[2]
     labels = [["Coupled ("+str(sizes[3])+")"]*3 +\
             ["NM ("+str(sizes[0])+")"] +\
             ["EM-PT ("+str(sizes[1])+")"] +\
@@ -218,8 +210,8 @@ def indep(dat: jnp.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return theta, np.zeros(n+1), np.zeros(n+1)
 
 
-def cross_val(dat: jnp.ndarray, penal_fun: Callable, splits: jnp.ndarray, n_folds: int, 
-              m_p_corr: float, n_jobs: int=1, seed: int = 42) -> float:
+def cross_val(dat: jnp.ndarray, penal_fun, splits: jnp.ndarray, n_folds: int, 
+              m_p_corr: float, seed: int = 42) -> tuple:
     """Perform a n_folds cross validation for hyperparameter search
 
     Args:
@@ -239,7 +231,7 @@ def cross_val(dat: jnp.ndarray, penal_fun: Callable, splits: jnp.ndarray, n_fold
         seed (int, optional): Seed for random number generator. Defaults to 42.
 
     Returns:
-        float: Best hyperparameter
+        float, float: Best hyperparameter, standard error of models with the best hyperparameter
     """
     key = jrp.PRNGKey(seed)
     shuffled =  jrp.permutation(key, dat, axis=0)
@@ -247,99 +239,112 @@ def cross_val(dat: jnp.ndarray, penal_fun: Callable, splits: jnp.ndarray, n_fold
     batch_size = jnp.ceil(dat.shape[0]/n_folds)
     
     logging.info(f"Crossvalidation started")
-    
-    def calc_folds(fold_index, batch_size, shuffled, penal_fun, split):
-        jax.config.update("jax_enable_x64", True)
-        n_dat = shuffled.shape[0]
-        start = batch_size * fold_index
-        stop = jnp.min(jnp.array([batch_size*(fold_index + 1), n_dat]))
-        
-        train_inds = jnp.concatenate((jnp.arange(start, dtype=jnp.int8), 
-                                      jnp.arange(stop, n_dat, dtype=jnp.int8)))
-        train = shuffled[train_inds,:]
-        th_init, fd_init, sd_init = indep(train)
-        th, dp, dm = learn_mhn(th_init, fd_init, sd_init, train, m_p_corr, penal_fun, split)
-        
-        test_inds = jnp.arange(start, stop, dtype=jnp.int8)
-        test = shuffled[test_inds, :]
+    for i in range(splits.size):
+        for fold_index in range(n_folds):
+            n_dat = shuffled.shape[0]
+            start = int(batch_size * fold_index)
 
-        return score(th, dp, dm, test, m_p_corr)
+            stop = int(jnp.min(jnp.array([batch_size*(fold_index + 1), n_dat])))
+            train_inds = jnp.concatenate((jnp.arange(start, dtype=jnp.int32), 
+                                      jnp.arange(stop, n_dat, dtype=jnp.int32)))
+            train = shuffled[train_inds,:]
+            th_init, fd_init, sd_init = indep(train)
+            th, dp, dm = learn_mhn(th_init, fd_init, sd_init, train, m_p_corr, penal_fun, splits[i], opt_v=False)
         
-    for j in range(splits.size):
-        runs_constrained[:, j] = Parallel(n_jobs=n_jobs)(delayed(calc_folds)(i, batch_size, shuffled, penal_fun, splits[j]) for i in range(n_folds))
-        logging.info(f"Finished split {j} out of {splits.size}")
-    
-    penal_scores = runs_constrained.mean(axis=0)
-    best_score = np.max(penal_scores)
-    best_penal = splits[np.argmax(best_score)]
-    logging.info(f"{penal_scores}")
+            test_inds = jnp.arange(start, stop, dtype=jnp.int32)
+            
+            test = shuffled[test_inds, :]
+            runs_constrained[fold_index, i] = score(th, dp, dm, test, m_p_corr)
+            logging.info(f"{runs_constrained}")
+
+    mean_scores = runs_constrained.mean(axis=0)
+    best_score = np.max(mean_scores)
+    blp = np.argmax(mean_scores)
+    best_penal = splits[blp]
+    se = np.std(splits[:, blp])/np.sqrt(n_folds)
+    best_penal_1se = splits[np.max(np.argwhere(mean_scores>(best_score-se)))]
+    logging.info(f"{mean_scores}")
     logging.info(f"Crossvalidation finished")
     logging.info(f"Highest likelihood averaged over all folds: {best_score}")
-    logging.info(f"Best Lambda: {best_penal}")
-    
-    return best_penal
+    logging.info(f"Best Lambda: {best_penal}, Best penal + 1 standard error: {best_penal_1se}")
+    return best_penal, best_penal_1se
 
 
-def plot_theta(model: jnp.ndarray, events: jnp.ndarray, 
-               alpha: float, verbose=True, font_size=10) -> tuple:
-    """Visualize theta, d_m and d_p
+def plot_theta(ax1: plt.Axes, ax2: plt.Axes, model: np.ndarray, events: list,
+               alpha: float, cb:Any = None, verbose: bool=True, font_size:int =10) -> tuple:
+    """Plot a metMHN-model as a Heatmap
 
     Args:
-        model (np.array):   Theta matrix with logarithmic entries
-        events (np.array):  Array of event names excluding diagnosis
-        alpha (float):      Threshold for effect size
+        ax1 (plt.Axes): axes object as returned by plt.subfigures
+        ax2 (plt.Axes): axes object as returned by plt.subfigures
+        model (np.ndarray): (n+2)xn dimenional metMHN model to visualize.
+            The first two rows have to be the effects on PT and MT diagnosis, 
+            the remaining rows correspond to intergenomic effects.
+        events (list): List of size n, containing event names as strings
+        alpha (float): Threshold on effect strengths. Effects whose absolute strengths are below alpha, are not plotted.
+        cb (Any, optional): Matplotlib compatible colormap
+        verbose (bool, optional): If true plot the numeric values of effects strengths in their corresponding cells. 
+            Defaults to True.
+        font_size (int, optional): Fontsize for captions and annotations. Defaults to 10.
 
     Returns:
-        tuple: tuple of axis objects
+        tuple: Heatmaps on axes 1&2 and their colorbars
     """
-    th = model.copy()
-    n_total = th.shape[1]
-    theta = th[2:, :]
+    if cb == None:
+        # Generated with https://eltos.github.io/gradient/#E69F00-FFFFFF-009E73
+        cgr = ((0.000, (0.902, 0.624, 0.000)),
+            (0.500, (0.937, 0.976, 0.965)),
+            (1.000, (0.000, 0.620, 0.451))
+            )
+        my_color_gradient = LinearSegmentedColormap.from_list('my_gradient', cgr)
+
+    model_p = model.copy()
+    n_total = model_p.shape[1]
+    theta = model_p[2:, :]
     th_diag = np.diagonal(theta.copy())
     theta[np.diag_indices(n_total)] = 0.
-    th = np.row_stack((th[:2,:], theta))
-    max_c = np.max(np.abs(th))
-    th[np.abs(th)<alpha] = np.nan
+    model_p = np.row_stack((model_p[:2,:], theta))
+    max_c = np.max(np.abs(model_p))
+    model_p[np.abs(model_p)<alpha] = np.nan
     th_diag = np.row_stack((np.array([np.nan, np.nan]).reshape((2,1)), 
                             th_diag.reshape(-1,1)))
 
-
-    f, (ax, ax2) = plt.subplots(1, 2, figsize=(19,15), sharey="col",
-                                gridspec_kw={'width_ratios': [n_total, 1], 
-                                             "top":1, "bottom": 0, "right":1, 
-                                             "left":0, "hspace":0, "wspace":-0.48})
-    events_ext = np.concatenate((np.array(["d_p", "d_m"]), events))
+    events_ext = np.concatenate((np.array(["Obs-PT", "Obs-MT"]), events))
     # Plot off diagonals on one plot
-    im1 = ax.matshow(th, cmap=my_color_gradient, vmin=-max_c, vmax=max_c)
-    ax.set_xticks(range(n_total), events, fontsize=14, rotation=90)
-    ax.set_yticks(range(n_total+2), events_ext, fontsize=14)
+    im1 = ax1.matshow(model_p, cmap=my_color_gradient, vmin=-max_c*1.1, vmax=max_c*1.1)
+    ax1.set_xticks(range(n_total), events, fontsize=font_size, rotation=90)
+    ax1.set_yticks(range(n_total+2), events_ext, fontsize=font_size)
     
     # Plot grid lines between cells
-    ax.set_xticks(np.arange(-.5, n_total, 1), minor=True)
-    ax.set_yticks(np.arange(-.5, n_total+2, 1), minor=True)
-    ax.grid(which="minor",color='grey', linestyle='-', linewidth=1)
-    ax.tick_params(which='minor', bottom=False, left=False) 
-
-    f.colorbar(im1, ax=ax, orientation="horizontal", shrink=4/n_total, pad=0.03, aspect=8)
+    ax1.set_xticks(np.arange(-.5, n_total-1, 1), minor=True)
+    ax1.set_yticks(np.arange(-.5, n_total+1, 1), minor=True)
+    ax1.grid(which="minor",color='grey', linestyle='-', linewidth=1)
+    ax1.tick_params(which='minor', bottom=False, left=False, labelbottom=False, labeltop=True)
+    ax1.tick_params(which='major', bottom=False, left=True, labelbottom=False, labeltop=True)
+    plt.setp(ax1.get_xticklabels(), rotation=45, ha="left",
+             rotation_mode="anchor")
+    cb1 = plt.colorbar(im1, ax=ax1, orientation="horizontal", shrink=2/(n_total), pad=0.03, aspect=8)
+    cb1.ax.locator_params(nbins=10)
     # Plot diagonal entries separately
     im2 = ax2.matshow(th_diag, cmap="Blues")
     ax2.set_yticks([])
     ax2.set_xticks([])
     ax2.spines[['top', 'right', 'bottom', 'left']].set_visible(False)
 
-    f.colorbar(im2, ax=ax2, orientation="horizontal", shrink=4, pad=0.03, aspect=8)
+    cb2 = plt.colorbar(im2, ax=ax2, orientation="horizontal", shrink=2, pad=0.03, aspect=8)
+    cb2.ax.locator_params(nbins=5)
     # Plot numerical values of theta 
     if verbose:
        for i in range(n_total+2):
             for j in range(n_total):
-                if np.isnan(th[i,j]) == False:
-                    c = np.round(th[i,j], 2)
+                if np.isnan(model_p[i,j]) == False:
+                    c = np.round(model_p[i,j], 2)
                 else:
                     c = ""
-                ax.text(j, i, str(c), va='center', ha='center', size=font_size)
+                ax1.text(j, i, str(c), va='center', ha='center', size=font_size)
             if np.isnan(th_diag[i,0]):
                 c = ""
             else:
                 c = np.round(th_diag[i,0], 2)
             ax2.text(0, i, str(c), va='center', ha='center', size=font_size)
-    return f
+    return im1, im2, cb1, cb2
