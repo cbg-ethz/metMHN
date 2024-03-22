@@ -1,8 +1,7 @@
 import numpy as np
 import jax.numpy as jnp
-from jax import jit, vmap, lax
+from jax import vmap, lax
 import jax.random as jrp 
-import jax
 
 
 def single_traject(
@@ -161,18 +160,17 @@ def single_traject_jax(
         mt_d_ef: jnp.ndarray,
         rng_key: jrp.PRNGKey,
         ) -> jnp.ndarray:
-    """Sample a trajectory to first diagnosis or from first diagnosis to second diagnosis
+    """Simulate a tumor state according to metMHN
 
     Args:
-        log_theta (np.ndarray): Theta matrix with logarithmic entries
-        d_effects (np.ndarray): Effects of mutations in diagnosis rate
-        rng (np.random.Generator): Random number generator
-        state (np.ndarray, optional): Starting state of a tumor (PT-MT) sequence
-        second_s (bool, optional): If true MT-state influences diag-rate, 
-            else PT-state influences diagnosis rate. Defaults to False.
+        log_theta (jnp.ndarray): Theta matrix with logarithmic entries
+        pt_d_ef (jnp.ndarray): Log. effects of mutations in the primary tumor on its rate of observation
+        mt_d_ef (jnp.ndarray): Log. effects of mutations in the metastasis on its rate of observation
+        n_sim (int): Number of datapoints to simulate
+        original_key (jrp.PRNGKey): Original random key to use for simulations
 
     Returns:
-        np.ndarray: PT-MT-state, Pre Seeding Muts
+        np.ndarray: PT-MT-state
     """
     
     def tumor_dynamics(carry):
@@ -310,9 +308,9 @@ def simulate_dat_jax(log_theta: jnp.ndarray,
                      pt_d_ef: jnp.ndarray, 
                      mt_d_ef: jnp.ndarray,
                      n_sim: int,
+                     original_key: jnp.ndarray,
                      obs_point: jnp.ndarray = None,
-                     seed: int = 42):
-    original_key = jrp.PRNGKey(seed)
+                     ) -> jnp.ndarray:
     rng_keys = jrp.split(original_key, n_sim)
     if obs_point is None:
         # Perform an uncoditioned Simulation
@@ -333,15 +331,101 @@ def simulate_dat_jax(log_theta: jnp.ndarray,
     return dat
 
 
-def p_unobs_seeding(log_theta: jnp.ndarray, 
-                    pt_d_ef: jnp.ndarray, 
-                    mt_d_ef: jnp.ndarray, 
-                    obs_point: jnp.ndarray, 
-                    n_sim: int, seed: int = 42) -> jnp.ndarray:
-    obs_point_mod = obs_point.at[1::2].set(1)
-    obs_point_mod = obs_point_mod.at[-1].set(1)
-    dat = simulate_dat_jax(log_theta, pt_d_ef, mt_d_ef, n_sim, obs_point_mod, seed)
-    dat_pt_first_diag =  dat[dat[:,-1]!=2, -2]
-    n_pt_first = dat_pt_first_diag.shape[0]
-    n_mt_pres_no_diag = jnp.sum(dat_pt_first_diag)
-    return n_mt_pres_no_diag/n_pt_first
+def single_traject_order(
+        log_theta: jnp.ndarray,
+        pt_d_ef: jnp.ndarray,
+        mt_d_ef: jnp.ndarray,
+        rng_key: jrp.PRNGKey,
+        ) -> jnp.ndarray:
+    """Sample a trajectory to first diagnosis or from first diagnosis to second diagnosis
+
+    Args:
+        log_theta (jnp.ndarray): Theta matrix with logarithmic entries
+        pt_d_ef (jnp.ndarray): Log. effects of mutations in the primary tumor on its rate of observation
+        mt_d_ef (jnp.ndarray): Log. effects of mutations in the metastasis on its rate of observation
+        n_sim (int): Number of datapoints to simulate
+        original_key (jrp.PRNGKey): Original random key to use for simulations
+
+    Returns:
+        jnp.ndarray: Tumor trajectory
+    """
+    
+    def tumor_dynamics(carry):
+        r_key, state, traject, i = carry
+
+        # Calculate MT reaction rates, all are zero if seeding didn't happen yet
+        mt_rates = jnp.concatenate((jnp.exp(log_theta @ state[n_d:-1] + b_rates)*(1-state[-1])*(1-state[n_d:-1]), 
+                                    jnp.exp(jnp.dot(mt_d_ef, state[n_d:-1]))*(1-state[-1])), axis=None)
+        
+        mt_rates = lax.select(state[n-1],
+                              mt_rates, 
+                              jnp.zeros_like(mt_rates)
+                              )
+        
+        # Ordering of reaction rates:
+        # 0:(n-1) PT mut. rates, (n-1) Seeding rate, (n) PT diag. rate
+        # (n+1):2n+1 MT mut. rates, 2n+1 MT diag. rate
+        r_rates = jnp.concatenate((
+            jnp.exp(log_theta_prim @ state[:n] + b_rates)*(1-state[n])*(1-state[:n]),
+            jnp.exp(jnp.dot(pt_d_ef, state[:n]))*(1-state[n]),
+            mt_rates), 
+            axis=None)
+
+        out_rate = jnp.sum(r_rates)
+        new_key, sub_key = jrp.split(r_key)
+        next_event = jrp.choice(sub_key, inds, p=r_rates/out_rate)
+        state = lax.cond(state[n-1] == 1,
+                         lambda state, i: state.at[i].set(1),
+                         lambda state, i: state.at[jnp.array([i, i+n_d])].set(1),
+                         state, next_event)
+        traject = traject.at[i].set(next_event)
+        i += 1
+        return new_key, state, traject, i
+
+    def stop_fun(carry):
+        _, state, _, _ = carry
+        # Stop the simulation if either both PT (state[n]) and MT (state[-1]) are diagnosed
+        # OR: if PT is diagnosed prior to Seeding (state[n-1])
+        return  (state[n] * state[-1] + state[n] * (1-state[n-1])) < 1
+    
+    b_rates = jnp.diag(log_theta.copy())
+    log_theta_prim = log_theta.copy()
+    log_theta_prim = log_theta_prim.at[:-1,-1].set(0.)
+    n = log_theta.shape[0]
+    n_d = n+1
+    inds = jnp.arange(0, 2*n+2, dtype=jnp.int8)
+    state = jnp.zeros(2*n+2, dtype=jnp.int8)
+    traject = jnp.zeros(2*n+2, dtype=jnp.int8)
+    ind = 0
+    _, _, traject, _ = lax.while_loop(stop_fun, tumor_dynamics, (rng_key, state, traject, ind))    
+    return traject
+
+
+def simulate_orders(log_theta: jnp.ndarray,
+                     pt_d_ef: jnp.ndarray, 
+                     mt_d_ef: jnp.ndarray,
+                     n_sim: int,
+                     original_key: jrp.PRNGKey,
+                     ) -> jnp.ndarray:
+    """Simulate a full dataset containing fully observed tumor trajectories
+
+    Args:
+        log_theta (jnp.ndarray): Theta matrix with logarithmic entries
+        pt_d_ef (jnp.ndarray): Log. effects of mutations in the primary tumor on its rate of observation
+        mt_d_ef (jnp.ndarray): Log. effects of mutations in the metastasis on its rate of observation
+        n_sim (int): Number of datapoints to simulate
+        original_key (jrp.PRNGKey): Original random key to use for simulations
+
+    Returns:
+        jnp.ndarray: Dataset of tumor trajectories, each row corresponds to an observation.
+            Events are encoded as follows (n denotes the total number of events):
+            0:(n-1)  Genomic events in the PT
+            n-1      Seeding event
+            n        Observation of the PT
+            (n+1):2n Genomic events in the MT
+            2n       Seeding
+            2n+1     Observation of the MT
+    """
+    rng_keys = jrp.split(original_key, n_sim)
+    dat = vmap(single_traject_order, (None, None, None, 0), 0)(log_theta, pt_d_ef, mt_d_ef, rng_keys)
+    return dat

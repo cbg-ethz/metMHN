@@ -18,7 +18,8 @@ class LikelihoodTestCase(unittest.TestCase):
         self.theta = jnp.array(utils.random_theta(self.n_mut, 0.2))
         self.d_pt = jnp.array(rng.normal(0, 1, size=self.n_mut+1))
         self.d_mt = jnp.array(rng.normal(0, 1, size=self.n_mut+1))
-        self.dat = simul.simulate_dat_jax(self.theta, self.d_pt, self.d_mt, self.n_sim, seed=42)
+        rng_key = jax.random.PRNGKey(seed=42)
+        self.dat = simul.simulate_dat_jax(self.theta, self.d_pt, self.d_mt, self.n_sim, original_key=rng_key)
         self.counts = dict(zip([i for i in range(self.n_states)], 
                           [ 0 for i in range(self.n_states)]))
         
