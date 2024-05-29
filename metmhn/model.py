@@ -1,20 +1,21 @@
-from metmhn.perf import order_to_int, int_to_order, append_to_int_order
+from metmhn.perf import int_to_order, append_to_int_order
 from collections import deque
 from metmhn.np.kronvec import kron_diag as get_diag_paired
 from scipy.linalg.blas import dcopy, dscal, daxpy
 import numpy as np
 from omhn.model import oMHN
 from metmhn.state import State, RestrState, RestrMetState, MetState
-from itertools import chain
-from typing import Union
+from typing import Union, Iterator
 import warnings
 
+# vectorize for performance
 append_to_int_order = np.vectorize(
     append_to_int_order, excluded=["numbers", "new_event"])
 
 
 def tuple_max(x: np.array, y: np.array) -> tuple[np.array]:
     """If given two values x_i and y_i for each i, we want to find i s.t. for all non-negative linear factors a and b we have ax_i + by_i >= ax_j + by_j.
+
     There will in general not be a unique i that satisfies this,
     therefore we just return all possible candidates i that could
     fulfill this for the right values a and b. 
@@ -27,6 +28,7 @@ def tuple_max(x: np.array, y: np.array) -> tuple[np.array]:
         tuple[np.array, np.array]: Vectors that only contain the
         maximizing candidates. 
     """
+
     x.sort(order="order")
     y.sort(order="order")
     indices = (x["prob"] >= x["prob"][np.argmax(y["prob"])]) \
@@ -36,6 +38,7 @@ def tuple_max(x: np.array, y: np.array) -> tuple[np.array]:
 
 def triple_max(x: np.array, y: np.array, z: np.array) -> tuple[np.array]:
     """If given three values x_i, y_i and z_i for each i, we want to find i s.t. for all non-negative linear factors a, b and c we have ax_i + by_i + cz_i >= ax_j + by_j + cz_j.
+
     There will in general not be a unique i that satisfies this,
     therefore we just return all possible candidates i that could
     fulfill this for the right values a, b and c.
@@ -54,12 +57,17 @@ def triple_max(x: np.array, y: np.array, z: np.array) -> tuple[np.array]:
     y.sort(order="order")
     z.sort(order="order")
 
+    # set up list of possibly maximizing indices
     indices = list()
 
+    # only append those indices i, where there is no other j s.t.
+    # x_i < x_j, y_i < y_j and z_i < z_j
     for i in range(len(x)):
         non_dominated = True
         for j in range(len(x)):
-            if x[i]["prob"] < x[j]["prob"] and y[i]["prob"] < y[j]["prob"] and z[i]["prob"] < z[j]["prob"]:
+            if x[i]["prob"] < x[j]["prob"] \
+                and y[i]["prob"] < y[j]["prob"] \
+                    and z[i]["prob"] < z[j]["prob"]:
                 non_dominated = False
                 break
         if non_dominated:
@@ -102,19 +110,28 @@ def reachable(bin_state: int, n: int, state: np.array) -> bool:
 
 
 def get_combos(order: np.array, n: int, first_obs: str) -> list[tuple[np.array]]:
-    """For a order of events in PT and Met, there are usually multiple
-    timepoints at which the first observation could have happened.
+    """
+    get all possible combinations of pre- and past-first-obs. genotypes
+
+    For a order of events in PT and Met, there are usually multiple
+    time points at which the first observation could have happened.
     This function returns all possible combinations of pre- and past-
     first-observation events.
 
     Args:
         order (np.array): Sequence of PT and Met events as integers
         n (int): number of events in total
+        first_obs (str): Whether the first observation was PT or Met
 
     Returns:
         list[tuple[np.array]]: List of combinations of pre- and past-
     first-observation events.
     """
+
+    if not first_obs in ["PT", "Met"]:
+        raise ValueError(
+            f"first_obs must be 'PT' or 'Met', but was {first_obs}.")
+
     seeding = np.where(order == 2*n)[0]
     combos = list()
 
@@ -134,15 +151,16 @@ def get_combos(order: np.array, n: int, first_obs: str) -> list[tuple[np.array]]
         raise ValueError("first_obs must be 'PT' or 'Met'.")
 
 
-def bits_fixed_n(n, k):
+def bits_fixed_n(n: int, k: int) -> Iterator[int]:
     """
-    Generator over integers whose binary representation has a fixed
-    number of 1s, in lexicographical order.
+    Generator over integers whose binary representation has a fixed number of 1s, in lexicographical order.
+
     From https://graphics.stanford.edu/~seander/bithacks.html#NextBitPermutation
 
     :param n: How many 1s there should be
     :param k: How many bits the integer should have
     """
+
     v = int("1"*n, 2)
     stop_no = v << (k-n)
     w = -1
@@ -155,18 +173,27 @@ def bits_fixed_n(n, k):
 
 class MetMHN:
     """
-    This class represents the Mutual Hazard Network
+    This class represents the Metastasis Mutual Hazard Network
+
+    TODO add docstrings for
+    - Any public methods, along with a brief description
+    - Any class properties (attributes)
     """
 
     def __init__(self, log_theta: np.array, obs1: np.array, obs2: np.array,
                  events: list[str] = None, meta: dict = None):
         """
-        :param log_theta: logarithmic values of the theta matrix
-        representing the MHN
-        :param events: (optional) list of strings containing the names
-        of the events considered by the MHN
-        :param meta: (optional) dictionary containing metadata for the
-        MHN, e.g. parameters used to train the model
+        Args:
+            log_theta (np.array): Logarithmic values of the theta
+            matrix.
+            obs1 (np.array): Logarithmic effects of the events on the
+            first observation.
+            obs2 (np.array): Logarithmic effects of the events on the
+            second observation.
+            events (list[str], optional): List of event names. Defaults
+            to None.
+            meta (dict, optional): Metadata as returned by the training
+            function. Defaults to None.
         """
 
         self.log_theta = log_theta
@@ -192,8 +219,8 @@ class MetMHN:
         consisting of PT and Met
 
         Args:
-            state (np.array or MetState): state describing the coupled observation, 
-            numpy shape (2*n + 1).
+            state (np.array or MetState): state describing the coupled
+            observation.
             met_status (str): Must be one of
                 - "isMetastasis" for an unpaired metastasis
                 - "present" for an unpaired primary tumor that at some
@@ -245,14 +272,15 @@ class MetMHN:
                     "met_status must be one of 'isMetastasis', 'absent', 'present', 'isPaired")
 
     def _get_diag_unpaired(self, state: State, seeding: bool = True) -> np.array:
-        """This returns the diagonal of the restricted rate matrix of
-        the metMHN's Markov chain.
+        """Get the diagonal of the restricted rate matrix
+
+        This returns the diagonal of the restricted rate matrix for the
+        metMHN's Markov chain.
 
         Args:
-            state (np.array): Binary unpaired state vector, dtype must
-            be int32. This is the vector according to which state space
-            restriction will be performed. Shape (n,) with n the number
-            of events including seeding.
+            state (State): This is the vector according to which state
+            space restriction will be performed. Shape (n,) with n the
+            number of events including seeding.
             seeding (bool, optional): Whether the seeding can be
             acquired
 
@@ -265,12 +293,15 @@ class MetMHN:
         diag = np.zeros(nx)
         subdiag = np.zeros(nx)
 
+        # If the seeding is not allowed, we only need the first n
+        # summands
         n = self.n + 1 if seeding else self.n
 
         for i in range(n):
 
             current_length = 1
             subdiag[0] = 1
+
             # compute the ith subdiagonal of Q
             for j in range(n):
                 if j in state:
@@ -298,8 +329,7 @@ class MetMHN:
 
     def _likeliest_order_unpaired_mt(self, state: State) -> tuple[tuple[int, ...], float]:
         """
-        Calculates the likeliest order of events for unpaired metastasis
-        observation.
+        Calculates the likeliest order of events for unpaired metastasis observation.
 
         Args:
             state (State): The state representing the metastasis.
@@ -310,12 +340,14 @@ class MetMHN:
 
         """
         diag = self._get_diag_unpaired(state=state, seeding=True)
+
+        # only get relevant part of log_theta and observation effects
         log_theta = self.log_theta[state.to_seq()][:, state.to_seq()]
         obs1 = self.obs1[state.to_seq()]
         obs2 = self.obs2[state.to_seq()]
 
         k = len(state)
-        # {state: highest path probability to this state}
+        # {state: highest path probability to reach this state}
         A = {0: 1/(1-diag[0])}
         # {state: path with highest probability to this state}
         B = {0: []}
@@ -351,8 +383,7 @@ class MetMHN:
 
     def _likeliest_order_pt_mt(self, state: MetState, verbose: bool = False) -> tuple[tuple[int, ...], float]:
         """
-        Calculates the likeliest order of events to reach a given state
-        with first a PT observation followed by an MT observation.
+        Calculates the likeliest order of events to reach a given state with first a PT observation followed by an MT observation.
 
         Args:
             state (MetState): The target state to reach.
@@ -364,6 +395,7 @@ class MetMHN:
             likeliest order of events as a tuple of integers and the
             corresponding probability.
         """
+
         k = len(state)
         if not state.reachable:
             raise ValueError("This state is not reachable by mhn.")
