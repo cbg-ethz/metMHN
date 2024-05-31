@@ -644,8 +644,7 @@ class MetMHN:
     ) -> tuple[tuple[int, ...], float]:
 
         k = len(state)
-        if not reachable(
-                bin_state=(1 << k) - 1, n=self.n, state=state):
+        if not state.reachable:
             raise ValueError("This state is not reachable by mhn.")
 
         diag_paired = get_diag_paired(
@@ -866,8 +865,7 @@ class MetMHN:
     ) -> tuple[tuple[int, ...], float]:
 
         k = len(state)
-        if not reachable(
-                bin_state=(1 << k) - 1, n=self.n, state=state):
+        if not state.reachable:
             raise ValueError("This state is not reachable by mhn.")
 
         diag_paired = get_diag_paired(
