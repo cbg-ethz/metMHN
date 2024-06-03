@@ -290,6 +290,86 @@ class MetMHN:
                 raise ValueError(
                     "met_status must be one of 'isMetastasis', 'absent', 'present', 'isPaired")
 
+    def likelihood(
+        self,
+        order: tuple[int],
+        met_status: str,
+        first_obs: str = None
+    ) -> float:
+        """Returns the most likelihood for a coupled observation
+        consisting of PT and Met
+
+        Args:
+            order (tuple[int]): order of events.
+            met_status (str): Must be one of
+                - "isMetastasis" for an unpaired metastasis
+                - "present" for an unpaired primary tumor that at some
+                    point develops a metastasis
+                - "absent" for an unpaired primary tumor that does not
+                    develop a metastasis
+                - "isPaired" for a paired sample
+            first_obs (str): Which was the first observation. Must be
+            one of "Met", "PT" or "unknown". "sync" is deprecated and
+            will raise a warning.
+
+        Returns:
+            float: order probability
+        """
+
+        match met_status:
+            case "isMetastasis":
+                seeding_in_order = False
+                for e in order:
+                    if e % 2 == 0:
+                        if e == 2 * self.n:
+                            seeding_in_order = True
+                        else:
+                            raise ValueError(
+                                "PT event in order, but met_status is 'isMetastasis'.")
+                if not seeding_in_order:
+                    raise ValueError(
+                        "Seeding event not in order, but met_status is 'isMetastasis'.")
+                raise NotImplementedError
+            case "absent":
+                for e in order:
+                    if e % 2 == 1:
+                        raise ValueError(
+                            "Met event in order, but met_status is 'absent'.")
+                    if e == 2 * self.n:
+                        raise ValueError(
+                            "Seeding event in order, but met_status is 'absent'.")
+
+                raise NotImplementedError
+            case "present":
+                seeding_in_order = False
+                for e in order:
+                    if e % 2 == 1:
+                        raise ValueError(
+                            "Met event in order, but met_status is 'present'.")
+                    if e == 2 * self.n:
+                        seeding_in_order = True
+                if not seeding_in_order:
+                    raise ValueError(
+                        "Seeding event not in order, but met_status is 'present'.")
+                raise NotImplementedError
+            case "isPaired":
+                match first_obs:
+                    case"PT":
+                        return self._likelihood_pt_mt(state)
+                    case "Met":
+                        return self._likelihood_mt_pt(state)
+                    case "unknown":
+                        return self._likelihood_unkown(state)
+                    case "sync":
+                        warnings.warn("Synchronous development is deprecated.")
+                        return self._likelihood_sync(state)
+                    case _:
+                        raise ValueError(
+                            "first_obs must be one of 'PT', 'Met', 'unknown', 'sync'")
+            case _:
+                raise ValueError(
+                    "met_status must be one of 'isMetastasis', 'absent', 'present', 'isPaired")
+
     def _get_diag_unpaired(
             self, state: State, seeding: bool = True) -> np.array:
         """Get the diagonal of the restricted rate matrix
