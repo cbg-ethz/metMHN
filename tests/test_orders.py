@@ -25,11 +25,19 @@ class LikelihoodTestCase(unittest.TestCase):
         ]
         for met_status, first_obs in test_cases:
             with self.subTest(met_status=met_status, first_obs=first_obs):
-                with self.assertRaises(ValueError):
-                    self.metMHN.likeliest_order(
-                        unreachable_state,
-                        met_status=met_status,
-                        first_obs=first_obs,)
+                if first_obs == "sync":
+                    with self.assertWarns(Warning):
+                        with self.assertRaises(ValueError):
+                            self.metMHN.likeliest_order(
+                                unreachable_state,
+                                met_status=met_status,
+                                first_obs=first_obs,)
+                else:
+                    with self.assertRaises(ValueError):
+                        self.metMHN.likeliest_order(
+                            unreachable_state,
+                            met_status=met_status,
+                            first_obs=first_obs,)
 
     def test_invalid_states(self):
         """Test that there is an error thrown for invalid states"""
