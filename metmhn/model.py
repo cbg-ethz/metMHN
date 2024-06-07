@@ -372,15 +372,14 @@ class MetMHN:
 
     def _get_diag_unpaired(
             self, state: State, seeding: bool = True) -> np.array:
-        """Get the diagonal of the restricted rate matrix
+        """Get the diagonal of an unpaired version of the restricted rate matrix
 
         This returns the diagonal of the restricted rate matrix for the
         metMHN's Markov chain.
 
         Args:
             state (State): This is the vector according to which state
-            space restriction will be performed. Shape (n,) with n the
-            number of events including seeding.
+            space restriction will be performed.
             seeding (bool, optional): Whether the seeding can be
             acquired
 
@@ -426,6 +425,19 @@ class MetMHN:
             # add the subdiagonal to dg
             daxpy(n=nx, a=1, x=subdiag, incx=1, y=diag, incy=1)
         return diag
+
+    def _get_diag_paired(self, state: MetState) -> np.array:
+        """Get the diagonal of the restricted rate matrix
+
+        Args:
+            state (MetState): The state according to which the state
+            space restriction will be performed.
+
+        Returns:
+            np.array: Diagonal of the restricted rate matrix. Shape
+            (2^k,) with k the number of 1s in state.
+        """
+        return get_diag_paired(self.log_theta, n=self.n, state=state.to_seq())
 
     def _likeliest_order_unpaired_mt(
             self, state: State) -> tuple[tuple[int, ...], float]:
@@ -503,8 +515,8 @@ class MetMHN:
         if not state.reachable:
             raise ValueError("This state is not reachable by mhn.")
 
-        diag_paired = get_diag_paired(
-            log_theta=self.log_theta, n=self.n, state=state.to_seq())
+        diag_paired = self._get_diag_paired(
+            state=state)
         diag_unpaired = self._get_diag_unpaired(
             state=state.MT)
 
@@ -727,8 +739,7 @@ class MetMHN:
         if not state.reachable:
             raise ValueError("This state is not reachable by mhn.")
 
-        diag_paired = get_diag_paired(
-            log_theta=self.log_theta, n=self.n, state=state.to_seq())
+        diag_paired = self._get_diag_paired(state=state)
         diag_unpaired = self._get_diag_unpaired(
             state=state.PT_S, seeding=False)
 
@@ -948,8 +959,7 @@ class MetMHN:
         if not state.reachable:
             raise ValueError("This state is not reachable by mhn.")
 
-        diag_paired = get_diag_paired(
-            log_theta=self.log_theta, n=self.n, state=state.to_seq())
+        diag_paired = self._get_diag_paired(state=state)
         diag_unpaired_pt = self._get_diag_unpaired(
             state=state.PT_S, seeding=False)
         diag_unpaired_mt = self._get_diag_unpaired(
@@ -1253,8 +1263,7 @@ class MetMHN:
         if not state.reachable:
             raise ValueError("This state is not reachable by mhn.")
 
-        diag_paired = get_diag_paired(
-            log_theta=self.log_theta, n=self.n, state=state.to_seq())
+        diag_paired = self._get_diag_paired(state=state)
 
         # In A[i][state], the max. probability to reach a state and its
         # order are stored. Here, i can be 0, 1 or 2, where A[2]
@@ -1397,8 +1406,7 @@ class MetMHN:
         """
         # translate first observation to state
         state = MetState(order_1, size=2 * self.n + 1)
-        diag = get_diag_paired(log_theta=self.log_theta,
-                               n=self.n, state=state.to_seq())
+        diag = self._get_diag_paired(state=state)
 
         p = 1 / (1 - diag[0])
 
@@ -1526,8 +1534,7 @@ class MetMHN:
         """
         # translate first observation to state
         state = MetState(order_1, size=2 * self.n + 1)
-        diag = get_diag_paired(log_theta=self.log_theta,
-                               n=self.n, state=state.to_seq())
+        diag = self._get_diag_paired(state=state)
 
         p = 1 / (1 - diag[0])
 
@@ -1644,8 +1651,7 @@ class MetMHN:
 
     def _likelihood_sync(self, order: np.array) -> float:
         state = MetState(order, size=2 * self.n + 1)
-        diag = get_diag_paired(
-            log_theta=self.log_theta, n=self.n, state=state.to_seq())
+        diag = self._get_diag_paired(state=state)
 
         p = 1 / (1 - diag[0])
         current_state = RestrMetState(0, restrict=state)
