@@ -1,6 +1,6 @@
 import metmhn.Utilityfunctions as utils
 from metmhn.model import MetMHN
-from metmhn.state import State
+from metmhn.state import State, MetState
 import numpy as np
 import unittest
 
@@ -9,10 +9,10 @@ class LikelihoodTestCase(unittest.TestCase):
     @classmethod
     def setUp(self):
         self.n = 4
-        log_theta = utils.random_theta(self.n, 0.2)
-        obs1 = 2 * np.random.random(self.n + 1) + 1
-        obs2 = 2 * np.random.random(self.n + 1) + 1
-        self.metMHN = MetMHN(log_theta, obs1, obs2)
+        self.log_theta = utils.random_theta(self.n, 0.2)
+        self.obs1 = 2 * np.random.random(self.n + 1) + 1
+        self.obs2 = 2 * np.random.random(self.n + 1) + 1
+        self.metMHN = MetMHN(self.log_theta, self.obs1, self.obs2)
 
     def test_unreachable(self):
         """Test that there is an error thrown for an unreachable state"""
@@ -117,18 +117,49 @@ class LikelihoodTestCase(unittest.TestCase):
                 self.assertAlmostEqual(
                     likelihood, expected_likelihood, places=5)
 
-    @unittest.expectedFailure
     def test_paired_timed_likelihood(self):
         """Test that the likelihoods for paired, timed orders are calculated correctly"""
         seeding = self.n * 2
 
         unpaired_diag_seeding = self.metMHN._get_diag_unpaired(
-            state=State([1] * 5))
+            state=State.from_seq([1] * 5))
         unpaired_diag = self.metMHN._get_diag_unpaired(
-            state=State([1] * 5), seeding=False)
+            state=State.from_seq([1] * 5), seeding=False)
+        paired_diag = self.metMHN._get_diag_paired(
+            state=MetState.from_seq([1] * 11))
         test_cases = [
-            ((1, seeding, 4), (3, 5), self.metMHN._likelihood_pt_mt_timed, 0),
-            ((1, seeding, 4), (0, 2), self.metMHN._likelihood_mt_pt_timed, 0),
+            ((0, 1, seeding, 4), (3, 5), self.metMHN._likelihood_pt_mt_timed,
+             np.exp(self.log_theta[0, 0])
+             / (1 - paired_diag[0])
+             * np.exp(self.log_theta[self.n, [0, self.n]].sum())
+             / (np.exp(self.obs1[0]) - paired_diag[2 ** 0 + 2 ** 1])
+             * np.exp(self.log_theta[2, [0, 2]].sum())
+             / (np.exp(self.obs1[[0]].sum()) + np.exp(self.obs2[[0, self.n]].sum()) - paired_diag[2 ** 0 + 1 ** 3 + 2 ** seeding])
+             * np.exp(self.obs1[[0, 2]].sum())
+             / (np.exp(self.obs1[[0, 2]].sum()) + np.exp(self.obs2[[0, self.n]].sum()) - paired_diag[2 ** 0 + 2 ** 1 + 2 ** 4 + 2 ** seeding])
+             * np.exp(self.log_theta[1, [0, 1, self.n]].sum())
+             / (np.exp(self.obs2[[0, self.n]].sum()) - unpaired_diag_seeding[2 ** 0 + 2 ** self.n])
+             * np.exp(self.log_theta[2, [0, 1, 2, self.n]].sum())
+             / (np.exp(self.obs2[[0, 1, self.n]].sum()) - unpaired_diag_seeding[2 ** 0 + 2 ** 1 + 2 ** self.n])
+             * np.exp(self.obs2[[0, 1, 2, self.n]].sum())
+             / (np.exp(self.obs2[[0, 1, 2, self.n]].sum()) - unpaired_diag_seeding[2 ** 0 + 2 ** 1 + 2 ** 2 + 2 ** self.n]),
+             ),
+            ((0, 1, seeding, 5), (6, 2), self.metMHN._likelihood_mt_pt_timed,
+             np.exp(self.log_theta[0, 0])
+             / (1 - paired_diag[0])
+             * np.exp(self.log_theta[self.n, [0, self.n]].sum())
+             / (np.exp(self.obs1[0]) - paired_diag[2 ** 0 + 2 ** 1])
+             * np.exp(self.log_theta[2, [0, 2, self.n]].sum())
+             / (np.exp(self.obs1[[0]].sum()) + np.exp(self.obs2[[0, self.n]].sum()) - paired_diag[2 ** 0 + 1 ** 3 + 2 ** seeding])
+             * np.exp(self.obs2[[0, 2, self.n]].sum())
+             / (np.exp(self.obs1[[0]].sum()) + np.exp(self.obs2[[0, 2, self.n]].sum()) - paired_diag[2 ** 0 + 2 ** 1 + 2 ** 5 + 2 ** seeding])
+             * np.exp(self.log_theta[3, [0, 3]].sum())
+             / (np.exp(self.obs1[[0]].sum()) - unpaired_diag[2 ** 0])
+             * np.exp(self.log_theta[1, [0, 1, 3]].sum())
+             / (np.exp(self.obs2[[0, 3]].sum()) - unpaired_diag[2 ** 0 + 2 ** 3])
+             * np.exp(self.obs2[[0, 1, 3]].sum())
+             / (np.exp(self.obs2[[0, 1, 3]].sum()) - unpaired_diag_seeding[2 ** 0 + 2 ** 1 + 2 ** 3]),
+             ),
         ]
         for order1, order2, func, expected_likelihood in test_cases:
             with self.subTest(order1=order1, order2=order2, func=func):
