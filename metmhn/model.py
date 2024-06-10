@@ -355,14 +355,14 @@ class MetMHN:
             case "isPaired":
                 match first_obs:
                     case"PT":
-                        return self._likelihood_pt_mt(state)
+                        return self._likelihood_pt_mt(order)
                     case "Met":
-                        return self._likelihood_mt_pt(state)
+                        return self._likelihood_mt_pt(order)
                     case "unknown":
-                        return self._likelihood_unkown(state)
+                        return self._likelihood_unkown(order)
                     case "sync":
                         warnings.warn("Synchronous development is deprecated.")
-                        return self._likelihood_sync(state)
+                        return self._likelihood_sync(order)
                     case _:
                         raise ValueError(
                             "first_obs must be one of 'PT', 'Met', 'unknown', 'sync'")
@@ -1744,22 +1744,3 @@ class MetMHN:
             t += np.random.exponential(
                 -1 / self._get_diag_unpaired(state=state)[-1])
         return order, t_obs
-
-
-if __name__ == "__main__":
-    import pandas as pd
-
-    log_theta = pd.read_csv(
-        "../metmhn-analyses/2024-01-metmhn-paper/data/luad/luad_g14_0005.csv",
-        index_col=0)
-    obs1 = log_theta.iloc[0].to_numpy()
-    obs2 = log_theta.iloc[1].to_numpy()
-
-    log_theta = log_theta.drop(index=[0, 1]).to_numpy()
-    mmhn = MetMHN(log_theta=log_theta, obs1=obs1, obs2=obs2)
-
-    state = MetState([56, 8, 2, 4, 1, 29, 25, 45],
-                     size=log_theta.shape[1] * 2 - 1)
-
-    print(mmhn._likeliest_order_unknown(state))
-    print(mmhn._likelihood_unkown((56, 8, 2, 4, 1, 29, 25, 45)))
