@@ -124,7 +124,7 @@ class LikelihoodTestCase(unittest.TestCase):
                     order,
                     met_status=met_status,
                     first_obs=first_obs,)
-                self.assertAlmostEqual(
+                np_assert_approx_equal(
                     likelihood, expected_likelihood, places=5)
 
     def test_paired_timed_likelihood(self):
@@ -190,7 +190,7 @@ class LikelihoodTestCase(unittest.TestCase):
                 likelihood = func(
                     order1,
                     order2,)
-                self.assertAlmostEqual(
+                np_assert_approx_equal(
                     likelihood, expected_likelihood, places=5)
                 
     def test_paired_likelihood(self):
