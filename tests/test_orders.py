@@ -79,9 +79,11 @@ class LikelihoodTestCase(unittest.TestCase):
              * np.exp(self.log_theta[3, [0, 3]].sum())
              / (np.exp(self.obs1[0]) - unpaired_diag_seeding[2 ** 0])
              * np.exp(self.log_theta[2, [0, 3, 2]].sum())
-             / (np.exp(self.obs1[[0, 3]].sum()) - unpaired_diag_seeding[2 ** 0 + 2 ** 3])
+             / (np.exp(self.obs1[[0, 3]].sum())
+                - unpaired_diag_seeding[2 ** 0 + 2 ** 3])
              * np.exp(self.obs1[[0, 2, 3]].sum())
-             / (np.exp(self.obs1[[0, 2, 3]].sum()) - unpaired_diag_seeding[2 ** 0 + 2 ** 2 + 2 ** 3]),
+             / (np.exp(self.obs1[[0, 2, 3]].sum())
+                - unpaired_diag_seeding[2 ** 0 + 2 ** 2 + 2 ** 3]),
              ),
             ((0, 3, seeding, 2), "present", None,
              np.exp(self.log_theta[0, 0])
@@ -89,11 +91,14 @@ class LikelihoodTestCase(unittest.TestCase):
              * np.exp(self.log_theta[3, [0, 3]].sum())
              / (np.exp(self.obs1[0]) - unpaired_diag_seeding[2 ** 0])
              * np.exp(self.log_theta[self.n, [self.n, 0, 3]].sum())
-             / (np.exp(self.obs1[[0, 3]].sum()) - unpaired_diag_seeding[2 ** 0 + 2 ** 3]),
+             / (np.exp(self.obs1[[0, 3]].sum())
+                - unpaired_diag_seeding[2 ** 0 + 2 ** 3]),
              * np.exp(self.log_theta[2, [0, 3, 2]].sum())
-             / (np.exp(self.obs1[[0, 3]].sum()) - unpaired_diag[2 ** 0 + 2 ** 3])
+             / (np.exp(self.obs1[[0, 3]].sum())
+                - unpaired_diag[2 ** 0 + 2 ** 3])
              * np.exp(self.obs1[[0, 2, 3]].sum())
-             / (np.exp(self.obs1[[0, 2, 3]].sum()) - unpaired_diag[2 ** 0 + 2 ** 2 + 2 ** 3]),
+             / (np.exp(self.obs1[[0, 2, 3]].sum())
+                - unpaired_diag[2 ** 0 + 2 ** 2 + 2 ** 3]),
              ),
             ((0, 3, seeding, 2), "isMetastasis", None,
              np.exp(self.log_theta[0, 0])
@@ -101,15 +106,20 @@ class LikelihoodTestCase(unittest.TestCase):
              * np.exp(self.log_theta[3, [0, 3]].sum())
              / (np.exp(self.obs1[0]) - unpaired_diag_seeding[2 ** 0])
              * np.exp(self.log_theta[self.n, [self.n, 0, 3]].sum())
-             / (np.exp(self.obs1[[0, 3]].sum()) - unpaired_diag_seeding[2 ** 0 + 2 ** 3]),
+             / (np.exp(self.obs1[[0, 3]].sum())
+                - unpaired_diag_seeding[2 ** 0 + 2 ** 3]),
              * np.exp(self.log_theta[2, [0, 3, 2, self.n]].sum())
-             / (np.exp(self.obs2[[0, 3, self.n]].sum()) - unpaired_diag_seeding[2 ** 0 + 2 ** 3 + 2 ** self.n])
+             / (np.exp(self.obs2[[0, 3, self.n]].sum())
+                - unpaired_diag_seeding[2 ** 0 + 2 ** 3 + 2 ** self.n])
              * np.exp(self.obs2[[0, 2, 3, self.n]].sum())
-             / (np.exp(self.obs2[[0, 2, 3, self.n]].sum()) - unpaired_diag_seeding[2 ** 0 + 2 ** 2 + 2 ** 3 + 2 ** self.n]),
+             / (np.exp(self.obs2[[0, 2, 3, self.n]].sum())
+                - unpaired_diag_seeding[
+                    2 ** 0 + 2 ** 2 + 2 ** 3 + 2 ** self.n]),
              )
         ]
         for order, met_status, first_obs, expected_likelihood in test_cases:
-            with self.subTest(order=order, met_status=met_status, first_obs=first_obs):
+            with self.subTest(
+                    order=order, met_status=met_status, first_obs=first_obs):
                 likelihood = self.metMHN.likelihood(
                     order,
                     met_status=met_status,
@@ -134,15 +144,23 @@ class LikelihoodTestCase(unittest.TestCase):
              * np.exp(self.log_theta[self.n, [0, self.n]].sum())
              / (np.exp(self.obs1[0]) - paired_diag[2 ** 0 + 2 ** 1])
              * np.exp(self.log_theta[2, [0, 2]].sum())
-             / (np.exp(self.obs1[[0]].sum()) + np.exp(self.obs2[[0, self.n]].sum()) - paired_diag[2 ** 0 + 1 ** 3 + 2 ** seeding])
+             / (np.exp(self.obs1[[0]].sum())
+                + np.exp(self.obs2[[0, self.n]].sum())
+                - paired_diag[2 ** 0 + 1 ** 3 + 2 ** seeding])
              * np.exp(self.obs1[[0, 2]].sum())
-             / (np.exp(self.obs1[[0, 2]].sum()) + np.exp(self.obs2[[0, self.n]].sum()) - paired_diag[2 ** 0 + 2 ** 1 + 2 ** 4 + 2 ** seeding])
+             / (np.exp(self.obs1[[0, 2]].sum())
+                + np.exp(self.obs2[[0, self.n]].sum())
+                - paired_diag[2 ** 0 + 2 ** 1 + 2 ** 4 + 2 ** seeding])
              * np.exp(self.log_theta[1, [0, 1, self.n]].sum())
-             / (np.exp(self.obs2[[0, self.n]].sum()) - unpaired_diag_seeding[2 ** 0 + 2 ** self.n])
+             / (np.exp(self.obs2[[0, self.n]].sum())
+                - unpaired_diag_seeding[2 ** 0 + 2 ** self.n])
              * np.exp(self.log_theta[2, [0, 1, 2, self.n]].sum())
-             / (np.exp(self.obs2[[0, 1, self.n]].sum()) - unpaired_diag_seeding[2 ** 0 + 2 ** 1 + 2 ** self.n])
+             / (np.exp(self.obs2[[0, 1, self.n]].sum())
+                - unpaired_diag_seeding[2 ** 0 + 2 ** 1 + 2 ** self.n])
              * np.exp(self.obs2[[0, 1, 2, self.n]].sum())
-             / (np.exp(self.obs2[[0, 1, 2, self.n]].sum()) - unpaired_diag_seeding[2 ** 0 + 2 ** 1 + 2 ** 2 + 2 ** self.n]),
+             / (np.exp(self.obs2[[0, 1, 2, self.n]].sum())
+                - unpaired_diag_seeding[
+                    2 ** 0 + 2 ** 1 + 2 ** 2 + 2 ** self.n]),
              ),
             ((0, 1, seeding, 5), (6, 2), self.metMHN._likelihood_mt_pt_timed,
              np.exp(self.log_theta[0, 0])
@@ -150,15 +168,21 @@ class LikelihoodTestCase(unittest.TestCase):
              * np.exp(self.log_theta[self.n, [0, self.n]].sum())
              / (np.exp(self.obs1[0]) - paired_diag[2 ** 0 + 2 ** 1])
              * np.exp(self.log_theta[2, [0, 2, self.n]].sum())
-             / (np.exp(self.obs1[[0]].sum()) + np.exp(self.obs2[[0, self.n]].sum()) - paired_diag[2 ** 0 + 1 ** 3 + 2 ** seeding])
+             / (np.exp(self.obs1[[0]].sum())
+                + np.exp(self.obs2[[0, self.n]].sum())
+                - paired_diag[2 ** 0 + 1 ** 3 + 2 ** seeding])
              * np.exp(self.obs2[[0, 2, self.n]].sum())
-             / (np.exp(self.obs1[[0]].sum()) + np.exp(self.obs2[[0, 2, self.n]].sum()) - paired_diag[2 ** 0 + 2 ** 1 + 2 ** 5 + 2 ** seeding])
+             / (np.exp(self.obs1[[0]].sum())
+                + np.exp(self.obs2[[0, 2, self.n]].sum())
+                - paired_diag[2 ** 0 + 2 ** 1 + 2 ** 5 + 2 ** seeding])
              * np.exp(self.log_theta[3, [0, 3]].sum())
              / (np.exp(self.obs1[[0]].sum()) - unpaired_diag[2 ** 0])
              * np.exp(self.log_theta[1, [0, 1, 3]].sum())
-             / (np.exp(self.obs2[[0, 3]].sum()) - unpaired_diag[2 ** 0 + 2 ** 3])
+             / (np.exp(self.obs2[[0, 3]].sum())
+                - unpaired_diag[2 ** 0 + 2 ** 3])
              * np.exp(self.obs2[[0, 1, 3]].sum())
-             / (np.exp(self.obs2[[0, 1, 3]].sum()) - unpaired_diag_seeding[2 ** 0 + 2 ** 1 + 2 ** 3]),
+             / (np.exp(self.obs2[[0, 1, 3]].sum())
+                - unpaired_diag_seeding[2 ** 0 + 2 ** 1 + 2 ** 3]),
              ),
         ]
         for order1, order2, func, expected_likelihood in test_cases:
@@ -168,6 +192,16 @@ class LikelihoodTestCase(unittest.TestCase):
                     order2,)
                 self.assertAlmostEqual(
                     likelihood, expected_likelihood, places=5)
+                
+    def test_paired_likelihood(self):
+        """Test that the likelihoods for paired orders are calculated correctly"""
+        
+        seeding = self.n * 2
+        test_cases = [
+            MetState([0, 1, 3, 5, 6])
+        ]
+
+
 
 
 if __name__ == "__main__":
