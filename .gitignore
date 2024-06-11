@@ -13,5 +13,4 @@ env/*
 **/.DS_Store
 
 # Cython builds
-*.c
 *.pyd
