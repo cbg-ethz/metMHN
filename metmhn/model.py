@@ -1,4 +1,4 @@
-from metmhn.perf import int_to_order, append_to_int_order
+from metmhn.int_order_conversion import int_to_order, append_to_int_order
 from collections import deque
 from metmhn.jx.kronvec import kron_diag as get_diag_paired
 from scipy.linalg.blas import dcopy, dscal, daxpy

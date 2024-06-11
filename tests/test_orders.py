@@ -255,7 +255,3 @@ class LikelihoodTestCase(unittest.TestCase):
                         self.metMHN.likelihood(
                             order, met_status="isPaired", first_obs=first_obs),
                     )
-
-
-if __name__ == "__main__":
-    unittest.main()
