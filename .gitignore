@@ -8,6 +8,10 @@ build
 dist
 *.egg-info
 env/*
-
+.venv
 **.DS_Store
 **/.DS_Store
+
+# Cython builds
+*.c
+*.pyd

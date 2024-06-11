@@ -80,24 +80,6 @@ def random_theta(n: int, sparsity: float) -> np.ndarray:
     return log_theta
 
 
-def reachable_states(n: int) -> np.ndarray:
-    """This function returns the indices, w.r.t. to a lexicographical ordering, of the states
-    of an MHN with n events, that can actually be reached.
-
-    Args:
-        n (int): Number of events
-
-    Returns:
-        np.array: dtype bool, True if the state is reachable, False if not.
-    """
-    reachable = np.zeros(2**(2*n + 1))
-
-    for i in chain.from_iterable(combinations(list(range(n)), r) for r in range((n+1))):
-        reachable[sum((2**(2*j))*3 for j in i)] = 1
-
-    reachable[2**(2*n):] = 1
-    return reachable.astype(bool)
-
 
 def finite_sample(p_th: np.ndarray, k: int) -> np.ndarray:
     """
