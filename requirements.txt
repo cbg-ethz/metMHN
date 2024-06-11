@@ -1,8 +1,9 @@
 ipykernel==6.23.1
-jax==0.4.11
-jaxlib==0.4.11
+jax==0.4.19
+jaxlib==0.4.19
 matplotlib==3.7.1
 pandas==2.0.2
 scipy==1.10.1
 networkx==3.1
 ml_dtypes==0.2.0
+Cython
