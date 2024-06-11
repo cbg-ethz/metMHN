@@ -1016,9 +1016,11 @@ class MetMHN:
                     A[2][current_state] = np.empty([0], dtype=order_type)
 
                     obs1 = np.exp(self.obs1[
-                        current_state.PT_events + current_state.Seeding,].sum())
+                        current_state.PT_events + current_state.Seeding,
+                    ].sum())
                     obs2 = np.exp(self.obs2[
-                        current_state.MT_events + current_state.Seeding,].sum())
+                        current_state.MT_events + current_state.Seeding,
+                    ].sum())
 
                     denom1 = 1 / \
                         (obs1 + obs2 - diag_paired[current_state.data])
@@ -1221,7 +1223,7 @@ class MetMHN:
                             A[2][current_state],
                             new_orders)
 
-                    # just keep the most like order to reach
+                    # just keep the most likely order to reach
                     # current_state
                     A[2][current_state] = A[2][current_state][
                         [np.argmax(A[2][current_state]["prob"])]]
