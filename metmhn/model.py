@@ -3,7 +3,7 @@ from collections import deque
 from metmhn.jx.kronvec import kron_diag as get_diag_paired
 from scipy.linalg.blas import dcopy, dscal, daxpy
 import numpy as np
-from omhn.model import oMHN
+# from omhn.model import oMHN
 from metmhn.state import State, RestrState, RestrMetState, MetState
 from typing import Union, Iterator
 import warnings
@@ -206,9 +206,9 @@ class MetMHN:
 
         _pt_log_theta = log_theta.copy()
         _pt_log_theta[:-1, -1] = 0
-        self._pt_omhn = oMHN(
-            log_theta=np.vstack([_pt_log_theta, self.obs1])
-        )
+        # self._pt_omhn = oMHN(
+        #     log_theta=np.vstack([_pt_log_theta, self.obs1])
+        # )
 
     def likeliest_order(
         self,
@@ -257,10 +257,10 @@ class MetMHN:
                 if state.Seeding:
                     raise ValueError(
                         "Seeding was observed, but met_status is 'absent'.")
-                p, o = self._pt_omhn.likeliest_order(
-                    state=state.PT_S.to_seq()
-                )
-                return p, 2 * o
+                # p, o = self._pt_omhn.likeliest_order(
+                #     state=state.PT_S.to_seq()
+                # )
+                return  # p, 2 * o
             case "present":
                 if len(state.MT) > 0:
                     raise ValueError(
@@ -268,10 +268,10 @@ class MetMHN:
                 if not state.Seeding:
                     raise ValueError(
                         "Seeding was not observed, but met_status is 'present'.")
-                p, o = self._pt_omhn.likeliest_order(
-                    state=state.PT_S.to_seq()
-                )
-                return p, 2 * o
+                # p, o = self._pt_omhn.likeliest_order(
+                #     state=state.PT_S.to_seq()
+                # )
+                return  # p, 2 * o
             case "isPaired":
                 match first_obs:
                     case"PT":
@@ -547,8 +547,7 @@ class MetMHN:
 
                 if verbose:
                     print(
-                        f"{n_events:3}/{k:3}, {len(A[2]):10}, {sum(len(x)
-                                                                   for x in A[2].values()):10}",
+                        f"{n_events:3}/{k:3}, {len(A[2]):10}, {sum(len(x) for x in A[2].values()):10}",
                         end="\r")
 
                 # check whether state is reachable
@@ -770,8 +769,7 @@ class MetMHN:
 
                 if verbose:
                     print(
-                        f"{n_events:3}/{k:3}, {len(A[2]):10}, {sum(len(x)
-                                                                   for x in A[2].values()):10}",
+                        f"{n_events:3}/{k:3}, {len(A[2]):10}, {sum(len(x)for x in A[2].values()):10}",
                         end="\r")
 
                 # check whether state is reachable
