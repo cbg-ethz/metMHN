@@ -1,6 +1,6 @@
 from metmhn.perf import int_to_order, append_to_int_order
 from collections import deque
-from metmhn.np.kronvec import kron_diag as get_diag_paired
+from metmhn.jx.kronvec import kron_diag as get_diag_paired
 from scipy.linalg.blas import dcopy, dscal, daxpy
 import numpy as np
 from omhn.model import oMHN
@@ -437,7 +437,8 @@ class MetMHN:
             np.array: Diagonal of the restricted rate matrix. Shape
             (2^k,) with k the number of 1s in state.
         """
-        return get_diag_paired(self.log_theta, n=self.n, state=state.to_seq())
+        return get_diag_paired(
+            self.log_theta, state=state.to_seq(), n_state=len(state))
 
     def _likeliest_order_unpaired_mt(
             self, state: State) -> tuple[tuple[int, ...], float]:
