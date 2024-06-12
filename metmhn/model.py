@@ -281,7 +281,9 @@ class MetMHN:
                     case "unknown":
                         return self._likeliest_order_unknown(state)
                     case "sync":
-                        warnings.warn("Synchronous development is deprecated.")
+                        warnings.warn(
+                            "Synchronous development is deprecated.",
+                            DeprecationWarning)
                         return self._likeliest_order_sync(state)
                     case _:
                         raise ValueError(
@@ -361,7 +363,9 @@ class MetMHN:
                     case "unknown":
                         return self._likelihood_unkown(order)
                     case "sync":
-                        warnings.warn("Synchronous development is deprecated.")
+                        warnings.warn(
+                            "Synchronous development is deprecated.",
+                            DeprecationWarning)
                         return self._likelihood_sync(order)
                     case _:
                         raise ValueError(

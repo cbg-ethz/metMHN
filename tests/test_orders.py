@@ -27,7 +27,7 @@ class LikelihoodTestCase(unittest.TestCase):
         for met_status, first_obs in test_cases:
             with self.subTest(met_status=met_status, first_obs=first_obs):
                 if first_obs == "sync":
-                    with self.assertWarns(Warning):
+                    with self.assertWarns(DeprecationWarning):
                         with self.assertRaises(ValueError):
                             self.metMHN.likeliest_order(
                                 unreachable_state,
@@ -235,15 +235,16 @@ class LikelihoodTestCase(unittest.TestCase):
         for first_obs in test_cases:
             with self.subTest(first_obs=first_obs):
                 if first_obs == "sync":
-                    with self.assertWarns(Warning):
+                    with self.assertWarns(DeprecationWarning):
                         order, likelihood = self.metMHN.likeliest_order(
                             state=state,
                             met_status="isPaired",
                             first_obs=first_obs,)
+                    with self.assertWarns(DeprecationWarning):
                         np_assert_approx_equal(
                             likelihood,
                             self.metMHN.likelihood(
-                                order, met_status="isPaired", first_obs=first_obs),
+                                order, met_status="isPaired", first_obs=first_obs)
                         )
                 else:
                     order, likelihood = self.metMHN.likeliest_order(
