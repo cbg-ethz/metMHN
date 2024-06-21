@@ -105,24 +105,24 @@ n_events = theta_gt.shape[0]
 n_reps = config["n_reps"]
 learned_models =  np.zeros((n_reps, n_events+2, n_events))
 
-# Subsample simulate data to mimic composition of real dataset
+# Sample datapoints according to the ground truth model
+key = jrp.key(config["seed"])
+key, sub_key = jrp.split(key)
+dat_sim_full = simul.simulate_dat(jnp.array(theta_gt), 
+                                  jnp.array(d_p_gt), 
+                                  jnp.array(d_m_gt), 
+                                  10000, 
+                                  sub_key)
+
+
+# Subsample simulated data to mimic composition of the real dataset
 n_dat = config["n_dat"]
-frac_nm = 0.115 # Fraction of never metastasisizng tumors
+frac_nm = 0.115 # Fraction of never metastasisizing tumors
 n_nm = int(np.round(frac_nm*n_dat)) 
 n_em = n_dat - n_nm
 n_c = int(np.round(0.107*n_em)) # Number of coupled datapoints
 n_pm = int(np.round(0.386*n_em)) # Number of PT-only metassaized datapoints
 n_mo = n_em - n_c - n_pm # Number of MT-only datapoints
-
-# Sample datapoints according to the ground truth model
-key = jrp.PRNGKey(config["seed"])
-key, sub_key = jrp.split(key)
-dat_sim_full = simul.simulate_dat_jax(jnp.array(theta_gt), 
-                                      jnp.array(d_p_gt), 
-                                      jnp.array(d_m_gt), 
-                                      10000, 
-                                      sub_key)
-
 key, sub_key = jrp.split(key)
 dat_full = create_dat(dat_sim_full, n_em, n_nm, n_c, n_pm, sub_key)
 
@@ -130,32 +130,34 @@ dat_full = create_dat(dat_sim_full, n_em, n_nm, n_c, n_pm, sub_key)
 log_lams = np.linspace(-3.5, -2.5, 5)
 lams = 10**log_lams
 m_p_corr = 0.65
-penal_weight = utils.cross_val(dat=dat_full, 
-                  penal_fun=reg_opt.symmetric_penal, 
-                  splits=lams, 
-                  n_folds=5, 
-                  m_p_corr=0.65, 
-                  seed=4209)
+key, sub_key = jrp.split(key)
+penal_weights = utils.cross_val(dat=dat_full, 
+                               penal_fun=reg_opt.symmetric_penal,
+                               splits=lams, 
+                               n_folds=5, 
+                               m_p_corr=m_p_corr, 
+                               key=sub_key)
+best_lam = lams[np.argmax(np.mean(penal_weights, axis=0))]
 
 for i in range(n_reps):
     key, sub_key = jrp.split(key)
-    dat = simul.simulate_dat_jax(jnp.array(theta_gt), 
-                                 jnp.array(d_p_gt), 
-                                 jnp.array(d_m_gt), 
-                                 50000, 
-                                 sub_key)
+    dat = simul.simulate_dat(jnp.array(theta_gt),
+                             jnp.array(d_p_gt), 
+                             jnp.array(d_m_gt), 
+                             50000, 
+                             sub_key)
     key, sub_key = jrp.split(key)
     dat_sampled = create_dat(dat_sim_full, n_em, n_nm, n_c, n_pm, sub_key)
     th_init, dp_init, dm_init = utils.indep(dat_sampled)
     theta_inf_sim, d_p_inf_sim, d_m_inf_sim= reg_opt.learn_mhn(th_init=th_init, 
-                                   dp_init=dp_init,
-                                   dm_init=dm_init,
-                                   dat=dat_sampled,
-                                   perc_met=m_p_corr,
-                                   penal=reg_opt.symmetric_penal,
-                                   w_penal=penal_weight,
-                                   opt_ftol=1e-05
-                                   )
+                                                               dp_init=dp_init,
+                                                               dm_init=dm_init,
+                                                               dat=dat_sampled,
+                                                               perc_met=m_p_corr,
+                                                               penal=reg_opt.symmetric_penal,
+                                                               w_penal=best_lam,
+                                                               opt_ftol=1e-05
+                                                               )
     learned_models[i,:,:] = np.row_stack((d_p_inf_sim.reshape((1,-1)), d_m_inf_sim.reshape((1,-1)), theta_inf_sim))
     logging.info(f"finished rep {i} out of {n_reps}")
 

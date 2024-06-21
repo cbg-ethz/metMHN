@@ -18,8 +18,8 @@ class LikelihoodTestCase(unittest.TestCase):
         self.theta = jnp.array(utils.random_theta(self.n_mut, 0.2))
         self.d_pt = jnp.array(rng.normal(0, 1, size=self.n_mut+1))
         self.d_mt = jnp.array(rng.normal(0, 1, size=self.n_mut+1))
-        rng_key = jax.random.PRNGKey(seed=42)
-        self.dat = simul.simulate_dat_jax(self.theta, self.d_pt, self.d_mt, self.n_sim, original_key=rng_key)
+        rng_key = jax.random.key(seed=42)
+        self.dat = simul.simulate_dat(self.theta, self.d_pt, self.d_mt, self.n_sim, original_key=rng_key)
         self.counts = dict(zip([i for i in range(self.n_states)], 
                           [ 0 for i in range(self.n_states)]))
         
@@ -36,6 +36,13 @@ class LikelihoodTestCase(unittest.TestCase):
         print(np.exp(sim_freq), np.exp(ana_freq))
         np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)
     
+    def test_lp_prim_az(self):
+        dp = np.array([0, 0, 0, 0, 0,0, 0, -99, 0]).reshape((1,-1))
+        ind = np.packbits(dp[:,:-2], axis=1, bitorder="little")[0]
+        sim_freq = np.log(self.counts[ind[0]]/self.n_sim)
+        ana_freq = regopt.score(self.theta, self.d_pt, self.d_mt, jnp.array(dp), 0)
+        print(np.exp(sim_freq), np.exp(ana_freq))
+        np.testing.assert_approx_equal(sim_freq, ana_freq, significant=2)
 
     def test_lp_prim_met(self):
         mt_states = np.kron(utils.state_space(self.n_mut), np.array([0,1]))
