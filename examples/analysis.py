@@ -17,6 +17,8 @@ parser.add_argument("-lam", action="store", default=1e-04, type=float,
                     help="Weight of penalization for inference")
 parser.add_argument("-logs", action="store", default="./inf.dat", type=str, 
                     help="relative path to log-file destination")
+parser.add_argument("-seed", action="store", default=42, type=int, 
+                    help="Seed for random number generator")
 parser.add_argument("source-annot", help="Relative path to the data annotation file")
 parser.add_argument("source-data", help="Relative path to the data file")
 parser.add_argument("dest", help="Relative path to file save destination")
@@ -28,10 +30,8 @@ import metmhn.Utilityfunctions as utils
 
 import pandas as pd
 import warnings
-warnings.simplefilter(action='ignore', 
-                      category=pd.errors.PerformanceWarning)
-
 import jax.numpy as jnp
+import jax.random as jrp
 import numpy as np
 import jax as jax
 jax.config.update("jax_enable_x64", True)
@@ -56,21 +56,19 @@ muts = list(dat.columns[1:-4])
 
 # Label each datapoint with a numeric value according to its sequencetype
 dat["type"] = dat.apply(utils.categorize, axis=1)
-dat["Seeding"] = dat.apply(utils.add_seeding, axis=1)
-dat.loc[dat["M.AgeAtSeqRep"] == "No metastasis included", "M.AgeAtSeqRep"] = pd.NA
-dat.loc[dat["P.AgeAtSeqRep"] == "No primary included", "P.AgeAtSeqRep"] = pd.NA
-dat["P.AgeAtSeqRep"] = dat["P.AgeAtSeqRep"].astype(pd.Int64Dtype())
-dat["M.AgeAtSeqRep"] = dat["M.AgeAtSeqRep"].astype(pd.Int64Dtype())
+# Add the seeding event
+dat["Seeding"] = dat["type"].apply(lambda x: pd.NA if pd.isna(x) else 0 if x == 0 else 1)
+dat["M.AgeAtSeqRep"] = pd.to_numeric(dat["M.AgeAtSeqRep"], errors='coerce')
+dat["P.AgeAtSeqRep"] = pd.to_numeric(dat["P.AgeAtSeqRep"], errors='coerce')
+# Define the order of diagnosis for paired datapoints
 dat["diag_order"] = dat["M.AgeAtSeqRep"] - dat["P.AgeAtSeqRep"]
 dat["diag_order"] = dat["diag_order"].apply(lambda x: pd.NA if pd.isna(x) else 2 if x < 0 else 1 if x > 0 else 0) 
 dat["diag_order"] = dat["diag_order"].astype(pd.Int64Dtype())
+
 events_data = muts+["Seeding"]
 
-# Only use datapoints where the state of the metastasis is known
-cleaned = dat.loc[dat["type"].isin([0,1,2,3]), muts+["Seeding", "diag_order", "type"]]
-
-# Remove completely empty datapoints
-cleaned.drop(cleaned[cleaned.iloc[:,:-2].sum(axis=1)<1].index, inplace=True)
+# Only use datapoints where the state of the seeding is known
+cleaned = dat.loc[~pd.isna(dat["type"]), muts+["Seeding", "diag_order", "type"]]
 dat = jnp.array(cleaned.to_numpy(dtype=np.int8, na_value=-99))
 
 events_plot = []
@@ -79,25 +77,29 @@ for elem in cleaned.columns[:-3].to_list()[::2]:
     events_plot.append(full_mut_id[1])
 events_plot.append("Seeding")
 
+if config["pm_ratio"] is None:
+    perc_met = dat[:,-3].sum()/(dat.shape[0] - dat[:,-3].sum())
+else:
+    perc_met = config["pm_ratio"]
+
 if config['cv']:
     # Perform crossvalidation
     log_lams = np.linspace(np.log10(config['cv_start']), 
                            np.log10(config['cv_end']), 
                            config['cv_splits'])
     lams = 10**log_lams
-    penal, se = utils.cross_val(dat=dat, 
-                            penal_fun=reg_opt.symmetric_penal, 
-                            splits=lams, 
-                            n_folds=config['cv_folds'], 
-                            m_p_corr=config['pm_ratio'], 
-                            seed=42)
+    penal_weights = utils.cross_val(dat=dat, 
+                                penal_fun=reg_opt.symmetric_penal, 
+                                splits=lams, 
+                                n_folds=config['cv_folds'], 
+                                m_p_corr=perc_met, 
+                                seed=jrp.PRNGKey(config['seed']))
+
+    # The cross_val function returns a n_folds x log_lams.size shaped dataframe
+    penal = lams[np.argmax(np.mean(penal_weights, axis=0))]
 else:
     penal = config['lam']
 
-if config["pm_ratio"] is None:
-    perc_met = dat[:,-3].sum()/(dat.shape[0] - dat[:,-3].sum())
-else:
-    perc_met = config["pm_ratio"]
 
 # Learn the actual model
 th_init, dp_init, dm_init = utils.indep(dat)

@@ -29,7 +29,7 @@ Finally install the metMHN package locally using
 pip install -e .
 ```
 ## Run metMHN
-We provide an example analysis of a reduced lung adeno carcinoma (LUAD) dataset, that can be run on a standard desktop by first starting a jupyter notebook server
+We provide an example analysis of a reduced lung adeno carcinoma (LUAD) dataset that can be run on a standard desktop by first starting a jupyter notebook server
 ```bash
 jupyter notebook
 ```
@@ -52,6 +52,7 @@ You can also set the following command line arguments:
 |-pm_ratio| Float, Expected ratio of never metastasizing primary tumors to metastasizing primary tumors|
 |-lam | Float, Weight of penalization. Should only be set if no cross validation is performed|
 |-logs| String, relative filepath for log-files|
+|-seed| Integer, Seed to be used random number generator|
 
 We also provide a script to assess how well metMHN can recover groundtruth parameters:
 ```bash
