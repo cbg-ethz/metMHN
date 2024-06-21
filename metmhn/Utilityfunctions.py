@@ -104,22 +104,13 @@ def categorize(x: pd.Series) -> int:
         elif x['metaStatus'] == 'isMetastasis':
             return 2
         elif x['metaStatus'] == 'unknown':
-            return 4
+            return pd.NA
         else:
             return -1
     elif x['paired'] == 1:
         return 3
     else:
-        return -1
-
-
-def add_seeding(x: pd.Series) -> int:
-    if x['type'] in [1,2,3]:
-        return 1
-    elif x['type'] == 0:
-        return 0
-    else:
-        return -1
+        return pd.NA
     
 
 def marg_frequs(dat: jnp.ndarray,  events: list) -> pd.DataFrame:
@@ -192,8 +183,8 @@ def indep(dat: jnp.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return theta, np.zeros(n+1), np.zeros(n+1)
 
 
-def cross_val(dat: jnp.ndarray, penal_fun, splits: jnp.ndarray, n_folds: int, 
-              m_p_corr: float, seed: int = 42) -> tuple:
+def cross_val(dat: jnp.ndarray, penal_fun: Callable, splits: jnp.ndarray, n_folds: int, 
+              m_p_corr: float, key: jrp.PRNGKey = jrp.PRNGKey(42)) -> pd.DataFrame:
     """Perform a n_folds cross validation for hyperparameter search
 
     Args:
@@ -209,13 +200,11 @@ def cross_val(dat: jnp.ndarray, penal_fun, splits: jnp.ndarray, n_folds: int,
         splits (jnp.ndarray): Vector of penalization weights to test
         n_folds (int): Number of folds to split the data into
         m_p_corr (float):  Expected percentage of metastasizing tumor in the Dataset
-        n_jobs (int, optional): Number of jobs to run. Defaults to 1.
-        seed (int, optional): Seed for random number generator. Defaults to 42.
+        key (int, optional): Jax random prng key. Defaults to jrp.PRNGKey(42).
 
     Returns:
-        float, float: Best hyperparameter, standard error of models with the best hyperparameter
+        pd.DataFrame: n_folds x splits.size sized array of scores
     """
-    key = jrp.PRNGKey(seed)
     shuffled =  jrp.permutation(key, dat, axis=0)
     runs_constrained = np.zeros((n_folds, splits.shape[0]))
     batch_size = jnp.ceil(dat.shape[0]/n_folds)
@@ -237,19 +226,9 @@ def cross_val(dat: jnp.ndarray, penal_fun, splits: jnp.ndarray, n_folds: int,
             
             test = shuffled[test_inds, :]
             runs_constrained[fold_index, i] = score(th, dp, dm, test, m_p_corr)
-            logging.info(f"{runs_constrained}")
-
-    mean_scores = runs_constrained.mean(axis=0)
-    best_score = np.max(mean_scores)
-    blp = np.argmax(mean_scores)
-    best_penal = splits[blp]
-    se = np.std(runs_constrained[:, blp])/np.sqrt(n_folds)
-    best_penal_1se = splits[np.max(np.argwhere(mean_scores>(best_score-se)))]
-    logging.info(f"{mean_scores}")
-    logging.info(f"Crossvalidation finished")
-    logging.info(f"Highest likelihood averaged over all folds: {best_score}")
-    logging.info(f"Best Lambda: {best_penal}, Best penal + 1 standard error: {best_penal_1se}")
-    return best_penal, best_penal_1se
+            logging.info(f"Lambda: {splits[i]} Fold: {fold_index} Test Score: {runs_constrained[fold_index, i]}")
+    runs_constrained = pd.DataFrame(runs_constrained, columns=splits, index=np.arange(n_folds))
+    return runs_constrained
 
 
 def plot_theta(ax1: plt.Axes, ax2: plt.Axes, model: np.ndarray, events: list,
@@ -315,6 +294,7 @@ def plot_theta(ax1: plt.Axes, ax2: plt.Axes, model: np.ndarray, events: list,
 
     cb2 = plt.colorbar(im2, ax=ax2, orientation="horizontal", shrink=2, pad=0.03, aspect=8)
     cb2.ax.locator_params(nbins=5)
+    
     # Plot numerical values of theta 
     if verbose:
        for i in range(n_total+2):
