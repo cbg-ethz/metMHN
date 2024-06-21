@@ -405,6 +405,17 @@ def _lp_prim_obs(log_theta: jnp.ndarray, log_d_p: jnp.ndarray,
     return jnp.log(pTh[-1])
 
 
+def _lp_prim_obs_az(log_theta) -> jnp.ndarray:
+    """This computes the log Prob. to observe an uncoupled primary tumor with all 0 genotype
+
+    Args:
+        log_theta (jnp.ndarray): Theta matrix with logarithmic entries
+    Returns:
+        jnp.ndarray: log(P(00...0)| \theta))
+    """
+    return jnp.log(1./(1. + jnp.sum(jnp.diag(jnp.exp(log_theta)))))
+
+
 def _lp_met_obs(log_theta: jnp.ndarray, log_d_pt: jnp.ndarray, log_d_mt: jnp.ndarray, 
                 state_mt: jnp.ndarray, n_met: int) -> jnp.ndarray:
     """This computes the log Prob. to observe an uncoupled metastatis with genotype state_mt
@@ -430,7 +441,7 @@ def _lp_met_obs(log_theta: jnp.ndarray, log_d_pt: jnp.ndarray, log_d_mt: jnp.nda
 @partial(jit, static_argnames=["n_prim"])
 def _grad_prim_obs(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, 
                    state_prim: jnp.ndarray, n_prim: int) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """This computes log prob to observe a PT and its gradients wrt. theta, d_p
+    """This computes log prob to observe a PT and its gradients wrt. theta, d_p if n_prim > 0
 
     Args:
         log_theta (jnp.ndarray): Theta matrix with log. entries
@@ -448,6 +459,23 @@ def _grad_prim_obs(log_theta: jnp.ndarray, log_d_p: jnp.ndarray,
     d_th, d_dp, pTh2 = mhn.gradient(log_theta_pt, state_prim, p0)
     d_th = d_th.at[:-1, -1].set(0.0)
     return jnp.log(pTh2[-1]), d_th, d_dp
+
+
+@jit
+def _grad_prim_obs_az(log_theta: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """This computes log prob to observe a PT with all 0 genotype and its gradients wrt. theta, d_p
+
+    Args:
+        log_theta (jnp.ndarray): Theta matrix with log. entries
+
+    Returns:
+        tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]: log prob, grad wrt. theta, grad wrt. d_p
+    """
+    theta_br = jnp.exp(jnp.diag(log_theta))
+    log_pth = jnp.log(jnp.array([1./(1. + jnp.sum(theta_br))]))
+    d_th = 1/jnp.exp(log_pth) * jnp.diag(-theta_br/(1+jnp.sum(theta_br))**2)
+    d_dp = jnp.zeros(log_theta.shape[0])
+    return log_pth, d_th, d_dp
 
 
 @partial(jit, static_argnames=["n_met"])

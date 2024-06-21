@@ -77,7 +77,10 @@ def score(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, da
             # Never metastasizing primary tumors
             state_obs = dat[i, 0:2*n_total-1:2]
             n_prim = int(state_obs.sum())
-            score_pt += ssr._lp_prim_obs(log_theta, log_d_p, state_obs, n_prim)
+            if n_prim == 0:
+                score_pt += ssr._lp_prim_obs_az(log_theta)
+            else:
+                score_pt += ssr._lp_prim_obs(log_theta, log_d_p, state_obs, n_prim)
         else:
             if dat[i,-1] == 1:
             # Metastasized primary tumors without sequenced metastasis
@@ -114,7 +117,6 @@ def score(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.ndarray, da
                     else:
                         score += ssr._lp_coupled_2(log_theta, log_d_p, log_d_m, state_obs,
                                                            n_prim, n_met)
-    logging.info(f"NM-score: {score_pt}, EM-score: {score}")
 
     n_em = jnp.sum(dat[:,-3])
     n_nm = dat.shape[0] - n_em
@@ -187,10 +189,17 @@ def score_and_grad(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.nd
     n_active = jnp.unique(dat_po[:,:-2:2].sum(axis=1))
     for i in n_active:
         tmp = dat_po[dat_po[:,:-2:2].sum(axis=1)==i, :-2:2]
-        lik, th_, dp_ = vmap(ssr._grad_prim_obs, (None, None, 0, None), out_axes=(0))(log_theta, log_d_p, tmp, int(i))
-        score_pt += lik.sum()
-        d_th_pt += th_.sum(axis=0)
-        d_d_p_pt += dp_.sum(axis=0)
+        if i == 0:
+            n_az = tmp.shape[0]
+            lik, th_, dp_ = ssr._grad_prim_obs_az(log_theta)
+            score_pt += n_az * lik
+            d_th_pt += n_az * th_
+            d_d_p_pt += n_az * dp_
+        else:
+            lik, th_, dp_ = vmap(ssr._grad_prim_obs, (None, None, 0, None), out_axes=(0))(log_theta, log_d_p, tmp, int(i))
+            score_pt += lik.sum()
+            d_th_pt += th_.sum(axis=0)
+            d_d_p_pt += dp_.sum(axis=0)
 
     # Metastasized primary tumors
     dat_pm = dat[dat[:,-1]==1,:]
@@ -243,7 +252,6 @@ def score_and_grad(log_theta: jnp.ndarray, log_d_p: jnp.ndarray, log_d_m: jnp.nd
         d_th += th_
         d_d_p += d_p_
         d_d_m += d_m_
-    logging.info(f"NM-score: {score_pt}, EM-score: {score}")
 
     n_em = jnp.sum(dat[:,-3])
     n_nm = dat.shape[0] - n_em
