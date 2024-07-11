@@ -3,7 +3,7 @@ from collections import deque
 from metmhn.jx.kronvec import kron_diag as get_diag_paired
 from scipy.linalg.blas import dcopy, dscal, daxpy
 import numpy as np
-# from omhn.model import oMHN
+from mhn.model import oMHN
 from metmhn.state import State, RestrState, RestrMetState, MetState
 from typing import Union, Iterator
 import warnings
@@ -206,9 +206,11 @@ class MetMHN:
 
         _pt_log_theta = log_theta.copy()
         _pt_log_theta[:-1, -1] = 0
-        # self._pt_omhn = oMHN(
-        #     log_theta=np.vstack([_pt_log_theta, self.obs1])
-        # )
+        _pt_obs1 = obs1.copy()
+        _pt_obs1[-1] = 0
+        self._pt_omhn = oMHN(
+            log_theta=np.vstack([_pt_log_theta, self.obs1])
+        )
 
     def likeliest_order(
         self,
@@ -257,10 +259,10 @@ class MetMHN:
                 if state.Seeding:
                     raise ValueError(
                         "Seeding was observed, but met_status is 'absent'.")
-                # p, o = self._pt_omhn.likeliest_order(
-                #     state=state.PT_S.to_seq()
-                # )
-                return  # p, 2 * o
+                p, o = self._pt_omhn.likeliest_order(
+                    state=state.PT_S.to_seq()
+                )
+                return p, 2 * o
             case "present":
                 if len(state.MT) > 0:
                     raise ValueError(
@@ -268,13 +270,13 @@ class MetMHN:
                 if not state.Seeding:
                     raise ValueError(
                         "Seeding was not observed, but met_status is 'present'.")
-                # p, o = self._pt_omhn.likeliest_order(
-                #     state=state.PT_S.to_seq()
-                # )
-                return  # p, 2 * o
+                p, o = self._pt_omhn.likeliest_order(
+                    state=state.PT_S.to_seq()
+                )
+                return p, 2 * o
             case "isPaired":
                 match first_obs:
-                    case"PT":
+                    case "PT":
                         return self._likeliest_order_pt_mt(state)
                     case "Met":
                         return self._likeliest_order_mt_pt(state)
@@ -331,7 +333,7 @@ class MetMHN:
                 if not seeding_in_order:
                     raise ValueError(
                         "Seeding event not in order, but met_status is 'isMetastasis'.")
-                raise NotImplementedError
+                return self._likelihood_unpaired_mt(order=order)
             case "absent":
                 for e in order:
                     if e % 2 == 1:
@@ -340,8 +342,8 @@ class MetMHN:
                     if e == 2 * self.n:
                         raise ValueError(
                             "Seeding event in order, but met_status is 'absent'.")
+                return self._pt_omhn.order_likelihood(sigma=tuple(e//2 for e in order))
 
-                raise NotImplementedError
             case "present":
                 seeding_in_order = False
                 for e in order:
@@ -353,7 +355,8 @@ class MetMHN:
                 if not seeding_in_order:
                     raise ValueError(
                         "Seeding event not in order, but met_status is 'present'.")
-                raise NotImplementedError
+                return self._pt_omhn.order_likelihood(sigma=tuple(e//2 for e in order))
+
             case "isPaired":
                 match first_obs:
                     case"PT":
@@ -1386,6 +1389,43 @@ class MetMHN:
 
         p *= (obs1 + obs2)
         return int_to_order(o, np.nonzero(state.to_seq())[0].tolist()), p
+
+    def _likelihood_unpaired_mt(self, order: tuple[int]) -> float:
+        """This function returns the probability of observing a specific
+        order of events of a single metastasis observation
+
+        Args:
+            order (tuple[int]): Sequence of events
+
+        Returns:
+            float: Probability of observing this order.
+        """
+
+        restr_diag = self._get_diag_unpaired(
+            state=MetState(order, size=2 * self.n + 1).MT, seeding=True)
+
+        # get positions of the events
+        pos = np.argsort(np.argsort(order))
+
+        seeding_pos = order.index(2 * self.n)
+
+        # convert to regular indices
+        order = np.array(order) // 2
+
+        numerator = np.exp(
+            sum((self.log_theta[x_i, order[:n_i]].sum()
+                 + self.log_theta[x_i, x_i]) for n_i, x_i in enumerate(order))
+            + self.obs2[order].sum())
+        denominator_pre_seeding = np.prod(
+            [np.exp(self.obs1[order[:i]].sum())
+             - restr_diag[(1 << pos)[:i].sum()]
+                for i in range(seeding_pos + 1)])
+        denominator_post_seeding = np.prod(
+            [np.exp(self.obs2[order[:i]].sum())
+             - restr_diag[(1 << pos)[:i].sum()]
+                for i in range(seeding_pos + 1, len(order) + 1)])
+
+        return numerator / (denominator_pre_seeding * denominator_post_seeding)
 
     def _likelihood_pt_mt_timed(self, order_1: np.array, order_2: np.array
                                 ) -> float:

@@ -63,16 +63,16 @@ class LikelihoodTestCase(unittest.TestCase):
                         invalid_state,
                         met_status=met_status,)
 
-    @unittest.expectedFailure
+    # @unittest.expectedFailure
     def test_unpaired_likelihood(self):
         """Test that the likelihoods for unpaired orders are calculated correctly"""
 
         seeding = self.n * 2
 
         unpaired_diag_seeding = self.metMHN._get_diag_unpaired(
-            state=State([1] * 5))
+            state=State.from_seq([1] * 5))
         unpaired_diag = self.metMHN._get_diag_unpaired(
-            state=State([1] * 5), seeding=False)
+            state=State.from_seq([1] * 5), seeding=False)
         test_cases = [
             ((0, 6, 4), "absent", None,
              np.exp(self.log_theta[0, 0])
@@ -86,14 +86,14 @@ class LikelihoodTestCase(unittest.TestCase):
              / (np.exp(self.obs1[[0, 2, 3]].sum())
                 - unpaired_diag_seeding[2 ** 0 + 2 ** 2 + 2 ** 3]),
              ),
-            ((0, 3, seeding, 2), "present", None,
+            ((0, 6, seeding, 4), "present", None,
              np.exp(self.log_theta[0, 0])
              / (1 - unpaired_diag_seeding[0])
              * np.exp(self.log_theta[3, [0, 3]].sum())
              / (np.exp(self.obs1[0]) - unpaired_diag_seeding[2 ** 0])
              * np.exp(self.log_theta[self.n, [self.n, 0, 3]].sum())
              / (np.exp(self.obs1[[0, 3]].sum())
-                - unpaired_diag_seeding[2 ** 0 + 2 ** 3]),
+                - unpaired_diag_seeding[2 ** 0 + 2 ** 3])
              * np.exp(self.log_theta[2, [0, 3, 2]].sum())
              / (np.exp(self.obs1[[0, 3]].sum())
                 - unpaired_diag[2 ** 0 + 2 ** 3])
@@ -101,14 +101,14 @@ class LikelihoodTestCase(unittest.TestCase):
              / (np.exp(self.obs1[[0, 2, 3]].sum())
                 - unpaired_diag[2 ** 0 + 2 ** 2 + 2 ** 3]),
              ),
-            ((0, 3, seeding, 2), "isMetastasis", None,
+            ((1, 7, seeding, 5), "isMetastasis", None,
              np.exp(self.log_theta[0, 0])
              / (1 - unpaired_diag_seeding[0])
              * np.exp(self.log_theta[3, [0, 3]].sum())
              / (np.exp(self.obs1[0]) - unpaired_diag_seeding[2 ** 0])
              * np.exp(self.log_theta[self.n, [self.n, 0, 3]].sum())
              / (np.exp(self.obs1[[0, 3]].sum())
-                - unpaired_diag_seeding[2 ** 0 + 2 ** 3]),
+                - unpaired_diag_seeding[2 ** 0 + 2 ** 3])
              * np.exp(self.log_theta[2, [0, 3, 2, self.n]].sum())
              / (np.exp(self.obs2[[0, 3, self.n]].sum())
                 - unpaired_diag_seeding[2 ** 0 + 2 ** 3 + 2 ** self.n])
@@ -122,11 +122,11 @@ class LikelihoodTestCase(unittest.TestCase):
             with self.subTest(
                     order=order, met_status=met_status, first_obs=first_obs):
                 likelihood = self.metMHN.likelihood(
-                    order,
+                    order=order,
                     met_status=met_status,
                     first_obs=first_obs,)
                 np_assert_approx_equal(
-                    likelihood, expected_likelihood, places=5)
+                    likelihood, expected_likelihood)
 
     def test_paired_timed_likelihood(self):
         """Test that the likelihoods for paired, timed orders are calculated correctly"""
