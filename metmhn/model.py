@@ -197,14 +197,14 @@ class MetMHN:
             function. Defaults to None.
         """
 
-        self.log_theta = log_theta
+        self.log_theta = np.array(log_theta)
         self.events = events
         self.meta = meta
-        self.obs1 = obs1
-        self.obs2 = obs2
-        self.n = log_theta.shape[1] - 1
+        self.obs1 = np.array(obs1)
+        self.obs2 = np.array(obs2)
+        self.n = self.log_theta.shape[1] - 1
 
-        _pt_log_theta = log_theta.copy()
+        _pt_log_theta = self.log_theta.copy()
         _pt_log_theta[:-1, -1] = 0
         self._pt_omhn = oMHN(
             log_theta=np.vstack([_pt_log_theta, self.obs1])
