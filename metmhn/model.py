@@ -206,8 +206,6 @@ class MetMHN:
 
         _pt_log_theta = log_theta.copy()
         _pt_log_theta[:-1, -1] = 0
-        _pt_obs1 = obs1.copy()
-        _pt_obs1[-1] = 0
         self._pt_omhn = oMHN(
             log_theta=np.vstack([_pt_log_theta, self.obs1])
         )
@@ -262,9 +260,9 @@ class MetMHN:
                 p, o = self._pt_omhn.likeliest_order(
                     state=state.PT_S.to_seq()
                 )
-                return p, 2 * o
+                return 2 * o, p
             case "present":
-                if len(state.MT) > 0:
+                if tuple(state.MT) != (self.n,):
                     raise ValueError(
                         "Met part of the state was not empty, but met_status is 'present', not 'isPaired'.")
                 if not state.Seeding:
@@ -273,7 +271,7 @@ class MetMHN:
                 p, o = self._pt_omhn.likeliest_order(
                     state=state.PT_S.to_seq()
                 )
-                return p, 2 * o
+                return 2 * o, p
             case "isPaired":
                 match first_obs:
                     case "PT":
@@ -500,7 +498,7 @@ class MetMHN:
         order = np.arange(self.log_theta.shape[1])[state.to_seq()][B[i]]
         order = 2 * order + 1
         order[np.where(order == self.n * 2 + 1)] -= 1
-        return (A[i], order)
+        return (order, A[i])
 
     def _likeliest_order_pt_mt(
             self, state: MetState, verbose: bool = False
@@ -1407,7 +1405,7 @@ class MetMHN:
         # get positions of the events
         pos = np.argsort(np.argsort(order))
 
-        seeding_pos = order.index(2 * self.n)
+        seeding_pos = tuple(order).index(2 * self.n)
 
         # convert to regular indices
         order = np.array(order) // 2
